@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import '../../shared/widgets/app_bottom_nav.dart';
 import 'home_content.dart';
 import 'widgets/category_section.dart';
+import 'widgets/deal_group.dart';
 import 'widgets/department_grid.dart';
 import 'widgets/product_rail.dart';
 import 'widgets/promo_rail.dart';
 import 'widgets/search_header.dart';
+import 'widgets/spotlight_rail.dart';
 
 /// Storefront home: pinned search, a promo strip, then alternating category
 /// blocks, a recommendation rail and the full department grid.
@@ -48,6 +50,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   items: HomeContent.topPicks,
                   onSeeAll: () {},
                 ),
+                SpotlightRail(
+                  title: 'Featured brands',
+                  leadingIcon: Icons.local_offer,
+                  items: HomeContent.spotlight,
+                  onSeeAll: () {},
+                ),
                 CategorySection(
                   title: 'Computing',
                   leadingIcon: Icons.laptop_chromebook,
@@ -59,6 +67,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   leadingIcon: Icons.sports_esports,
                   entries: HomeContent.gaming,
                   onSeeAll: () {},
+                ),
+                DealGroup(
+                  title: 'Also popular',
+                  subtitle: 'What other shoppers are browsing',
+                  items: HomeContent.alsoPopular,
+                  tint: const Color(0xFFF59E0B),
                 ),
                 CategorySection(
                   title: 'Home and living',
@@ -87,6 +101,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   leadingIcon: Icons.family_restroom,
                   entries: HomeContent.family,
                   onSeeAll: () {},
+                ),
+                DealGroup(
+                  title: 'Dashain specials',
+                  subtitle: 'Gifting picks for the season',
+                  items: HomeContent.festival,
+                  tint: const Color(0xFFE84326),
                 ),
                 DepartmentGrid(
                   title: 'Shop by category',

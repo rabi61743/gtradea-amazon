@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'widgets/category_section.dart';
 import 'widgets/department_grid.dart';
+import 'widgets/deal_group.dart';
 import 'widgets/promo_rail.dart';
+import 'widgets/spotlight_rail.dart';
 import 'widgets/product_rail.dart';
 
 /// Placeholder content for the home feed.
@@ -246,6 +248,92 @@ class HomeContent {
       reviewCount: 41,
       icon: Icons.tablet_mac,
       tint: Color(0xFF0EA5E9),
+    ),
+  ];
+
+  /// Price bands, not prices: these are marketing framings and are stored as
+  /// written rather than run through formatRupees.
+  static const alsoPopular = [
+    DealItem(
+      label: 'Water bottles and flasks',
+      teaser: 'From Rs. 350',
+      icon: Icons.local_drink,
+      tint: Color(0xFF0891B2),
+    ),
+    DealItem(
+      label: 'Vehicle lighting',
+      teaser: 'From Rs. 450',
+      icon: Icons.light_mode,
+      tint: Color(0xFFF59E0B),
+    ),
+    DealItem(
+      label: 'Kurta sets',
+      teaser: 'From Rs. 1,200',
+      icon: Icons.checkroom,
+      tint: Color(0xFF0EA5E9),
+    ),
+    DealItem(
+      label: 'Saris',
+      teaser: 'Under Rs. 2,000',
+      icon: Icons.woman,
+      tint: Color(0xFFEC4899),
+    ),
+  ];
+
+  /// Seasonal placeholder. Dashain is the Nepali festival this storefront
+  /// would actually merchandise around; a real build would drive both the
+  /// title and the tint from a campaign the admin schedules.
+  static const festival = [
+    DealItem(
+      label: 'Sweets and hampers',
+      teaser: 'From Rs. 299',
+      icon: Icons.card_giftcard,
+      tint: Color(0xFFE84326),
+    ),
+    DealItem(
+      label: 'Skincare sets',
+      teaser: 'Up to 60% off',
+      icon: Icons.spa,
+      tint: Color(0xFFA855F7),
+    ),
+    DealItem(
+      label: 'Jewellery',
+      teaser: 'Under Rs. 1,500',
+      icon: Icons.diamond,
+      tint: Color(0xFFF59E0B),
+    ),
+    DealItem(
+      label: 'Home decor',
+      teaser: 'From Rs. 199',
+      icon: Icons.emoji_objects,
+      tint: Color(0xFF059669),
+    ),
+  ];
+
+  static const spotlight = [
+    SpotlightItem(
+      offer: 'From Rs. 1,099',
+      caption: 'Watches',
+      icon: Icons.watch,
+      tint: Color(0xFF6366F1),
+    ),
+    SpotlightItem(
+      offer: 'Min. 65% off',
+      caption: 'Running shoes',
+      icon: Icons.directions_run,
+      tint: Color(0xFF059669),
+    ),
+    SpotlightItem(
+      offer: 'Up to 80% off',
+      caption: 'Earbuds',
+      icon: Icons.earbuds,
+      tint: Color(0xFF0EA5E9),
+    ),
+    SpotlightItem(
+      offer: 'From Rs. 799',
+      caption: 'Backpacks',
+      icon: Icons.backpack,
+      tint: Color(0xFFF97316),
     ),
   ];
 }

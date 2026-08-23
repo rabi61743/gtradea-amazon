@@ -93,7 +93,6 @@ void main() {
 
     expect(find.text('Shop by category'), findsOneWidget);
     expect(find.text('Beauty'), findsOneWidget);
-    expect(find.text('Beauty'), findsOneWidget);
   });
 
   group('formatRupees', () {
@@ -131,5 +130,40 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(title), findsOneWidget, reason: title);
     }
+  });
+
+  testWidgets('spotlight cards carry an offer ribbon and a caption',
+      (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+
+    await tester.scrollUntilVisible(find.text('Featured brands'), 400,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Min. 65% off'), findsOneWidget);
+    expect(find.text('Running shoes'), findsOneWidget);
+  });
+
+  testWidgets('deal groups show price bands under each tile', (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+
+    await tester.scrollUntilVisible(find.text('Also popular'), 500,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('What other shoppers are browsing'), findsOneWidget);
+    expect(find.text('From Rs. 350'), findsOneWidget);
+    expect(find.text('Under Rs. 2,000'), findsOneWidget);
+  });
+
+  testWidgets('the seasonal block renders its own group', (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+
+    await tester.scrollUntilVisible(find.text('Dashain specials'), 500,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Gifting picks for the season'), findsOneWidget);
+    expect(find.text('Sweets and hampers'), findsOneWidget);
   });
 }
