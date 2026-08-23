@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/widgets/app_bottom_nav.dart';
+import '../account/presentation/account_screen.dart';
+import '../auth/data/auth_store.dart';
 import '../search/presentation/search_entry_screen.dart';
 import '../wishlist/data/wishlist_store.dart';
 import '../wishlist/presentation/wishlist_screen.dart';
@@ -33,6 +35,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     WishlistStore.instance.load();
+    AuthStore.instance.load();
+  }
+
+  void _openPage(BuildContext context, Widget page) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
   }
 
 
@@ -141,18 +148,27 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+      // Listening to both stores: the saved badge and the account wording each
+      // have to change the moment their store does, without waiting for a
+      // navigation to rebuild the bar.
       bottomNavigationBar: ListenableBuilder(
-        listenable: WishlistStore.instance,
+        listenable: Listenable.merge([
+          WishlistStore.instance,
+          AuthStore.instance,
+        ]),
         builder: (context, _) => AppBottomNav(
           currentIndex: _tab,
           savedCount: WishlistStore.instance.count,
+          isSignedIn: AuthStore.instance.isSignedIn,
           onSelected: (i) {
-            // Saved is a page, not a tab this shell hosts, so it opens on
-            // top and the nav selection stays where it was.
+            // Saved and Account are pages, not tabs this shell hosts, so they
+            // open on top and the nav selection stays where it was.
             if (i == 1) {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const WishlistScreen()),
-              );
+              _openPage(context, const WishlistScreen());
+              return;
+            }
+            if (i == 2) {
+              _openPage(context, const AccountScreen());
               return;
             }
             setState(() => _tab = i);
