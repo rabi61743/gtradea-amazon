@@ -57,6 +57,8 @@ class Order {
     required this.placedAt,
     required this.lines,
     required this.delivery,
+    this.discount = 0,
+    this.couponCode,
     required this.recipient,
     required this.address,
     required this.paymentState,
@@ -71,6 +73,11 @@ class Order {
   /// The delivery actually charged, frozen. See [CartTotals.of].
   final num delivery;
 
+  /// What a coupon took off, and which one. Frozen for the same reason as the
+  /// delivery: an offer expiring must not rewrite what an old order cost.
+  final num discount;
+  final String? couponCode;
+
   final String recipient;
   final String address;
   final PaymentState paymentState;
@@ -79,7 +86,12 @@ class Order {
   final OrderOutcome? outcome;
   final DateTime? outcomeAt;
 
-  CartTotals get totals => CartTotals.of(lines, delivery: delivery);
+  CartTotals get totals => CartTotals.of(
+        lines,
+        delivery: delivery,
+        discount: discount,
+        couponCode: couponCode,
+      );
 
   /// How long after placement each stage is reached.
   ///
@@ -153,6 +165,8 @@ class Order {
         placedAt: placedAt,
         lines: lines,
         delivery: delivery,
+        discount: discount,
+        couponCode: couponCode,
         recipient: recipient,
         address: address,
         paymentState: outcome == OrderOutcome.failed
@@ -167,6 +181,8 @@ class Order {
         'placedAt': placedAt.millisecondsSinceEpoch,
         'lines': lines.map((line) => line.toJson()).toList(),
         'delivery': delivery,
+        'discount': discount,
+        'couponCode': couponCode,
         'recipient': recipient,
         'address': address,
         'paymentState': paymentState.name,
@@ -196,6 +212,9 @@ class Order {
       placedAt: DateTime.fromMillisecondsSinceEpoch(placedAt),
       lines: lines,
       delivery: json['delivery'] is num ? json['delivery'] as num : 0,
+      discount: json['discount'] is num ? json['discount'] as num : 0,
+      couponCode:
+          json['couponCode'] is String ? json['couponCode'] as String : null,
       recipient: json['recipient'] is String
           ? json['recipient'] as String
           : 'Guest',
@@ -319,6 +338,8 @@ class OrderStore extends ChangeNotifier {
   Order place({
     required List<CartLine> lines,
     required num delivery,
+    num discount = 0,
+    String? couponCode,
     required String recipient,
     required String address,
     required PaymentState paymentState,
@@ -330,6 +351,8 @@ class OrderStore extends ChangeNotifier {
       placedAt: when,
       lines: List.unmodifiable(lines),
       delivery: delivery,
+      discount: discount,
+      couponCode: couponCode,
       recipient: recipient,
       address: address,
       paymentState: paymentState,

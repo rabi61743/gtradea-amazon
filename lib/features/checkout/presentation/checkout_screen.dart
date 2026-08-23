@@ -9,6 +9,7 @@ import '../../cart/data/cart_store.dart';
 import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../orders/data/order_store.dart';
+import '../../promo/data/coupon_store.dart';
 import '../../orders/presentation/order_detail_screen.dart';
 
 /// Review and place the order.
@@ -75,6 +76,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // The delivery agreed now, frozen onto the order: changing the rule
       // later must not rewrite what this order cost.
       delivery: widget.totals.delivery,
+      // Frozen from the snapshot this screen was handed, not re-derived: the
+      // shopper agreed to the figure they saw.
+      discount: widget.totals.discount,
+      couponCode: widget.totals.couponCode,
       recipient: _address?.fullName ?? account?.displayName ?? 'Guest',
       address: _address?.full ?? '',
       paymentState: _payment == _Payment.cashOnDelivery
@@ -83,6 +88,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           // There is no gateway here, so claiming "Paid" would be a lie.
           : PaymentState.pending,
     );
+
+    // The code is spent. Doing it here rather than on apply means a coupon
+    // tried and abandoned is still available next time.
+    final code = widget.totals.couponCode;
+    if (code != null) CouponStore.instance.redeem(code);
 
     // Only the lines this screen was handed are cleared. Anything added to the
     // cart from another screen after checkout opened is not part of this order

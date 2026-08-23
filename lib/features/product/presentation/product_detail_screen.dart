@@ -90,6 +90,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     quantity: _quantity,
     minOrder: _product.minOrder,
     freeDelivery: _product.freeDelivery,
+    category: _product.category,
   );
 
   void _openCart() {

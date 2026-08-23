@@ -34,6 +34,18 @@ class CartSummary extends StatelessWidget {
             valueColor: AppColors.success,
           ),
         ],
+        if (totals.discount > 0) ...[
+          const SizedBox(height: 8),
+          _SummaryRow(
+            // Named, because a discount line the shopper cannot trace back to
+            // the code they typed reads as a mistake in the shop's favour.
+            label: totals.couponCode == null
+                ? 'Coupon'
+                : 'Coupon ${totals.couponCode}',
+            value: '-${formatRupees(totals.discount)}',
+            valueColor: AppColors.success,
+          ),
+        ],
         const SizedBox(height: 8),
         _SummaryRow(
           label: 'Delivery',

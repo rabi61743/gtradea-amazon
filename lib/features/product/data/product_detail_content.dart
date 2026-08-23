@@ -103,6 +103,7 @@ class ProductDetail {
     required this.description,
     this.listPrice,
     this.minOrder = 1,
+    this.category,
     this.soldCount,
     this.freeDelivery = false,
     this.highlights = const [],
@@ -122,6 +123,11 @@ class ProductDetail {
   final List<ProductSpec> specs;
   final String description;
   final int minOrder;
+
+  /// Which department this belongs to. Carried onto the cart line so a
+  /// category-restricted coupon knows whether it applies.
+  final String? category;
+
   final int? soldCount;
   final bool freeDelivery;
 
@@ -155,6 +161,7 @@ class ProductDetail {
   /// returns one image and no attributes.
   static const sample = ProductDetail(
     title: 'Ice Silk Sun Protection Clothing for Women, summer 2026',
+    category: 'Fashion',
     price: 1130,
     listPrice: 1568,
     rating: 4.3,

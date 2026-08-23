@@ -5,6 +5,8 @@ import '../../../shared/widgets/artwork_panel.dart';
 import '../../checkout/presentation/checkout_screen.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../data/cart_store.dart';
+import '../../promo/data/coupon_store.dart';
+import '../../promo/presentation/promo_section.dart';
 import '../widgets/cart_summary.dart';
 
 /// The cart: every line, its quantity, and what the order comes to.
@@ -20,6 +22,13 @@ class _CartScreenState extends State<CartScreen> {
   void initState() {
     super.initState();
     CartStore.instance.load();
+    CouponStore.instance.load();
+  }
+
+  void _snack(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Removal is undoable rather than confirmed, matching the saved list: one
@@ -87,10 +96,27 @@ class _CartScreenState extends State<CartScreen> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: CartStore.instance,
+      // Both stores: the coupon changes the total as surely as adding a line
+      // does, and listening to only one leaves the summary showing a price the
+      // shopper has already been told they are not paying.
+      listenable: Listenable.merge([
+        CartStore.instance,
+        CouponStore.instance,
+      ]),
       builder: (context, _) {
         final store = CartStore.instance;
         final lines = store.lines;
+        // The basket moves after a coupon goes on. Removing a line can drop it
+        // under the minimum, and a discount that quietly stayed would be a
+        // price the shop could not honour.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final dropped = CouponStore.instance.revalidate(lines);
+          if (dropped != null) {
+            _snack('${dropped.code} no longer applies to this cart.');
+          }
+        });
+
         final totals = store.totals;
 
         return Scaffold(
@@ -122,6 +148,7 @@ class _CartScreenState extends State<CartScreen> {
                         onRemove: () => _removeWithUndo(line),
                       ),
                     const SizedBox(height: 8),
+                    PromoSection(lines: lines),
                     Card(
                       margin: const EdgeInsets.symmetric(horizontal: 12),
                       child: Padding(

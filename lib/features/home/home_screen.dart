@@ -12,6 +12,7 @@ import '../cart/presentation/cart_screen.dart';
 import '../catalog/presentation/browse_screen.dart';
 import '../notifications/data/notification_store.dart';
 import '../orders/data/order_store.dart';
+import '../promo/data/coupon_store.dart';
 import '../search/presentation/search_entry_screen.dart';
 import '../wishlist/data/wishlist_store.dart';
 import '../wishlist/presentation/wishlist_screen.dart';
@@ -48,6 +49,8 @@ class _HomeScreenState extends State<HomeScreen> {
     // Bound before the load so a sign-in that lands mid-startup still moves
     // the cart to the right identity.
     CartStore.instance.bindToAuth();
+    CouponStore.instance.bindToAuth();
+    CouponStore.instance.load();
     OrderStore.instance.bindToAuth();
     NotificationStore.instance.bindToAuth();
     AddressStore.instance.bindToAuth();

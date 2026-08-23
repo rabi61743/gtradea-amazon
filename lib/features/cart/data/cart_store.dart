@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../auth/data/auth_store.dart';
+import '../../promo/data/coupon_store.dart';
 
 /// One line of the cart: a product in a chosen variant, with a quantity.
 ///
@@ -24,6 +25,7 @@ class CartLine {
     this.quantity = 1,
     this.minOrder = 1,
     this.freeDelivery = false,
+    this.category,
   });
 
   final String productId;
@@ -39,6 +41,11 @@ class CartLine {
   final int quantity;
   final int minOrder;
   final bool freeDelivery;
+
+  /// What department this came from, so a coupon can be restricted to one.
+  /// Null on a line saved before categories existed, which simply means no
+  /// category-restricted coupon matches it.
+  final String? category;
 
   /// Identity of a line. Product plus variant, because adding the blush pink
   /// after the ivory must not silently overwrite the ivory.
@@ -73,6 +80,7 @@ class CartLine {
         quantity: quantity ?? this.quantity,
         minOrder: minOrder,
         freeDelivery: freeDelivery,
+        category: category,
       );
 
   Map<String, dynamic> toJson() => {
@@ -85,6 +93,7 @@ class CartLine {
         'quantity': quantity,
         'minOrder': minOrder,
         'freeDelivery': freeDelivery,
+        'category': category,
       };
 
   /// Tolerant: a blob written by an older build may be missing fields, and one
@@ -119,6 +128,7 @@ class CartLine {
       quantity: quantity.clamp(minOrder, CartStore.maxPerLine),
       minOrder: minOrder,
       freeDelivery: json['freeDelivery'] == true,
+      category: json['category'] is String ? json['category'] as String : null,
     );
   }
 }
@@ -136,6 +146,8 @@ class CartTotals {
     required this.vatIncluded,
     required this.itemCount,
     required this.lineCount,
+    this.discount = 0,
+    this.couponCode,
   });
 
   final num subtotal;
@@ -145,7 +157,16 @@ class CartTotals {
 
   final num delivery;
 
-  /// Already inside [subtotal]; shown as a note, never added.
+  /// Taken off by a coupon. Separate from [savings], which is what the shop was
+  /// already knocking off the list price -- conflating the two would let one
+  /// order claim the same rupee twice.
+  final num discount;
+
+  /// The code that produced [discount], for showing on the summary and for
+  /// freezing onto the order.
+  final String? couponCode;
+
+  /// Already inside what is actually charged; shown as a note, never added.
   final num vatIncluded;
 
   /// Units, not lines: three of one jacket is three items.
@@ -153,7 +174,7 @@ class CartTotals {
 
   final int lineCount;
 
-  num get total => subtotal + delivery;
+  num get total => subtotal - discount + delivery;
 
   bool get isEmpty => lineCount == 0;
 
@@ -168,11 +189,16 @@ class CartTotals {
 
   /// The one place money is added up.
   ///
-  /// A past order passes [delivery] so its charge stays whatever was agreed at
-  /// the time; changing the delivery rule must not silently rewrite what an
-  /// old order cost. Everything else derives from the lines, whose prices were
-  /// snapshotted when they were added.
-  static CartTotals of(Iterable<CartLine> lines, {num? delivery}) {
+  /// A past order passes [delivery] and [discount] so its figures stay whatever
+  /// was agreed at the time; changing a rule or expiring a coupon must not
+  /// silently rewrite what an old order cost. Everything else derives from the
+  /// lines, whose prices were snapshotted when they were added.
+  static CartTotals of(
+    Iterable<CartLine> lines, {
+    num? delivery,
+    num discount = 0,
+    String? couponCode,
+  }) {
     if (lines.isEmpty) {
       return delivery == null || delivery == 0
           ? empty
@@ -188,7 +214,6 @@ class CartTotals {
 
     num subtotal = 0;
     num savings = 0;
-    num vat = 0;
     var items = 0;
     var lineCount = 0;
     var everythingFree = true;
@@ -196,17 +221,25 @@ class CartTotals {
     for (final line in lines) {
       subtotal += line.lineTotal;
       savings += line.lineSaving ?? 0;
-      vat += line.vatIncluded;
       items += line.quantity;
       lineCount++;
       if (!line.freeDelivery) everythingFree = false;
     }
 
+    // A discount can never exceed what is being bought. Guards a stale coupon
+    // frozen on an old order as much as a live one.
+    final applied = discount.clamp(0, subtotal);
+
     return CartTotals(
       subtotal: subtotal,
       savings: savings,
+      discount: applied,
+      couponCode: applied > 0 ? couponCode : null,
       delivery: delivery ?? (everythingFree ? 0 : CartStore.deliveryFee),
-      vatIncluded: vat,
+      // Back-solved from what is actually charged for goods, not from the
+      // subtotal: a discount reduces the VAT inside it, and quoting the
+      // pre-discount figure would overstate the tax on the receipt.
+      vatIncluded: (subtotal - applied) * 13 / 113,
       itemCount: items,
       lineCount: lineCount,
     );
@@ -270,7 +303,16 @@ class CartStore extends ChangeNotifier {
   /// Everything owed, derived from the lines. The single source of truth for
   /// money in this app -- the cart screen and the checkout screen both read it
   /// rather than each adding things up their own way.
-  CartTotals get totals => CartTotals.of(_lines);
+  /// Everything owed, including whatever coupon is on the basket.
+  ///
+  /// The coupon is read here rather than passed in so every screen showing a
+  /// total gets the same one -- a cart that shows the discount and a badge
+  /// that does not would be two answers to one question.
+  CartTotals get totals => CartTotals.of(
+        _lines,
+        discount: CouponStore.instance.discountFor(_lines),
+        couponCode: CouponStore.instance.applied?.code,
+      );
 
   /// Follows the signed-in account for the rest of the app's life.
   ///
