@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../checkout/presentation/checkout_screen.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../data/cart_store.dart';
+import '../widgets/cart_summary.dart';
 
 /// The cart: every line, its quantity, and what the order comes to.
 class CartScreen extends StatefulWidget {
@@ -122,7 +122,13 @@ class _CartScreenState extends State<CartScreen> {
                         onRemove: () => _removeWithUndo(line),
                       ),
                     const SizedBox(height: 8),
-                    _SummaryCard(totals: totals),
+                    Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: CartSummary(totals: totals),
+                      ),
+                    ),
                   ],
                 ),
           bottomNavigationBar:
@@ -317,115 +323,6 @@ class _Stepper extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Subtotal, savings, delivery and total.
-///
-/// Takes a [CartTotals] rather than a list of lines: the arithmetic happens in
-/// the store, and this only renders it.
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.totals});
-
-  final CartTotals totals;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          children: [
-            _SummaryRow(
-              label: 'Subtotal (${totals.itemCount} '
-                  '${totals.itemCount == 1 ? 'item' : 'items'})',
-              value: formatRupees(totals.subtotal),
-            ),
-            if (totals.savings > 0) ...[
-              const SizedBox(height: 8),
-              _SummaryRow(
-                label: 'You save',
-                value: '-${formatRupees(totals.savings)}',
-                valueColor: AppColors.success,
-              ),
-            ],
-            const SizedBox(height: 8),
-            _SummaryRow(
-              label: 'Delivery',
-              value: totals.delivery == 0
-                  ? 'Free'
-                  : formatRupees(totals.delivery),
-              valueColor: totals.delivery == 0 ? AppColors.success : null,
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 10),
-              child: Divider(height: 1),
-            ),
-            _SummaryRow(
-              label: 'Total',
-              value: formatRupees(totals.total),
-              emphasised: true,
-            ),
-            if (totals.vatIncluded >= 1) ...[
-              const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.centerRight,
-                // Included, not added: the prices above already carry it, and
-                // adding it again at the bottom would double-charge.
-                child: Text(
-                  'Includes ${formatRupees(totals.vatIncluded)} VAT',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SummaryRow extends StatelessWidget {
-  const _SummaryRow({
-    required this.label,
-    required this.value,
-    this.valueColor,
-    this.emphasised = false,
-  });
-
-  final String label;
-  final String value;
-  final Color? valueColor;
-  final bool emphasised;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final labelStyle = emphasised
-        ? theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)
-        : theme.textTheme.bodyMedium
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-    final valueStyle = emphasised
-        ? theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: theme.colorScheme.primary,
-          )
-        : theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: valueColor,
-          );
-
-    return Row(
-      children: [
-        Expanded(child: Text(label, style: labelStyle)),
-        Text(value, style: valueStyle),
-      ],
     );
   }
 }

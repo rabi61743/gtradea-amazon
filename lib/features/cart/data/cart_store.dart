@@ -94,6 +94,12 @@ class CartLine {
     final title = json['title'];
     if (id is! String || id.isEmpty || title is! String) return null;
 
+    // Stricter than the wishlist, which defaults a missing price to zero. A
+    // saved product can survive rendering Rs. 0; a cart line cannot, because
+    // that number is what the shopper is asked to pay. Drop it instead.
+    final price = json['unitPrice'];
+    if (price is! num || price <= 0) return null;
+
     final rawMin = json['minOrder'];
     final minOrder = (rawMin is int && rawMin >= 1) ? rawMin : 1;
     final rawQuantity = json['quantity'];
@@ -105,7 +111,7 @@ class CartLine {
           ? json['variantLabel'] as String
           : null,
       title: title,
-      unitPrice: json['unitPrice'] is num ? json['unitPrice'] as num : 0,
+      unitPrice: price,
       listPrice: json['listPrice'] is num ? json['listPrice'] as num : null,
       imageUrl: json['imageUrl'] is String ? json['imageUrl'] as String : null,
       // Clamped on the way in: a corrupt or hand-edited zero would otherwise

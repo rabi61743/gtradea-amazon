@@ -82,7 +82,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     title: _product.title,
     unitPrice: _product.price,
     listPrice: _product.listPrice,
-    imageUrl: _product.images.isEmpty ? null : _product.images.first,
+    // The chosen colourway's own photo, so two variants of one product are
+    // told apart at a glance in the cart instead of showing the same picture
+    // twice with only a text label between them.
+    imageUrl: _selectedVariant?.imageUrl ??
+        (_product.images.isEmpty ? null : _product.images.first),
     quantity: _quantity,
     minOrder: _product.minOrder,
     freeDelivery: _product.freeDelivery,

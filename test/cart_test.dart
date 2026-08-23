@@ -298,6 +298,19 @@ void main() {
       expect(CartStore.instance.lines.map((l) => l.productId), ['ok']);
     });
 
+    test('a line with no usable price is dropped, not shown as free', () async {
+      SharedPreferences.setMockInitialValues({
+        'gtradea_cart':
+            '[{"productId":"bad","title":"No price"},'
+                '{"productId":"zero","title":"Free?","unitPrice":0},'
+                '{"productId":"ok","title":"Fine","unitPrice":2}]',
+      });
+      CartStore.instance.resetForTest();
+      await CartStore.instance.load();
+      // Rs. 0 is what the shopper would be asked to pay.
+      expect(CartStore.instance.lines.map((l) => l.productId), ['ok']);
+    });
+
     test('a stored quantity of zero is repaired to the floor', () async {
       SharedPreferences.setMockInitialValues({
         'gtradea_cart':

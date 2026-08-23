@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/colors.dart';
 import '../../auth/data/auth_store.dart';
 import '../../cart/data/cart_store.dart';
+import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 
 /// Review and place the order.
@@ -175,39 +176,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     ),
                   ),
                 const Divider(height: 18),
-                _Row(
-                  label: 'Subtotal',
-                  value: formatRupees(totals.subtotal),
-                ),
-                if (totals.savings > 0)
-                  _Row(
-                    label: 'You save',
-                    value: '-${formatRupees(totals.savings)}',
-                    valueColor: AppColors.success,
-                  ),
-                _Row(
-                  label: 'Delivery',
-                  value: totals.delivery == 0
-                      ? 'Free'
-                      : formatRupees(totals.delivery),
-                  valueColor: totals.delivery == 0 ? AppColors.success : null,
-                ),
-                const Divider(height: 18),
-                _Row(
-                  label: 'Total',
-                  value: formatRupees(totals.total),
-                  emphasised: true,
-                ),
-                if (totals.vatIncluded >= 1)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      'Includes ${formatRupees(totals.vatIncluded)} VAT',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
+                // The same widget the cart renders. If these two screens each
+                // had their own version, they could disagree about the total
+                // for one order, and a shopper who noticed would be right to
+                // stop trusting both.
+                CartSummary(totals: totals),
               ],
             ),
           ),
@@ -277,52 +250,3 @@ class _Section extends StatelessWidget {
   }
 }
 
-class _Row extends StatelessWidget {
-  const _Row({
-    required this.label,
-    required this.value,
-    this.valueColor,
-    this.emphasised = false,
-  });
-
-  final String label;
-  final String value;
-  final Color? valueColor;
-  final bool emphasised;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: emphasised
-                  ? theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700)
-                  : theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-            ),
-          ),
-          Text(
-            value,
-            style: emphasised
-                ? theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: theme.colorScheme.primary,
-                  )
-                : theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: valueColor,
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
