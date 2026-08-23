@@ -52,6 +52,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
   late final _city = TextEditingController(text: _start?.city);
   late final _area = TextEditingController(text: _start?.area);
   late final _landmark = TextEditingController(text: _start?.landmark);
+  late final _postal = TextEditingController(text: _start?.postalCode);
 
   late AddressLabel _label = _start?.label ?? AddressLabel.home;
   late String _province = (_start?.province.isNotEmpty ?? false)
@@ -69,6 +70,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
     _city.dispose();
     _area.dispose();
     _landmark.dispose();
+    _postal.dispose();
     super.dispose();
   }
 
@@ -86,6 +88,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
         city: _city.text,
         area: _area.text,
         landmark: _landmark.text,
+        postalCode: _postal.text,
       );
       store.update(saved);
       if (_makeDefault) store.setDefault(saved.id);
@@ -98,6 +101,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
         city: _city.text,
         area: _area.text,
         landmark: _landmark.text,
+        postalCode: _postal.text,
         makeDefault: _makeDefault,
       );
     }
@@ -226,6 +230,20 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
                 validator: (value) => (value ?? '').trim().isEmpty
                     ? 'Enter the street and house'
                     : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _postal,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Postal code (optional)',
+                  prefixIcon: Icon(Icons.markunread_mailbox_outlined),
+                  // Optional because plenty of Nepali addresses do not carry
+                  // one, and demanding it would block the shoppers who have
+                  // none from saving anything at all.
+                  helperText: 'Leave blank if you do not have one',
+                ),
               ),
               const SizedBox(height: 14),
               TextFormField(

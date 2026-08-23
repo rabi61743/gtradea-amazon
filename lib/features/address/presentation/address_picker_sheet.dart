@@ -76,21 +76,22 @@ class _AddressPickerSheetState extends State<AddressPickerSheet> {
     super.dispose();
   }
 
-  Future<void> _addNew({String? city, String? province}) async {
+  Future<void> _addNew([DetectedPlace? found]) async {
     final created = await AddressFormSheet.show(
       context,
-      // A seed, not an edit: the form opens with the city and province filled
-      // and the cursor free for the part only the shopper knows.
-      seed: city == null
+      // A seed, not an edit: the form opens with whatever was worked out and
+      // the cursor free for the parts only the shopper knows.
+      seed: found == null
           ? null
           : Address(
               id: '',
               label: AddressLabel.home,
               fullName: AuthStore.instance.account?.displayName ?? '',
               phone: '',
-              province: province ?? '',
-              city: city,
-              area: '',
+              province: found.province,
+              city: found.city,
+              area: found.addressLine ?? '',
+              postalCode: found.postalCode,
             ),
     );
     if (created != null && mounted) Navigator.of(context).pop(created);
@@ -131,19 +132,18 @@ class _AddressPickerSheetState extends State<AddressPickerSheet> {
                   controller: controller,
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                   children: [
-                    UseMyLocationTile(
-                      onDetected: (found) => _addNew(
-                        city: found.city,
-                        province: found.province,
-                      ),
-                    ),
+                    UseMyLocationTile(onDetected: _addNew),
                     const SizedBox(height: 16),
                     if (store.isEmpty)
                       _NoAddresses(
                         signedIn: signedIn,
                         quickCities: _quickCities,
-                        onPick: (city, province) =>
-                            _addNew(city: city, province: province),
+                        onPick: (city, province) => _addNew((
+                              city: city,
+                              province: province,
+                              addressLine: null,
+                              postalCode: null,
+                            )),
                       )
                     else ...[
                       if (matches.isEmpty)

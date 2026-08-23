@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
 /// A city this shop delivers to, and where it is.
@@ -12,11 +14,12 @@ class ServedCity {
   final double longitude;
 }
 
-/// The cities a detected position is matched against.
+/// The cities a position falls back to when the platform geocoder cannot
+/// answer -- offline, or somewhere it has no data for.
 ///
-/// Coordinates are approximate city centres, which is all this needs: the
-/// question being answered is "which town is the shopper in", not "which
-/// building". Adding a city here is the whole cost of serving a new one.
+/// Coordinates are approximate city centres, which is all the fallback needs:
+/// it is answering "which town", not "which building". Adding a city here is
+/// the whole cost of serving a new one.
 const kServedCities = <ServedCity>[
   ServedCity('Kathmandu', 'Bagmati', 27.7172, 85.3240),
   ServedCity('Lalitpur', 'Bagmati', 27.6644, 85.3188),
@@ -41,25 +44,91 @@ const kServedCities = <ServedCity>[
 const kMaxMatchKm = 120.0;
 
 /// What came back from a detection attempt.
+///
+/// One case per thing that can actually happen, because each needs the shopper
+/// told something different and offered a different way out. A single "failed"
+/// would leave them with nothing to do next.
 sealed class DetectResult {
   const DetectResult();
 }
 
-/// Found, and near enough to a city to name it.
+/// Found, and turned into something a courier could read.
 class DetectResolved extends DetectResult {
   const DetectResolved({
     required this.city,
     required this.province,
+    this.street,
+    this.area,
+    this.postalCode,
     required this.distanceKm,
+    required this.fromGeocoder,
   });
 
   final String city;
   final String province;
+
+  /// Street and house, when the platform geocoder could name one.
+  final String? street;
+
+  /// Neighbourhood or tole.
+  final String? area;
+
+  final String? postalCode;
+
+  /// How far the fix was from the matched city centre. Only meaningful for the
+  /// offline fallback.
   final double distanceKm;
 
-  /// True when the fix is far enough out that the city is a guess worth
-  /// flagging rather than stating.
-  bool get isApproximate => distanceKm > 25;
+  /// True when a real geocoder named this, false when it came from the offline
+  /// city table. The difference is worth showing: one is an address, the other
+  /// is a nearest town.
+  final bool fromGeocoder;
+
+  /// The line to prefill the street field with.
+  ///
+  /// Platform geocoders hand back a whole formatted address in [street] --
+  /// "M8G5+6V8, 3 Bakhundole, Lalitpur 44600, Nepal" is a real one. Repeating
+  /// the city, the postcode and the country in a field labelled "tole, street
+  /// and house number" makes the form look wrong and gives the shopper a line
+  /// to clean up. Anything that already has its own field is dropped, and so
+  /// is the plus code, which no courier reads.
+  String? get addressLine {
+    final seen = <String>{};
+    final kept = <String>[];
+
+    for (final part in [
+      ...?street?.split(','),
+      ...?area?.split(','),
+    ]) {
+      final piece = part.trim();
+      if (piece.isEmpty) continue;
+      if (_isPlusCode(piece)) continue;
+
+      final lower = piece.toLowerCase();
+      if (lower == city.toLowerCase()) continue;
+      if (lower == province.toLowerCase()) continue;
+      if (lower == 'nepal') continue;
+      if (postalCode != null && piece == postalCode) continue;
+      // "Lalitpur 44600" -- the city and postcode glued together.
+      if (postalCode != null &&
+          lower == '${city.toLowerCase()} ${postalCode!.toLowerCase()}') {
+        continue;
+      }
+      if (!seen.add(lower)) continue;
+
+      kept.add(piece);
+    }
+
+    return kept.isEmpty ? null : kept.join(', ');
+  }
+
+  /// An Open Location Code, like "M8G5+6V8". Precise, and useless to a person.
+  static bool _isPlusCode(String value) =>
+      RegExp(r'^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}$')
+          .hasMatch(value.toUpperCase());
+
+  /// True when this is a guess worth hedging about rather than stating.
+  bool get isApproximate => !fromGeocoder && distanceKm > 25;
 }
 
 /// Located, but nowhere near anywhere this shop delivers to.
@@ -71,40 +140,70 @@ class DetectOutsideServedArea extends DetectResult {
 }
 
 /// The shopper said no. [permanently] means the OS will not ask again and the
-/// only way back is system settings, which the UI has to say rather than
-/// looping on a prompt that never appears.
+/// only way back is app settings.
 class DetectPermissionDenied extends DetectResult {
   const DetectPermissionDenied({required this.permanently});
   final bool permanently;
 }
 
 /// Location is switched off on the device, which no permission grant fixes.
+/// The way out is the system location settings.
 class DetectServiceDisabled extends DetectResult {
   const DetectServiceDisabled();
 }
 
-/// Something else went wrong -- no fix in time, a hardware failure, a plugin
-/// missing on this platform.
+/// A fix was asked for and never arrived in time. Usually indoors.
+class DetectTimeout extends DetectResult {
+  const DetectTimeout();
+}
+
+/// The device could not produce a position at all -- no provider, airplane
+/// mode, hardware refusing. Different from a timeout: waiting longer will not
+/// help.
+class DetectUnavailable extends DetectResult {
+  const DetectUnavailable();
+}
+
+/// Anything else, kept so an unexpected platform error is still reported
+/// rather than swallowed.
 class DetectFailed extends DetectResult {
   const DetectFailed(this.reason);
   final String reason;
 }
 
-/// Turns a device position into a city this shop knows.
+/// Turns "where am I" into something the address form can use.
 ///
-/// There is no reverse-geocoding service here, and rather than pretend
-/// otherwise this matches the fix against [kServedCities]. That is honest
-/// about what it can deliver: the city and province, filled in for the
-/// shopper, with the street still theirs to write. It also works with no
-/// network, which a geocoder would not.
+/// The platform's own geocoder is asked first -- Android's Geocoder, iOS's
+/// CLGeocoder -- which is what can give a street and a postal code. When it
+/// has nothing, which happens offline and in places it has no data for, the
+/// fix falls back to the nearest served city so the shopper still gets the
+/// town filled in rather than an error.
 ///
-/// [instance] is replaceable so the sheets can be tested without a device.
+/// [instance] is replaceable so the UI can be tested without a device.
 class LocationDetector {
   const LocationDetector();
 
   static LocationDetector instance = const LocationDetector();
 
-  /// Asks the OS where we are, then names the nearest city.
+  /// How long to wait for a fix before giving up and saying so.
+  static const fixTimeout = Duration(seconds: 15);
+
+  /// Built once. In geocoding 5 the reverse lookup hangs off an instance
+  /// rather than a top-level function.
+  static final _geocoding = Geocoding();
+
+  /// Whether the device's location service is on.
+  ///
+  /// Exposed separately so the UI can re-check after sending the shopper to
+  /// settings, without asking for a position and triggering a prompt.
+  Future<bool> isServiceEnabled() => Geolocator.isLocationServiceEnabled();
+
+  /// Opens the system location settings, for when the service is off.
+  Future<bool> openLocationSettings() => Geolocator.openLocationSettings();
+
+  /// Opens this app's settings page, for a permission refused for good.
+  Future<bool> openAppSettings() => Geolocator.openAppSettings();
+
   Future<DetectResult> detect() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
@@ -124,23 +223,95 @@ class LocationDetector {
 
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          // Coarse is the right accuracy for the question. A city-level answer
-          // does not need a GPS lock, and asking for one costs the shopper a
-          // long wait and a warm phone for no better answer.
+          // Coarse: a delivery address needs the street, and the geocoder
+          // supplies that from a rough fix. A GPS lock would cost the shopper
+          // a long wait and a warm phone for the same answer.
           accuracy: LocationAccuracy.low,
-          timeLimit: Duration(seconds: 12),
+          timeLimit: fixTimeout,
         ),
       );
 
-      return matchPosition(position.latitude, position.longitude);
+      return await describe(position.latitude, position.longitude);
+    } on TimeoutException {
+      return const DetectTimeout();
+    } on LocationServiceDisabledException {
+      // The service can be switched off between the check above and the fix.
+      return const DetectServiceDisabled();
+    } on PermissionDeniedException {
+      return const DetectPermissionDenied(permanently: false);
     } catch (error) {
+      final text = error.toString().toLowerCase();
+      if (text.contains('timeout') || text.contains('timed out')) {
+        return const DetectTimeout();
+      }
+      if (text.contains('unavailable') || text.contains('position update')) {
+        return const DetectUnavailable();
+      }
       return DetectFailed(error.toString());
     }
   }
 
-  /// The pure half: coordinates in, a result out.
+  /// Coordinates to an address, geocoder first and the city table second.
+  Future<DetectResult> describe(double latitude, double longitude) async {
+    try {
+      final places = await _geocoding.placemarkFromCoordinates(
+        latitude,
+        longitude,
+      );
+      final place = places.isEmpty ? null : places.first;
+
+      final city = _firstNonEmpty([
+        place?.locality,
+        place?.subAdministrativeArea,
+        place?.administrativeArea,
+      ]);
+
+      if (place != null && city != null) {
+        return DetectResolved(
+          city: city,
+          province: _province(place, latitude, longitude),
+          street: _firstNonEmpty([place.street, place.thoroughfare]),
+          area: _firstNonEmpty([place.subLocality, place.subThoroughfare]),
+          postalCode: _firstNonEmpty([place.postalCode]),
+          distanceKm: 0,
+          fromGeocoder: true,
+        );
+      }
+    } catch (_) {
+      // No geocoder, no network, or nothing known about here. Falling through
+      // to the offline match is better than telling the shopper it failed --
+      // the town is still worth filling in.
+    }
+
+    return matchPosition(latitude, longitude);
+  }
+
+  /// Province, preferring what the geocoder said and falling back to the
+  /// nearest served city's, since the geocoder often gives a district name
+  /// this shop's province list would not recognise.
+  static String _province(Placemark place, double latitude, double longitude) {
+    final given = _firstNonEmpty([place.administrativeArea]);
+    if (given != null) {
+      for (final city in kServedCities) {
+        if (city.province.toLowerCase() == given.toLowerCase()) return given;
+      }
+    }
+    final nearest = matchPosition(latitude, longitude);
+    return nearest is DetectResolved ? nearest.province : (given ?? '');
+  }
+
+  static String? _firstNonEmpty(List<String?> candidates) {
+    for (final candidate in candidates) {
+      if (candidate != null && candidate.trim().isNotEmpty) {
+        return candidate.trim();
+      }
+    }
+    return null;
+  }
+
+  /// The offline half: coordinates in, nearest served city out.
   ///
-  /// Separated from the plugin so the matching can be tested properly, which
+  /// Separated from the plugins so the matching can be tested properly, which
   /// is where the logic worth testing actually lives.
   static DetectResult matchPosition(double latitude, double longitude) {
     if (kServedCities.isEmpty) {
@@ -165,6 +336,7 @@ class LocationDetector {
       city: nearest.city,
       province: nearest.province,
       distanceKm: best,
+      fromGeocoder: false,
     );
   }
 

@@ -51,6 +51,7 @@ class Address {
     required this.city,
     required this.area,
     this.landmark,
+    this.postalCode,
   });
 
   final String id;
@@ -69,17 +70,31 @@ class Address {
   /// found by landmark rather than by street number.
   final String? landmark;
 
+  /// Filled by the geocoder when it knows one. Optional because plenty of
+  /// Nepali addresses do not carry one, and demanding it would block the form
+  /// for the shoppers who have none.
+  final String? postalCode;
+
   /// One line, for a list row or an order record.
   String get oneLine => [area, city, province].where((p) => p.isNotEmpty).join(', ');
 
   /// The whole thing, for a confirmation screen where being sure matters more
   /// than being brief.
-  String get full => [
-        area,
-        if (landmark != null && landmark!.trim().isNotEmpty) 'Near ${landmark!.trim()}',
-        city,
-        province,
-      ].where((part) => part.isNotEmpty).join(', ');
+  String get full {
+    final tail = [
+      province,
+      if (postalCode != null && postalCode!.trim().isNotEmpty)
+        postalCode!.trim(),
+    ].where((part) => part.isNotEmpty).join(' ');
+
+    return [
+      area,
+      if (landmark != null && landmark!.trim().isNotEmpty)
+        'Near ${landmark!.trim()}',
+      city,
+      tail,
+    ].where((part) => part.isNotEmpty).join(', ');
+  }
 
   Address copyWith({
     AddressLabel? label,
@@ -89,6 +104,7 @@ class Address {
     String? city,
     String? area,
     String? landmark,
+    String? postalCode,
   }) =>
       Address(
         id: id,
@@ -99,6 +115,7 @@ class Address {
         city: city ?? this.city,
         area: area ?? this.area,
         landmark: landmark ?? this.landmark,
+        postalCode: postalCode ?? this.postalCode,
       );
 
   Map<String, dynamic> toJson() => {
@@ -110,6 +127,7 @@ class Address {
         'city': city,
         'area': area,
         'landmark': landmark,
+        'postalCode': postalCode,
       };
 
   /// An address missing the parts a courier needs is not an address. Dropped
@@ -134,6 +152,8 @@ class Address {
       city: city,
       area: area,
       landmark: json['landmark'] is String ? json['landmark'] as String : null,
+      postalCode:
+          json['postalCode'] is String ? json['postalCode'] as String : null,
     );
   }
 }
@@ -272,6 +292,7 @@ class AddressStore extends ChangeNotifier {
     required String city,
     required String area,
     String? landmark,
+    String? postalCode,
     bool makeDefault = false,
     String? id,
   }) {
@@ -284,6 +305,8 @@ class AddressStore extends ChangeNotifier {
       city: city.trim(),
       area: area.trim(),
       landmark: landmark?.trim().isEmpty ?? true ? null : landmark!.trim(),
+      postalCode:
+          postalCode?.trim().isEmpty ?? true ? null : postalCode!.trim(),
     );
 
     _addresses.add(address);
