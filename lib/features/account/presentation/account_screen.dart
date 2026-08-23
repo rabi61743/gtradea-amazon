@@ -7,6 +7,7 @@ import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/presentation/cart_screen.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
+import '../../notifications/presentation/notification_settings_screen.dart';
 import '../../orders/data/order_store.dart';
 import '../../orders/presentation/orders_screen.dart';
 import '../../product/presentation/product_detail_screen.dart';
@@ -127,7 +128,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   _RowSpec(
                     icon: Icons.notifications_none,
                     label: 'Notifications',
-                    onTap: () => _todo('Notifications'),
+                    onTap: () =>
+                        _push(const NotificationSettingsScreen()),
                   ),
                   _RowSpec(
                     icon: Icons.location_on_outlined,

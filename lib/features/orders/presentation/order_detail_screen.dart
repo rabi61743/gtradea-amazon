@@ -11,6 +11,7 @@ import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../data/order_store.dart';
 import '../widgets/order_status_chip.dart';
+import '../../../core/time_format.dart';
 import '../widgets/order_timeline.dart';
 
 /// One order: where it has got to, what is in it, and what was paid.

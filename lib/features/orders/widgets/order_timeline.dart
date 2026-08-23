@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/colors.dart';
+import '../../../core/time_format.dart';
 import '../data/order_store.dart';
 
 /// The parcel's progress, one row per stage.
@@ -208,41 +209,3 @@ class _Marker extends StatelessWidget {
   }
 }
 
-/// Dates the way a delivery is talked about: today and tomorrow by name, and
-/// a short date otherwise. "Delivered on 23 Aug, 8:41 pm" is checkable in a
-/// way that "2026-08-23T20:41:07" is not.
-String formatWhen(DateTime when) {
-  final now = DateTime.now();
-  final day = DateTime(when.year, when.month, when.day);
-  final today = DateTime(now.year, now.month, now.day);
-  final difference = day.difference(today).inDays;
-
-  final time = _time(when);
-  if (difference == 0) return 'Today, $time';
-  if (difference == 1) return 'Tomorrow, $time';
-  if (difference == -1) return 'Yesterday, $time';
-  return '${when.day} ${_months[when.month - 1]}, $time';
-}
-
-/// Just the day, for an estimate where the minute is false precision.
-String formatDay(DateTime when) {
-  final now = DateTime.now();
-  final day = DateTime(when.year, when.month, when.day);
-  final today = DateTime(now.year, now.month, now.day);
-  final difference = day.difference(today).inDays;
-
-  if (difference == 0) return 'today';
-  if (difference == 1) return 'tomorrow';
-  return '${when.day} ${_months[when.month - 1]}';
-}
-
-String _time(DateTime when) {
-  final hour = when.hour % 12 == 0 ? 12 : when.hour % 12;
-  final minute = when.minute.toString().padLeft(2, '0');
-  return '$hour:$minute ${when.hour < 12 ? 'am' : 'pm'}';
-}
-
-const _months = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];

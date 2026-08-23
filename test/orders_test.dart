@@ -6,7 +6,7 @@ import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/orders/data/order_store.dart';
 import 'package:gtradea_amazon/features/orders/presentation/order_detail_screen.dart';
 import 'package:gtradea_amazon/features/orders/presentation/orders_screen.dart';
-import 'package:gtradea_amazon/features/orders/widgets/order_timeline.dart';
+import 'package:gtradea_amazon/core/time_format.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _jacket = CartLine(

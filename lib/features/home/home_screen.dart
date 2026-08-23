@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../shared/widgets/app_bottom_nav.dart';
@@ -5,6 +7,7 @@ import '../account/presentation/account_screen.dart';
 import '../auth/data/auth_store.dart';
 import '../cart/data/cart_store.dart';
 import '../cart/presentation/cart_screen.dart';
+import '../notifications/data/notification_store.dart';
 import '../orders/data/order_store.dart';
 import '../search/presentation/search_entry_screen.dart';
 import '../wishlist/data/wishlist_store.dart';
@@ -43,8 +46,53 @@ class _HomeScreenState extends State<HomeScreen> {
     // the cart to the right identity.
     CartStore.instance.bindToAuth();
     OrderStore.instance.bindToAuth();
+    NotificationStore.instance.bindToAuth();
     OrderStore.instance.load();
     CartStore.instance.load();
+
+    // The feed catches up at startup: orders progress on a clock, so anything
+    // that happened while the app was closed still has to be announced.
+    unawaited(_catchUpNotifications());
+
+    // Sign-in and sign-out are the account events worth telling someone about,
+    // and this is the one place that watches identity for the whole app.
+    AuthStore.instance.addListener(_onAuthChanged);
+  }
+
+  @override
+  void dispose() {
+    AuthStore.instance.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    final account = AuthStore.instance.account;
+    if (account == null) return;
+    NotificationStore.instance.recordAccountEvent(
+      // Keyed on the session so signing in again later is a new entry, but a
+      // rebuild is not.
+      id: 'signin:${account.email}:${DateTime.now().millisecondsSinceEpoch ~/ 60000}',
+      title: 'Signed in',
+      body: 'You are signed in as ${account.email}.',
+    );
+  }
+
+  Future<void> _catchUpNotifications() async {
+    await NotificationSettings.instance.load();
+    await NotificationStore.instance.load();
+    await OrderStore.instance.load();
+    if (!mounted) return;
+
+    NotificationStore.instance.syncFromOrders(OrderStore.instance.orders);
+    // Offers the storefront is actually running, rather than invented ones:
+    // these are the same promos the home feed shows.
+    for (final promo in HomeContent.promos) {
+      NotificationStore.instance.recordPromotion(
+        id: promo.headline,
+        title: promo.headline,
+        body: promo.caption,
+      );
+    }
   }
 
   void _openPage(BuildContext context, Widget page) {

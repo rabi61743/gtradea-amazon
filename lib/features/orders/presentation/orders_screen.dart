@@ -7,7 +7,7 @@ import '../../../shared/widgets/artwork_panel.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../data/order_store.dart';
 import '../widgets/order_status_chip.dart';
-import '../widgets/order_timeline.dart' show formatDay, formatWhen;
+import '../../../core/time_format.dart';
 import 'order_detail_screen.dart';
 
 /// Every order the shopper has placed, newest first.
