@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/l10n/app_strings.dart';
 import '../../shared/widgets/app_bottom_nav.dart';
 import '../account/presentation/account_screen.dart';
 import '../auth/data/auth_store.dart';
@@ -41,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     WishlistStore.instance.load();
+    LanguageStore.instance.load();
     AuthStore.instance.load();
     // Bound before the load so a sign-in that lands mid-startup still moves
     // the cart to the right identity.
@@ -214,6 +216,7 @@ class _HomeScreenState extends State<HomeScreen> {
           WishlistStore.instance,
           AuthStore.instance,
           CartStore.instance,
+          LanguageStore.instance,
         ]),
         // Home is the shell and every other destination opens on top of it, so
         // the selected index is always Home. The bar is a row of shortcuts
@@ -221,6 +224,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // destination highlighted for a page that had since been popped.
         builder: (context, _) => AppBottomNav(
           currentIndex: 0,
+          strings: LanguageStore.instance.strings,
           savedCount: WishlistStore.instance.count,
           cartCount: CartStore.instance.count,
           isSignedIn: AuthStore.instance.isSignedIn,

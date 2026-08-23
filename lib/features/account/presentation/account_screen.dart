@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/artwork_panel.dart';
+import '../../../core/l10n/app_strings.dart';
 import '../../auth/data/auth_store.dart';
 import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
@@ -11,6 +12,7 @@ import '../../notifications/presentation/notification_settings_screen.dart';
 import '../../orders/data/order_store.dart';
 import '../../orders/presentation/orders_screen.dart';
 import '../../product/presentation/product_detail_screen.dart';
+import '../../settings/presentation/language_screen.dart';
 import '../../wishlist/data/wishlist_store.dart';
 import '../../wishlist/presentation/wishlist_screen.dart';
 import '../data/recently_viewed_store.dart';
@@ -38,6 +40,7 @@ class _AccountScreenState extends State<AccountScreen> {
     CartStore.instance.load();
     RecentlyViewedStore.instance.load();
     OrderStore.instance.load();
+    LanguageStore.instance.load();
   }
 
   void _push(Widget page) {
@@ -63,6 +66,7 @@ class _AccountScreenState extends State<AccountScreen> {
         CartStore.instance,
         RecentlyViewedStore.instance,
         OrderStore.instance,
+        LanguageStore.instance,
       ]),
       builder: (context, _) {
         final account = AuthStore.instance.account;
@@ -121,9 +125,9 @@ class _AccountScreenState extends State<AccountScreen> {
                 rows: [
                   _RowSpec(
                     icon: Icons.translate,
-                    label: 'Language',
-                    trailing: 'English',
-                    onTap: () => _todo('Language'),
+                    label: LanguageStore.instance.strings.language,
+                    trailing: LanguageStore.instance.language.nativeName,
+                    onTap: () => _push(const LanguageScreen()),
                   ),
                   _RowSpec(
                     icon: Icons.notifications_none,

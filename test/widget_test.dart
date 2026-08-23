@@ -29,9 +29,10 @@ void main() {
     // Every other destination opens on top of Home rather than switching a
     // tab, so the selection never moves off Home -- highlighting a destination
     // for a page that had since been popped would be a lie.
-    await tester.tap(find.text('Browse'));
+    await tester.tap(find.text('Categories'));
     await tester.pumpAndSettle();
-    expect(find.text('Browse'), findsWidgets);
+    // The pushed screen carries the same name the destination did.
+    expect(find.text('Categories'), findsWidgets);
 
     await tester.pageBack();
     await tester.pumpAndSettle();

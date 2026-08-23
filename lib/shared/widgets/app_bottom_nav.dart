@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/l10n/app_strings.dart';
+
 /// Five-destination bottom bar: Home, Saved, Account, Cart, Menu.
 ///
 /// The cart carries a live count as a badge; it is shown even at zero so the
@@ -12,6 +14,7 @@ class AppBottomNav extends StatelessWidget {
     this.cartCount = 0,
     this.savedCount = 0,
     this.isSignedIn = false,
+    this.strings,
   });
 
   final int currentIndex;
@@ -25,9 +28,14 @@ class AppBottomNav extends StatelessWidget {
   /// the store here so this stays a presentational widget.
   final bool isSignedIn;
 
+  /// Labels for the destinations. Defaults to English so a widget test or a
+  /// preview can build the bar without wiring the language store.
+  final AppStrings? strings;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final t = strings ?? AppStrings.en;
 
     return NavigationBar(
       selectedIndex: currentIndex,
@@ -38,10 +46,10 @@ class AppBottomNav extends StatelessWidget {
       height: 64,
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       destinations: [
-        const NavigationDestination(
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home),
-          label: 'Home',
+        NavigationDestination(
+          icon: const Icon(Icons.home_outlined),
+          selectedIcon: const Icon(Icons.home),
+          label: t.home,
         ),
         NavigationDestination(
           icon: Badge.count(
@@ -54,7 +62,7 @@ class AppBottomNav extends StatelessWidget {
             isLabelVisible: savedCount > 0,
             child: const Icon(Icons.favorite),
           ),
-          label: 'Saved',
+          label: t.saved,
         ),
         // "Sign in" rather than the full "Sign In / Sign Up": a five-slot bar
         // gives each label about 78dp, and the longer string truncates on a
@@ -67,7 +75,7 @@ class AppBottomNav extends StatelessWidget {
           selectedIcon: Icon(
             isSignedIn ? Icons.account_circle : Icons.person,
           ),
-          label: isSignedIn ? 'Account' : 'Sign in',
+          label: isSignedIn ? t.account : t.signIn,
         ),
         NavigationDestination(
           icon: Badge.count(
@@ -80,12 +88,12 @@ class AppBottomNav extends StatelessWidget {
             isLabelVisible: true,
             child: const Icon(Icons.shopping_cart),
           ),
-          label: 'Cart',
+          label: t.cart,
         ),
-        const NavigationDestination(
-          icon: Icon(Icons.grid_view_outlined),
-          selectedIcon: Icon(Icons.grid_view),
-          label: 'Browse',
+        NavigationDestination(
+          icon: const Icon(Icons.grid_view_outlined),
+          selectedIcon: const Icon(Icons.grid_view),
+          label: t.categories,
         ),
       ],
     );

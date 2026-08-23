@@ -19,6 +19,7 @@ class Department {
     required this.tint,
     required this.tagline,
     required this.groups,
+    this.imageUrl,
   });
 
   final String label;
@@ -30,6 +31,10 @@ class Department {
   final String tagline;
 
   final List<CatalogGroup> groups;
+
+  /// The one photograph in a department's block. Null falls back to the
+  /// tinted glyph, which is what the tiles below use anyway.
+  final String? imageUrl;
 
   int get entryCount =>
       groups.fold(0, (sum, group) => sum + group.entries.length);
@@ -63,6 +68,7 @@ class CatalogContent {
       icon: Icons.memory,
       tint: Color(0xFF6366F1),
       tagline: 'Audio, computing and everything that plugs in',
+      imageUrl: 'https://loremflickr.com/400/400/electronics?lock=25',
       groups: [
         CatalogGroup(title: 'Audio and devices', entries: HomeContent.electronics),
         CatalogGroup(title: 'Computing', entries: HomeContent.computing),
@@ -74,6 +80,7 @@ class CatalogContent {
       icon: Icons.chair,
       tint: Color(0xFF0891B2),
       tagline: 'Furnish it, light it, and cook in it',
+      imageUrl: 'https://loremflickr.com/400/400/kitchen?lock=23',
       groups: [
         CatalogGroup(title: 'Living and dining', entries: HomeContent.homeGoods),
         CatalogGroup(title: 'Kitchen', entries: _kitchen),
@@ -85,6 +92,7 @@ class CatalogContent {
       icon: Icons.checkroom,
       tint: Color(0xFFF59E0B),
       tagline: 'Everyday wear, footwear and the bits that finish it',
+      imageUrl: 'https://loremflickr.com/400/400/outdoor,jacket?lock=26',
       groups: [
         CatalogGroup(title: 'Footwear', entries: HomeContent.shoes),
         CatalogGroup(title: 'Clothing', entries: _clothing),
@@ -102,6 +110,7 @@ class CatalogContent {
       icon: Icons.sports_baseball,
       tint: Color(0xFF059669),
       tagline: 'Training at home and days out of it',
+      imageUrl: 'https://loremflickr.com/400/400/sports?lock=24',
       groups: [CatalogGroup(title: 'Training and outdoors', entries: _sports)],
     ),
     Department(
@@ -116,6 +125,7 @@ class CatalogContent {
       icon: Icons.pets,
       tint: Color(0xFFA855F7),
       tagline: 'Food, bedding and things to chew',
+      imageUrl: 'https://loremflickr.com/400/400/pets?lock=27',
       groups: [CatalogGroup(title: 'For your pets', entries: HomeContent.pets)],
     ),
   ];
