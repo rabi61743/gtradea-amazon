@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/widgets/app_bottom_nav.dart';
+import '../search/presentation/search_entry_screen.dart';
 import 'home_content.dart';
 import 'widgets/category_section.dart';
 import 'widgets/deal_group.dart';
@@ -26,6 +27,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
 
+
+  void _openSearch(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SearchEntryScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -33,7 +41,10 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // Outside the scroll view on purpose: search stays reachable no
           // matter how far down the feed the customer is.
-          SearchHeader(onTap: () {}, onImageSearch: () {}),
+          SearchHeader(
+            onTap: () => _openSearch(context),
+            onImageSearch: () => _openSearch(context),
+          ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.only(bottom: 24),
