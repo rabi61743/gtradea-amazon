@@ -13,6 +13,7 @@ class ProductItem {
     required this.reviewCount,
     required this.icon,
     required this.tint,
+    this.imageUrl,
     this.listPrice,
   });
 
@@ -27,6 +28,9 @@ class ProductItem {
   final int reviewCount;
   final IconData icon;
   final Color tint;
+
+  /// Photograph for the tile; falls back to the tinted panel when absent.
+  final String? imageUrl;
 }
 
 /// Horizontally scrolling product cards under a section heading.
@@ -89,7 +93,15 @@ class _ProductCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ArtworkPanel(icon: item.icon, tint: item.tint, iconScale: 0.38),
+          // Square, not Expanded: this card stacks in an unbounded column,
+          // so the panel has to declare its own height.
+          ArtworkPanel(
+            icon: item.icon,
+            tint: item.tint,
+            imageUrl: item.imageUrl,
+            aspectRatio: 1,
+            iconScale: 0.38,
+          ),
           const SizedBox(height: 8),
           Text(
             item.title,

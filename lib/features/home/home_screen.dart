@@ -4,6 +4,7 @@ import '../../shared/widgets/app_bottom_nav.dart';
 import 'home_content.dart';
 import 'widgets/category_section.dart';
 import 'widgets/deal_group.dart';
+import 'widgets/hero_banner.dart';
 import 'widgets/department_grid.dart';
 import 'widgets/product_rail.dart';
 import 'widgets/promo_rail.dart';
@@ -37,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen> {
             child: ListView(
               padding: const EdgeInsets.only(bottom: 24),
               children: [
+                const SizedBox(height: 14),
+                const HeroBanner(items: HomeContent.banners),
                 const PromoRail(items: HomeContent.promos),
                 CategorySection(
                   title: 'Electronics',

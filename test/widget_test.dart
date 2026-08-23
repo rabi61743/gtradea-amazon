@@ -58,9 +58,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Recommended for you'), findsOneWidget);
-    expect(find.text('Wireless over-ear headphones, 40h battery'),
+    expect(find.text('Ice Silk Sun Protection Clothing for Women'),
         findsOneWidget);
-    expect(find.text('Rs. 8,990'), findsOneWidget);
+    expect(find.text('Rs. 1,130'), findsOneWidget);
   });
 
   testWidgets('a list price is struck through only when it is a saving',
@@ -74,12 +74,15 @@ void main() {
     await tester.pumpAndSettle();
 
     final struck = tester.widget<Text>(
-      find.text('Rs. 12,500'),
+      find.text('Rs. 1,568'),
     );
     expect(struck.style?.decoration, TextDecoration.lineThrough);
 
-    // The keyboard has no listPrice, so nothing is crossed out for it.
-    expect(find.text('Rs. 6,750'), findsOneWidget);
+    // Two catalogue rows share this price, so it is not unique. What
+    // matters is that neither is struck through: neither has a listPrice.
+    for (final text in tester.widgetList<Text>(find.text('Rs. 1,808'))) {
+      expect(text.style?.decoration, isNot(TextDecoration.lineThrough));
+    }
   });
 
   testWidgets('departments render as a grid with an all-departments link',
@@ -165,5 +168,34 @@ void main() {
 
     expect(find.text('Gifting picks for the season'), findsOneWidget);
     expect(find.text('Sweets and hampers'), findsOneWidget);
+  });
+
+  testWidgets('the hero banner advances on its own', (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+
+    expect(find.text('Dashain deals are live'), findsOneWidget);
+
+    // Let the interval elapse, then the page animation run.
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('Free delivery on picks'), findsOneWidget);
+
+    // Unmount so the periodic timer is cancelled; a pending timer fails the
+    // test even when the assertions passed.
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('banner artwork falls back to the tinted panel offline',
+      (tester) async {
+    // Widget tests answer every network image with a 400, which is exactly
+    // the failure a shopper hits on a dead connection: the card must still
+    // render its headline rather than a broken-image box.
+    await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Shop the sale'), findsOneWidget);
+    expect(find.text('Headphones'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }

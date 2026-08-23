@@ -11,6 +11,7 @@ class DealItem {
     required this.teaser,
     required this.icon,
     required this.tint,
+    this.imageUrl,
   });
 
   final String label;
@@ -22,6 +23,9 @@ class DealItem {
 
   final IconData icon;
   final Color tint;
+
+  /// Photograph for the tile; falls back to the tinted panel when absent.
+  final String? imageUrl;
 }
 
 /// A titled block sitting on its own tinted card.
@@ -116,7 +120,11 @@ class _DealCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: ArtworkPanel(icon: item.icon, tint: item.tint),
+                child: ArtworkPanel(
+                  icon: item.icon,
+                  tint: item.tint,
+                  imageUrl: item.imageUrl,
+                ),
               ),
               const SizedBox(height: 8),
               Text(

@@ -9,11 +9,15 @@ class CategoryEntry {
     required this.label,
     required this.icon,
     required this.tint,
+    this.imageUrl,
   });
 
   final String label;
   final IconData icon;
   final Color tint;
+
+  /// Photograph for the tile; falls back to the tinted panel when absent.
+  final String? imageUrl;
 }
 
 /// A titled block of category tiles.
@@ -68,6 +72,7 @@ class CategorySection extends StatelessWidget {
                 label: entry.label,
                 icon: entry.icon,
                 tint: entry.tint,
+                imageUrl: entry.imageUrl,
                 onTap: () {},
               );
             },

@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Product imagery is fetched over the network. Flutter injects this
+         into the debug and profile manifests automatically, but a release
+         build would ship without it and every image would fail. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="gtradea_amazon"
         android:name="${applicationName}"

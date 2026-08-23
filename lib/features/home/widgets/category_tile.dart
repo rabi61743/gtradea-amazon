@@ -15,6 +15,7 @@ class CategoryTile extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.tint,
+    this.imageUrl,
     this.onTap,
   });
 
@@ -24,6 +25,10 @@ class CategoryTile extends StatelessWidget {
   /// Seed colour for the panel; the gradient is derived from it so a caller
   /// only picks one value per category.
   final Color tint;
+
+
+  /// Photograph for the tile; falls back to the tinted panel when absent.
+  final String? imageUrl;
 
   final VoidCallback? onTap;
 
@@ -37,7 +42,9 @@ class CategoryTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: ArtworkPanel(icon: icon, tint: tint)),
+          Expanded(
+            child: ArtworkPanel(icon: icon, tint: tint, imageUrl: imageUrl),
+          ),
           const SizedBox(height: 8),
           Text(
             label,

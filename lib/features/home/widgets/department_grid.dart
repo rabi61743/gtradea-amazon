@@ -9,11 +9,15 @@ class DepartmentEntry {
     required this.label,
     required this.icon,
     required this.tint,
+    this.imageUrl,
   });
 
   final String label;
   final IconData icon;
   final Color tint;
+
+  /// Photograph for the tile; falls back to the tinted panel when absent.
+  final String? imageUrl;
 }
 
 /// Two-up department tiles with a trailing "All departments".
@@ -71,6 +75,7 @@ class DepartmentGrid extends StatelessWidget {
                       child: ArtworkPanel(
                         icon: entry.icon,
                         tint: entry.tint,
+                        imageUrl: entry.imageUrl,
                         iconScale: 0.46,
                       ),
                     ),

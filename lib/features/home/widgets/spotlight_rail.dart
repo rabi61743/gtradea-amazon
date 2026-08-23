@@ -11,6 +11,7 @@ class SpotlightItem {
     required this.caption,
     required this.icon,
     required this.tint,
+    this.imageUrl,
   });
 
   /// The banner line, e.g. "Min. 65% off". A marketing band, not a price.
@@ -21,6 +22,9 @@ class SpotlightItem {
 
   final IconData icon;
   final Color tint;
+
+  /// Photograph for the tile; falls back to the tinted panel when absent.
+  final String? imageUrl;
 }
 
 /// Horizontal row of promoted cards, each with an offer ribbon across the
@@ -89,7 +93,11 @@ class _SpotlightCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  ArtworkPanel(icon: item.icon, tint: item.tint),
+                  ArtworkPanel(
+                    icon: item.icon,
+                    tint: item.tint,
+                    imageUrl: item.imageUrl,
+                  ),
                   // The ribbon sits inside the artwork so the offer travels
                   // with the image rather than competing with the caption.
                   Positioned(
