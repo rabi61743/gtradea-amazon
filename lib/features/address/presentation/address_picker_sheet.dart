@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/data/auth_store.dart';
 import '../data/address_store.dart';
+import 'use_my_location_tile.dart';
 import 'address_form_sheet.dart';
 
 /// Choose where an order is going.
@@ -21,11 +22,14 @@ import 'address_form_sheet.dart';
 /// them into their account when they sign in; the sheet says so rather than
 /// leaving it as a surprise.
 ///
-/// There is no "use my current location". This app cannot locate anybody --
-/// there is no geolocation permission and no geocoder -- and a button that
-/// looks like it will fill the form and then does nothing is worse than no
-/// button. The quick-city chips do the job it was there to do: get most of the
-/// address filled without typing.
+/// "Use my current location" fills in the city, and says so. There is no
+/// geocoder here, so [LocationDetector] matches the fix to the nearest city
+/// this shop serves -- which answers the question the form actually needs
+/// answered, and works with no network. The wording promises the town rather
+/// than the doorstep, because the town is what it knows. Every way it can fail
+/// -- location off, permission refused, refused for good, nowhere near a
+/// served city -- gets its own message, since "something went wrong" leaves a
+/// shopper with nothing to do next.
 class AddressPickerSheet extends StatefulWidget {
   const AddressPickerSheet({super.key, this.selectedId});
 
@@ -127,6 +131,13 @@ class _AddressPickerSheetState extends State<AddressPickerSheet> {
                   controller: controller,
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                   children: [
+                    UseMyLocationTile(
+                      onDetected: (found) => _addNew(
+                        city: found.city,
+                        province: found.province,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     if (store.isEmpty)
                       _NoAddresses(
                         signedIn: signedIn,
@@ -218,6 +229,10 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// Detect the shopper's city rather than make them type it.
+///
+/// States what it will actually do -- fill in the city -- instead of promising
+/// to fill the whole address. It can name the town, not the door.
 /// Only shown once the book is big enough to need it. A search box above two
 /// addresses is furniture.
 class _SearchField extends StatelessWidget {

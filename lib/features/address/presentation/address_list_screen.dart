@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/address_store.dart';
 import 'address_form_sheet.dart';
+import 'use_my_location_tile.dart';
 
 /// The address book, for managing rather than choosing.
 ///
@@ -56,11 +57,28 @@ class _AddressListScreenState extends State<AddressListScreen> {
 
         return Scaffold(
           appBar: AppBar(title: const Text('Delivery addresses')),
-          body: addresses.isEmpty
-              ? const _EmptyBook()
-              : ListView(
+          body: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
                   children: [
+                    // Offered here as well as at checkout: adding an address
+                    // from the account page benefits from it just as much, and
+                    // one widget serves both.
+                    UseMyLocationTile(
+                      onDetected: (found) => AddressFormSheet.show(
+                        context,
+                        seed: Address(
+                          id: '',
+                          label: AddressLabel.home,
+                          fullName: '',
+                          phone: '',
+                          province: found.province,
+                          city: found.city,
+                          area: '',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (addresses.isEmpty) const _EmptyBook(),
                     for (final address in addresses)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),

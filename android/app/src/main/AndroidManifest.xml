@@ -3,6 +3,10 @@
          into the debug and profile manifests automatically, but a release
          build would ship without it and every image would fail. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Coarse only: the address form needs to know which city the shopper is
+         in, not which building, and asking for fine location would be asking
+         for more than the feature uses. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
     <application
         android:label="gtradea_amazon"

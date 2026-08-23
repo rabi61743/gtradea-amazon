@@ -45,6 +45,7 @@ dependencies:
   # Real OS share sheet rather than a home-made list of apps we cannot
   # actually hand a payload to.
   share_plus: ^12.0.0
+  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:
