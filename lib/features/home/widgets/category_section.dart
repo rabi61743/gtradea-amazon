@@ -25,11 +25,15 @@ class CategorySection extends StatelessWidget {
     super.key,
     required this.title,
     required this.entries,
+    this.subtitle,
     this.leadingIcon,
     this.onSeeAll,
   });
 
   final String title;
+
+  /// Optional qualifier under the title, e.g. a price cap.
+  final String? subtitle;
   final IconData? leadingIcon;
   final List<CategoryEntry> entries;
   final VoidCallback? onSeeAll;
@@ -41,6 +45,7 @@ class CategorySection extends StatelessWidget {
       children: [
         SectionHeader(
           title: title,
+          subtitle: subtitle,
           leadingIcon: leadingIcon,
           onSeeAll: onSeeAll,
         ),

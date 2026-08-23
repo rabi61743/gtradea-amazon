@@ -109,4 +109,27 @@ void main() {
       expect(formatRupees(1250.6), 'Rs. 1,251');
     });
   });
+
+  testWidgets('the shoes block carries its price cap in the header',
+      (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+
+    await tester.scrollUntilVisible(find.text('Shoes'), 500,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Shoes'), findsOneWidget);
+    expect(find.text('Under Rs. 5,000'), findsOneWidget);
+  });
+
+  testWidgets('later blocks render as the feed is scrolled', (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+
+    for (final title in ['Gaming gear', 'Home and living', 'For your pets']) {
+      await tester.scrollUntilVisible(find.text(title), 500,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      expect(find.text(title), findsOneWidget, reason: title);
+    }
+  });
 }
