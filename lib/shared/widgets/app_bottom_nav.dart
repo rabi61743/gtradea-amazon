@@ -10,11 +10,15 @@ class AppBottomNav extends StatelessWidget {
     required this.currentIndex,
     required this.onSelected,
     this.cartCount = 0,
+    this.savedCount = 0,
   });
 
   final int currentIndex;
   final ValueChanged<int> onSelected;
   final int cartCount;
+
+  /// Saved products, shown so the tab is worth returning to.
+  final int savedCount;
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +37,19 @@ class AppBottomNav extends StatelessWidget {
           icon: Icon(Icons.home_outlined),
           selectedIcon: Icon(Icons.home),
           label: 'Home',
+        ),
+        NavigationDestination(
+          icon: Badge.count(
+            count: savedCount,
+            isLabelVisible: savedCount > 0,
+            child: const Icon(Icons.favorite_border),
+          ),
+          selectedIcon: Badge.count(
+            count: savedCount,
+            isLabelVisible: savedCount > 0,
+            child: const Icon(Icons.favorite),
+          ),
+          label: 'Saved',
         ),
         const NavigationDestination(
           icon: Icon(Icons.person_outline),

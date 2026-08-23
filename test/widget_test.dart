@@ -22,10 +22,11 @@ void main() {
 
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
         0);
+    // Account sits at index 2 now that Saved occupies 1.
     await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-        1);
+        2);
   });
 
   testWidgets('uses the GtradeA teal primary, not a Flutter default',
@@ -197,5 +198,17 @@ void main() {
     expect(find.text('Headphones'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Saved opens the wishlist without stealing the nav selection',
+      (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pump(const Duration(milliseconds: 200));
+
+    await tester.tap(find.text('Saved'));
+    await tester.pumpAndSettle();
+
+    // The wishlist is a page on top, so Home stays selected underneath.
+    expect(find.text('Nothing saved yet'), findsOneWidget);
   });
 }

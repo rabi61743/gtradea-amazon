@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../shared/widgets/app_bottom_nav.dart';
 import '../search/presentation/search_entry_screen.dart';
+import '../wishlist/data/wishlist_store.dart';
+import '../wishlist/presentation/wishlist_screen.dart';
 import 'home_content.dart';
 import 'widgets/category_section.dart';
 import 'widgets/deal_group.dart';
@@ -26,6 +28,12 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WishlistStore.instance.load();
+  }
 
 
   void _openSearch(BuildContext context) {
@@ -133,9 +141,23 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: AppBottomNav(
-        currentIndex: _tab,
-        onSelected: (i) => setState(() => _tab = i),
+      bottomNavigationBar: ListenableBuilder(
+        listenable: WishlistStore.instance,
+        builder: (context, _) => AppBottomNav(
+          currentIndex: _tab,
+          savedCount: WishlistStore.instance.count,
+          onSelected: (i) {
+            // Saved is a page, not a tab this shell hosts, so it opens on
+            // top and the nav selection stays where it was.
+            if (i == 1) {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const WishlistScreen()),
+              );
+              return;
+            }
+            setState(() => _tab = i);
+          },
+        ),
       ),
     );
   }

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../home/widgets/product_rail.dart';
 import '../data/product_detail_content.dart';
+import '../../wishlist/data/wishlist_store.dart';
 import '../widgets/assurance_row.dart';
 import '../widgets/product_gallery.dart';
+import 'image_viewer_screen.dart';
 import '../widgets/ratings_summary.dart';
 import '../widgets/variant_picker.dart';
 
@@ -27,7 +30,6 @@ class ProductDetailScreen extends StatefulWidget {
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int _variant = 0;
   int _quantity = 1;
-  bool _saved = false;
   bool _descriptionExpanded = false;
 
   ProductDetail get _product => widget.product;
@@ -36,6 +38,46 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+
+  /// Stable id for the sample product. A real build keys on the catalogue
+  /// id; the title is unique enough for placeholder data.
+  String get _productId => _product.title;
+
+  SavedProduct get _savedProduct => SavedProduct(
+        id: _productId,
+        title: _product.title,
+        price: _product.price,
+        listPrice: _product.listPrice,
+        imageUrl: _product.images.isEmpty ? null : _product.images.first,
+      );
+
+  Future<void> _share() async {
+    final product = _product;
+    // A real link once routing exists; the text is what actually travels,
+    // and a bare URL with no context is a poor share.
+    final text = [
+      product.title,
+      formatRupees(product.price),
+      'https://gtradea.com/p/${Uri.encodeComponent(product.title)}',
+    ].join(' - ');
+    try {
+      await SharePlus.instance.share(ShareParams(text: text));
+    } catch (_) {
+      if (mounted) _snack('Could not open the share sheet');
+    }
+  }
+
+  void _openViewer(int index) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(
+          images: _product.images,
+          initialIndex: index,
+        ),
+      ),
+    );
   }
 
   @override
@@ -65,16 +107,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          ProductGallery(
-            images: product.images,
-            rating: product.rating,
-            soldLabel: sold == null ? null : '${_compact(sold)} sold',
-            saved: _saved,
-            onToggleSaved: () {
-              setState(() => _saved = !_saved);
-              _snack(_saved ? 'Saved to your list' : 'Removed from your list');
-            },
-            onShare: () => _snack('Share link copied'),
+          ListenableBuilder(
+            listenable: WishlistStore.instance,
+            builder: (context, _) => ProductGallery(
+              images: product.images,
+              rating: product.rating,
+              soldLabel: sold == null ? null : '${_compact(sold)} sold',
+              saved: WishlistStore.instance.contains(_productId),
+              onToggleSaved: () {
+                final saved = WishlistStore.instance.toggle(_savedProduct);
+                _snack(saved ? 'Saved to your list' : 'Removed from your list');
+              },
+              onShare: _share,
+              onImageTap: _openViewer,
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),

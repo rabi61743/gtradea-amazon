@@ -1,0 +1,153 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// A saved product, stored flat so the wishlist can render without refetching.
+///
+/// Denormalised on purpose: a shopper opening their list on a bad connection
+/// should see what they saved, not four spinners.
+@immutable
+class SavedProduct {
+  const SavedProduct({
+    required this.id,
+    required this.title,
+    required this.price,
+    this.imageUrl,
+    this.listPrice,
+  });
+
+  final String id;
+  final String title;
+  final num price;
+  final num? listPrice;
+  final String? imageUrl;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'price': price,
+        'listPrice': listPrice,
+        'imageUrl': imageUrl,
+      };
+
+  /// Tolerant: a blob written by an older build may be missing fields, and a
+  /// half-readable entry beats dropping the whole list.
+  static SavedProduct? fromJson(Map<String, dynamic> json) {
+    final id = json['id'];
+    final title = json['title'];
+    if (id is! String || id.isEmpty || title is! String) return null;
+    return SavedProduct(
+      id: id,
+      title: title,
+      price: json['price'] is num ? json['price'] as num : 0,
+      listPrice: json['listPrice'] is num ? json['listPrice'] as num : null,
+      imageUrl: json['imageUrl'] is String ? json['imageUrl'] as String : null,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || (other is SavedProduct && other.id == id);
+
+  @override
+  int get hashCode => id.hashCode;
+}
+
+/// The wishlist, shared across screens.
+///
+/// A [ChangeNotifier] singleton rather than a state-management package: this
+/// app has no container wired up, and one notifier keeps the heart on a
+/// product card, the detail page and the Saved tab showing the same thing.
+///
+/// Writes are fire-and-forget. A failed write costs persistence across a
+/// restart, never the toggle the shopper just made.
+class WishlistStore extends ChangeNotifier {
+  WishlistStore._();
+
+  static final instance = WishlistStore._();
+
+  static const _key = 'gtradea_wishlist';
+
+  final List<SavedProduct> _items = [];
+  bool _loaded = false;
+
+  List<SavedProduct> get items => List.unmodifiable(_items);
+  int get count => _items.length;
+  bool get isLoaded => _loaded;
+
+  bool contains(String id) => _items.any((item) => item.id == id);
+
+  Future<void> load() async {
+    if (_loaded) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_key);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          _items
+            ..clear()
+            ..addAll(
+              decoded
+                  .whereType<Map>()
+                  .map((e) => SavedProduct.fromJson(e.cast<String, dynamic>()))
+                  .whereType<SavedProduct>(),
+            );
+        }
+      }
+    } catch (_) {
+      // Unreadable store: start empty rather than blocking the app behind it.
+    }
+    _loaded = true;
+    notifyListeners();
+  }
+
+  /// Returns true when the product ends up saved.
+  bool toggle(SavedProduct product) {
+    final wasSaved = contains(product.id);
+    if (wasSaved) {
+      _items.removeWhere((item) => item.id == product.id);
+    } else {
+      // Newest first: the list is a shortlist, and the thing just saved is
+      // the thing most likely to be acted on.
+      _items.insert(0, product);
+    }
+    notifyListeners();
+    unawaited(_persist());
+    return !wasSaved;
+  }
+
+  void remove(String id) {
+    _items.removeWhere((item) => item.id == id);
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  void clear() {
+    _items.clear();
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  /// Test seam: drops in-memory state so each test starts clean.
+  @visibleForTesting
+  void resetForTest() {
+    _items.clear();
+    _loaded = false;
+  }
+
+  Future<void> _persist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _key,
+        jsonEncode(_items.map((item) => item.toJson()).toList()),
+      );
+    } catch (_) {
+      // See the class doc: persistence is best effort.
+    }
+  }
+}
+

@@ -17,6 +17,7 @@ class ProductGallery extends StatefulWidget {
     this.saved = false,
     this.onToggleSaved,
     this.onShare,
+    this.onImageTap,
   });
 
   final List<String> images;
@@ -28,6 +29,9 @@ class ProductGallery extends StatefulWidget {
   final bool saved;
   final VoidCallback? onToggleSaved;
   final VoidCallback? onShare;
+
+  /// Opens the full-screen viewer at the tapped page.
+  final ValueChanged<int>? onImageTap;
 
   @override
   State<ProductGallery> createState() => _ProductGalleryState();
@@ -59,25 +63,30 @@ class _ProductGalleryState extends State<ProductGallery> {
               controller: _controller,
               itemCount: widget.images.length,
               onPageChanged: (i) => setState(() => _index = i),
-              itemBuilder: (context, i) => Image.network(
-                widget.images[i],
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stack) => Center(
-                  child: Icon(
-                    Icons.image_not_supported_outlined,
-                    size: 40,
-                    color: theme.colorScheme.onSurfaceVariant,
+              itemBuilder: (context, i) => GestureDetector(
+                onTap: widget.onImageTap == null
+                    ? null
+                    : () => widget.onImageTap!(i),
+                child: Image.network(
+                  widget.images[i],
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stack) => Center(
+                    child: Icon(
+                      Icons.image_not_supported_outlined,
+                      size: 40,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                loadingBuilder: (context, child, progress) => progress == null
-                    ? child
-                    : const Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                  loadingBuilder: (context, child, progress) => progress == null
+                      ? child
+                      : const Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
                         ),
-                      ),
+                ),
               ),
             ),
           ),
@@ -108,8 +117,9 @@ class _ProductGalleryState extends State<ProductGallery> {
               child: _Pill(
                 child: Text(
                   '${_index + 1}/${widget.images.length}',
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
@@ -122,8 +132,9 @@ class _ProductGalleryState extends State<ProductGallery> {
                 children: [
                   Text(
                     widget.rating.toStringAsFixed(1),
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(fontWeight: FontWeight.w800),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(width: 3),
                   const Icon(Icons.star, size: 13, color: AppColors.success),
@@ -199,7 +210,6 @@ class _RoundAction extends StatelessWidget {
             size: 20,
             color: color ?? theme.colorScheme.onSurface,
           ),
-
         ),
       ),
     );
