@@ -1,116 +1,192 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-/// The signed-in customer.
+import '../../../core/network/session_store.dart';
+import 'auth_repository.dart';
+
+/// The signed-in customer, as the app needs them.
+///
+/// A view of the GoTrue user object rather than a second copy of it: the server
+/// owns identity, this is what the UI reads.
 @immutable
 class Account {
-  const Account({required this.email, this.name});
+  const Account({
+    required this.id,
+    required this.email,
+    this.firstName,
+    this.lastName,
+  });
 
+  /// The GoTrue user id. Every user-scoped row on the server keys on it.
+  final String id;
   final String email;
-  final String? name;
+  final String? firstName;
+  final String? lastName;
 
   /// What to greet them with. Falls back to the part of the address before the
-  /// @, which is a better guess than showing the whole email in a heading.
+  /// @, which reads better in a heading than the whole email.
   String get displayName {
-    final trimmed = name?.trim() ?? '';
-    if (trimmed.isNotEmpty) return trimmed;
+    final full = [firstName, lastName]
+        .whereType<String>()
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+    if (full.isNotEmpty) return full;
     final at = email.indexOf('@');
     return at > 0 ? email.substring(0, at) : email;
   }
 
-  Map<String, dynamic> toJson() => {'email': email, 'name': name};
-
-  static Account? fromJson(Map<String, dynamic> json) {
-    final email = json['email'];
-    if (email is! String || email.isEmpty) return null;
+  /// Built from the GoTrue user object. `user_metadata` is where the sign-up
+  /// `data` block lands.
+  static Account? fromUser(Map<String, dynamic>? user) {
+    if (user == null) return null;
+    final id = user['id'] ?? user['sub'];
+    final email = user['email'];
+    if (id is! String || id.isEmpty) return null;
+    final meta = (user['user_metadata'] as Map?)?.cast<String, dynamic>() ??
+        const <String, dynamic>{};
     return Account(
-      email: email,
-      name: json['name'] is String ? json['name'] as String : null,
+      id: id,
+      email: email is String ? email : '',
+      firstName: _str(meta['first_name']) ?? _str(meta['given_name']),
+      lastName: _str(meta['last_name']) ?? _str(meta['family_name']),
     );
   }
+
+  static String? _str(Object? v) =>
+      v is String && v.trim().isNotEmpty ? v.trim() : null;
 }
 
 /// Who is signed in, shared across screens.
 ///
-/// A [ChangeNotifier] singleton, matching [WishlistStore]: the bottom nav, the
-/// account page and anything else gated on identity all listen to one source,
-/// so the UI flips the moment the state changes rather than on the next
-/// navigation.
-///
-/// **This is a local placeholder, not authentication.** Nothing is verified and
-/// no password is checked or stored -- the sibling storefront signs in against
-/// GoTrue at `/auth/v1/token`. Wiring that up replaces [signIn] and nothing
-/// above it.
+/// A [ChangeNotifier] facade over [SessionStore] and [AuthRepository]. The
+/// tokens live in secure storage and identity comes from the server; this is
+/// the part the widgets watch, so the nav and the account page flip the instant
+/// state changes rather than on the next navigation.
 class AuthStore extends ChangeNotifier {
-  AuthStore._();
+  AuthStore._(this._auth) {
+    // A refresh token can die while the app is closed, or be revoked. When it
+    // does, the interceptor clears the tokens -- and without this the app would
+    // carry on believing it was signed in, showing an account page whose every
+    // request 401s, with no way out but a reinstall.
+    _invalidation = SessionStore.instance.onInvalidated.listen((_) {
+      if (_account == null) return;
+      _account = null;
+      _expired = true;
+      notifyListeners();
+    });
+  }
 
-  static final instance = AuthStore._();
+  static final instance = AuthStore._(AuthRepository.instance);
 
-  static const _key = 'gtradea_account';
+  AuthRepository _auth;
+
+  /// Swaps GoTrue for a stub. The store is a singleton, so this is the seam
+  /// the widget tests drive sign-in through.
+  @visibleForTesting
+  set repositoryForTest(AuthRepository repo) => _auth = repo;
+  late final StreamSubscription<void> _invalidation;
 
   Account? _account;
   bool _loaded = false;
+  bool _expired = false;
 
   Account? get account => _account;
   bool get isSignedIn => _account != null;
   bool get isLoaded => _loaded;
 
+  /// True when the last sign-out was not the shopper's doing. The account
+  /// screen says so rather than silently showing the signed-out state, which
+  /// otherwise looks like the app lost their account.
+  bool get sessionExpired => _expired;
+
+  void acknowledgeExpiry() {
+    if (!_expired) return;
+    _expired = false;
+    notifyListeners();
+  }
+
+  /// Restores the session from secure storage. Cheap and idempotent; called at
+  /// startup and by any screen that needs to know before it renders.
   Future<void> load() async {
     if (_loaded) return;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_key);
-      if (raw != null && raw.isNotEmpty) {
-        final decoded = jsonDecode(raw);
-        if (decoded is Map) {
-          _account = Account.fromJson(decoded.cast<String, dynamic>());
-        }
-      }
-    } catch (_) {
-      // Unreadable: treat as signed out rather than blocking the app.
-    }
+    final session = await SessionStore.instance.read();
+    _account = Account.fromUser(session?.user);
     _loaded = true;
     notifyListeners();
   }
 
-  void signIn({required String email, String? name}) {
-    _account = Account(email: email.trim(), name: name?.trim());
-    // Marking loaded closes the race where a sign-in beats the startup read
-    // and the disk copy then overwrites it. An explicit change always wins
-    // over a pending load.
-    _loaded = true;
-    notifyListeners();
-    unawaited(_persist());
+  /// Throws [ApiError] with the server's own message on a bad password, an
+  /// unconfirmed address or a dead connection.
+  Future<void> signIn({
+    required String email,
+    required String password,
+  }) async {
+    final session = await _auth.signIn(email, password);
+    _adopt(session);
   }
 
-  void signOut() {
+  /// Returns true when the account was made but needs the emailed link before
+  /// it can be used.
+  Future<bool> signUp({
+    required String email,
+    required String password,
+    String? firstName,
+    String? lastName,
+  }) async {
+    final result = await _auth.signUp(
+      email: email,
+      password: password,
+      firstName: firstName,
+      lastName: lastName,
+    );
+    final session = result.session;
+    if (session != null) _adopt(session);
+    return result.needsConfirmation;
+  }
+
+  Future<void> completeOAuth(Uri returned) async {
+    _adopt(await _auth.completeOAuth(returned));
+  }
+
+  Future<void> recover(String email) => _auth.recover(email);
+
+  Future<void> signOut() async {
+    // Locally first. Telling the server is worth doing but not worth waiting
+    // for: on a bad connection a shopper who tapped Sign out should not be left
+    // looking at their own account for twenty seconds.
     _account = null;
+    _expired = false;
     _loaded = true;
     notifyListeners();
-    unawaited(_persist());
+    await _auth.signOut();
+  }
+
+  void _adopt(AuthSession session) {
+    _account = Account.fromUser(session.user);
+    _loaded = true;
+    _expired = false;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void adoptForTest(Account? account) {
+    _account = account;
+    _loaded = true;
+    notifyListeners();
   }
 
   @visibleForTesting
   void resetForTest() {
     _account = null;
     _loaded = false;
+    _expired = false;
   }
 
-  Future<void> _persist() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final account = _account;
-      if (account == null) {
-        await prefs.remove(_key);
-      } else {
-        await prefs.setString(_key, jsonEncode(account.toJson()));
-      }
-    } catch (_) {
-      // Best effort, like the wishlist: a failed write costs persistence
-      // across a restart, never the action just taken.
-    }
+  @override
+  void dispose() {
+    _invalidation.cancel();
+    super.dispose();
   }
 }

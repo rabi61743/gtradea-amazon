@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/address/data/address_store.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+import 'support/auth.dart';
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/cart/presentation/cart_screen.dart';
 import 'package:gtradea_amazon/features/checkout/presentation/checkout_screen.dart';
@@ -413,7 +414,7 @@ void main() {
       CartStore.instance.bindToAuth();
       CartStore.instance.add(_jacketPink);
 
-      AuthStore.instance.signIn(email: 'rabi@example.com');
+      signInForTest(email: 'rabi@example.com');
       // The switch is async off the notification.
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);

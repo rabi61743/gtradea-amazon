@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+import 'support/auth.dart';
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/orders/data/order_store.dart';
 import 'package:gtradea_amazon/features/orders/presentation/order_detail_screen.dart';
@@ -185,7 +186,7 @@ void main() {
       _placeAgo(Duration.zero);
       OrderStore.instance.bindToAuth();
 
-      AuthStore.instance.signIn(email: 'rabi@example.com');
+      signInForTest(email: 'rabi@example.com');
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 

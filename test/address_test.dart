@@ -6,6 +6,7 @@ import 'package:gtradea_amazon/features/address/presentation/address_form_sheet.
 import 'package:gtradea_amazon/features/address/presentation/address_list_screen.dart';
 import 'package:gtradea_amazon/features/address/presentation/address_picker_sheet.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+import 'support/auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Widget _wrap(Widget child) => MaterialApp(theme: AppTheme.light, home: child);
@@ -169,7 +170,7 @@ void main() {
       _add();
       AddressStore.instance.bindToAuth();
 
-      AuthStore.instance.signIn(email: 'rabi@example.com');
+      signInForTest(email: 'rabi@example.com');
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
