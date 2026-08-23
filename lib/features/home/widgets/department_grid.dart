@@ -70,13 +70,15 @@ class DepartmentGrid extends StatelessWidget {
                 onTap: () {},
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    ArtworkPanel(
-                      icon: entry.icon,
-                      tint: entry.tint,
-                      aspectRatio: 16 / 9,
-                      iconScale: 0.46,
+                    // Fills the cell minus the label, so a larger device
+                    // text scale cannot overflow the tile.
+                    Expanded(
+                      child: ArtworkPanel(
+                        icon: entry.icon,
+                        tint: entry.tint,
+                        iconScale: 0.46,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(

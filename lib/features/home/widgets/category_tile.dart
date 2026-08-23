@@ -3,7 +3,12 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 
-/// One category: a square artwork panel with its label underneath.
+/// One category: an artwork panel with its label underneath.
+///
+/// The panel takes whatever height the label leaves rather than claiming a
+/// fixed square. A square panel plus a label overflows the grid cell as soon
+/// as the device's text scale is a little above the layout's assumption --
+/// which is exactly what happened on a real phone, at 1.2 pixels.
 class CategoryTile extends StatelessWidget {
   const CategoryTile({
     super.key,
@@ -31,9 +36,8 @@ class CategoryTile extends StatelessWidget {
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          ArtworkPanel(icon: icon, tint: tint),
+          Expanded(child: ArtworkPanel(icon: icon, tint: tint)),
           const SizedBox(height: 8),
           Text(
             label,

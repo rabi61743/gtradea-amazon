@@ -67,7 +67,11 @@ class ProductRail extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 268,
+          // Grows with the device text scale. The card is title + rating +
+          // price under a square panel, so a fixed height overflows on a
+          // phone with larger text -- the same trap the category tiles hit.
+          height: 268 *
+              MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5),
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
