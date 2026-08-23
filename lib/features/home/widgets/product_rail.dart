@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/artwork_panel.dart';
+import '../../product/presentation/product_detail_screen.dart';
 import '../../../shared/widgets/section_header.dart';
 
 /// A product as the home rails render it.
@@ -62,8 +63,8 @@ class ProductRail extends StatelessWidget {
           // Grows with the device text scale. The card is title + rating +
           // price under a square panel, so a fixed height overflows on a
           // phone with larger text -- the same trap the category tiles hit.
-          height: 268 *
-              MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5),
+          height:
+              268 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5),
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -90,57 +91,62 @@ class _ProductCard extends StatelessWidget {
 
     return SizedBox(
       width: 156,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Square, not Expanded: this card stacks in an unbounded column,
-          // so the panel has to declare its own height.
-          ArtworkPanel(
-            icon: item.icon,
-            tint: item.tint,
-            imageUrl: item.imageUrl,
-            aspectRatio: 1,
-            iconScale: 0.38,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            item.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium?.copyWith(height: 1.25),
-          ),
-          const SizedBox(height: 6),
-          _Stars(rating: item.rating, count: item.reviewCount),
-          const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                formatRupees(item.price),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              if (struck != null) ...[
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    formatRupees(struck),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      decoration: TextDecoration.lineThrough,
-                      decorationColor: theme.colorScheme.onSurfaceVariant,
-                    ),
+      child: InkWell(
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const ProductDetailScreen())),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Square, not Expanded: this card stacks in an unbounded column,
+            // so the panel has to declare its own height.
+            ArtworkPanel(
+              icon: item.icon,
+              tint: item.tint,
+              imageUrl: item.imageUrl,
+              aspectRatio: 1,
+              iconScale: 0.38,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              item.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium?.copyWith(height: 1.25),
+            ),
+            const SizedBox(height: 6),
+            _Stars(rating: item.rating, count: item.reviewCount),
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  formatRupees(item.price),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: theme.colorScheme.primary,
                   ),
                 ),
+                if (struck != null) ...[
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      formatRupees(struck),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        decoration: TextDecoration.lineThrough,
+                        decorationColor: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
               ],
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -173,8 +179,9 @@ class _Stars extends StatelessWidget {
             '$count',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       ],

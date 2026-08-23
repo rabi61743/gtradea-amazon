@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../product/presentation/product_detail_screen.dart';
 import '../data/search_content.dart';
 import '../widgets/filter_sheet.dart';
 import '../widgets/result_card.dart';
@@ -183,8 +184,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 ? _EmptyResults(onClear: () => setState(() => _selection = {}))
                 : ListView.builder(
                     itemCount: results.length,
-                    itemBuilder: (context, i) =>
-                        ResultCard(result: results[i], onTap: () {}),
+                    itemBuilder: (context, i) => ResultCard(
+                      result: results[i],
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ProductDetailScreen(),
+                        ),
+                      ),
+                    ),
                   ),
           ),
         ],
