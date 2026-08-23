@@ -4,10 +4,27 @@ import 'package:gtradea_amazon/core/theme/colors.dart';
 import 'package:gtradea_amazon/main.dart';
 
 void main() {
-  testWidgets('app boots and shows the placeholder home', (tester) async {
+  testWidgets('home renders search, promos, sections and the nav',
+      (tester) async {
     await tester.pumpWidget(const GtradeaAmazonApp());
-    expect(find.text('GtradeA Amazon'), findsWidgets);
-    expect(find.text('Primary action'), findsOneWidget);
+
+    expect(find.text('Search products'), findsOneWidget);
+    expect(find.text('Plug in with our electronics'), findsOneWidget);
+    expect(find.text('Headphones'), findsOneWidget);
+    expect(find.text('Shop more'), findsWidgets);
+    expect(find.text('Cart'), findsOneWidget);
+  });
+
+  testWidgets('selecting a bottom-nav destination updates the selection',
+      (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        0);
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        1);
   });
 
   testWidgets('uses the GtradeA teal primary, not a Flutter default',
