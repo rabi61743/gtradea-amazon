@@ -1,34 +1,25 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/colors.dart';
-
-/// Swipeable product photography with a page counter and the two actions a
-/// shopper reaches for on this screen.
+/// Swipeable product photography.
 ///
-/// A counter chip rather than dots: dots stop being countable past four or
-/// five, and a gallery is exactly where a shopper wants to know how much is
+/// Deliberately carries no product chrome: no save, no share, no rating badge.
+/// Those are facts and actions about the product, not about the picture, and
+/// putting controls on photography is what made them invisible against a
+/// white-background product shot. They live in the pinned app bar and beside
+/// the title instead.
+///
+/// The one overlay that stays is the image counter, which is genuinely about
+/// the gallery. A counter rather than dots: dots stop being countable past four
+/// or five, and a gallery is exactly where a shopper wants to know how much is
 /// left to look at.
 class ProductGallery extends StatefulWidget {
   const ProductGallery({
     super.key,
     required this.images,
-    required this.rating,
-    required this.soldLabel,
-    this.saved = false,
-    this.onToggleSaved,
-    this.onShare,
     this.onImageTap,
   });
 
   final List<String> images;
-  final double rating;
-
-  /// Short social proof, e.g. "2.0k sold".
-  final String? soldLabel;
-
-  final bool saved;
-  final VoidCallback? onToggleSaved;
-  final VoidCallback? onShare;
 
   /// Opens the full-screen viewer at the tapped page.
   final ValueChanged<int>? onImageTap;
@@ -90,127 +81,28 @@ class _ProductGalleryState extends State<ProductGallery> {
               ),
             ),
           ),
-          Positioned(
-            top: 10,
-            right: 10,
-            child: Column(
-              children: [
-                _RoundAction(
-                  icon: widget.saved ? Icons.favorite : Icons.favorite_border,
-                  tooltip: widget.saved ? 'Saved' : 'Save',
-                  color: widget.saved ? AppColors.wishlist : null,
-                  onTap: widget.onToggleSaved,
-                ),
-                const SizedBox(height: 8),
-                _RoundAction(
-                  icon: Icons.share_outlined,
-                  tooltip: 'Share',
-                  onTap: widget.onShare,
-                ),
-              ],
-            ),
-          ),
           if (widget.images.length > 1)
             Positioned(
               right: 10,
               bottom: 10,
-              child: _Pill(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  // Still a scrim: this one does sit on unpredictable
+                  // photography, so it cannot inherit a theme surface colour.
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(999),
+                ),
                 child: Text(
                   '${_index + 1}/${widget.images.length}',
                   style: theme.textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w700,
+                    color: Colors.white,
                   ),
                 ),
               ),
             ),
-          Positioned(
-            left: 10,
-            bottom: 10,
-            child: _Pill(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.rating.toStringAsFixed(1),
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(width: 3),
-                  const Icon(Icons.star, size: 13, color: AppColors.success),
-                  if (widget.soldLabel != null) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      width: 1,
-                      height: 12,
-                      color: theme.colorScheme.outlineVariant,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      widget.soldLabel!,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
         ],
-      ),
-    );
-  }
-}
-
-class _Pill extends StatelessWidget {
-  const _Pill({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: child,
-    );
-  }
-}
-
-class _RoundAction extends StatelessWidget {
-  const _RoundAction({
-    required this.icon,
-    required this.tooltip,
-    this.color,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final Color? color;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surface.withValues(alpha: 0.92),
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(9),
-          child: Icon(
-            icon,
-            size: 20,
-            color: color ?? theme.colorScheme.onSurface,
-          ),
-        ),
       ),
     );
   }

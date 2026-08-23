@@ -40,18 +40,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-
   /// Stable id for the sample product. A real build keys on the catalogue
   /// id; the title is unique enough for placeholder data.
   String get _productId => _product.title;
 
   SavedProduct get _savedProduct => SavedProduct(
-        id: _productId,
-        title: _product.title,
-        price: _product.price,
-        listPrice: _product.listPrice,
-        imageUrl: _product.images.isEmpty ? null : _product.images.first,
-      );
+    id: _productId,
+    title: _product.title,
+    price: _product.price,
+    listPrice: _product.listPrice,
+    imageUrl: _product.images.isEmpty ? null : _product.images.first,
+  );
 
   Future<void> _share() async {
     final product = _product;
@@ -72,10 +71,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void _openViewer(int index) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ImageViewerScreen(
-          images: _product.images,
-          initialIndex: index,
-        ),
+        builder: (_) =>
+            ImageViewerScreen(images: _product.images, initialIndex: index),
       ),
     );
   }
@@ -90,166 +87,227 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final sold = product.soldCount;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Product'),
-        actions: [
-          IconButton(
-            icon: Badge.count(
-              count: 0,
-              isLabelVisible: true,
-              child: const Icon(Icons.shopping_cart_outlined),
-            ),
-            tooltip: 'Cart',
-            onPressed: () {},
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          ListenableBuilder(
-            listenable: WishlistStore.instance,
-            builder: (context, _) => ProductGallery(
-              images: product.images,
-              rating: product.rating,
-              soldLabel: sold == null ? null : '${_compact(sold)} sold',
-              saved: WishlistStore.instance.contains(_productId),
-              onToggleSaved: () {
-                final saved = WishlistStore.instance.toggle(_savedProduct);
-                _snack(saved ? 'Saved to your list' : 'Removed from your list');
-              },
-              onShare: _share,
-              onImageTap: _openViewer,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.title,
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700, height: 1.25),
+      body: CustomScrollView(
+        slivers: [
+          // Pinned: Save and Share have to stay reachable from the reviews
+          // at the bottom of the page, which is exactly where a shopper
+          // decides to keep something for later.
+          SliverAppBar(
+            pinned: true,
+            title: const Text('Product'),
+            actions: [
+              ListenableBuilder(
+                listenable: WishlistStore.instance,
+                builder: (context, _) {
+                  final saved = WishlistStore.instance.contains(_productId);
+                  return IconButton(
+                    icon: Icon(
+                      saved ? Icons.favorite : Icons.favorite_border,
+                      color: saved ? AppColors.wishlist : null,
+                    ),
+                    tooltip: saved ? 'Saved' : 'Save',
+                    onPressed: () {
+                      final nowSaved = WishlistStore.instance.toggle(
+                        _savedProduct,
+                      );
+                      _snack(
+                        nowSaved
+                            ? 'Saved to your list'
+                            : 'Removed from your list',
+                      );
+                    },
+                  );
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.share_outlined),
+                tooltip: 'Share',
+                onPressed: _share,
+              ),
+              IconButton(
+                icon: Badge.count(
+                  count: 0,
+                  isLabelVisible: true,
+                  child: const Icon(Icons.shopping_cart_outlined),
                 ),
-                const SizedBox(height: 10),
-                // Price, saving and tax on one block so nothing about what is
-                // owed is discoverable only further down the page.
-                // Wrap, not Row: price + struck price + saving overflows a
-                // 360pt phone by ~90px, and dropping the saving to a second
-                // line beats shrinking the price until it cannot be read.
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  runSpacing: 2,
+                tooltip: 'Cart',
+                onPressed: () {},
+              ),
+            ],
+          ),
+          SliverList.list(
+            children: [
+              ProductGallery(images: product.images, onImageTap: _openViewer),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      formatRupees(product.price),
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: theme.colorScheme.primary,
+                      product.title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
                       ),
                     ),
-                    if (list != null && discount != null) ...[
-                      Text(
-                        formatRupees(list),
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          decoration: TextDecoration.lineThrough,
-                          decorationColor: theme.colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 8),
+                    // Rating and sales belong beside the name, where they read
+                    // as facts about the product rather than a badge stuck on
+                    // the photograph.
+                    Row(
+                      children: [
+                        const Icon(Icons.star, size: 16, color: AppColors.star),
+                        const SizedBox(width: 4),
+                        Text(
+                          product.rating.toStringAsFixed(1),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '(${product.reviewCount})',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        if (sold != null) ...[
+                          const SizedBox(width: 10),
+                          Text(
+                            '${_compact(sold)} sold',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // Price, saving and tax on one block so nothing about what is
+                    // owed is discoverable only further down the page.
+                    // Wrap, not Row: price + struck price + saving overflows a
+                    // 360pt phone by ~90px, and dropping the saving to a second
+                    // line beats shrinking the price until it cannot be read.
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 2,
+                      children: [
+                        Text(
+                          formatRupees(product.price),
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                        if (list != null && discount != null) ...[
+                          Text(
+                            formatRupees(list),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              decoration: TextDecoration.lineThrough,
+                              decorationColor:
+                                  theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            '-$discount%',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: AppColors.success,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (vat != null) ...[
+                      const SizedBox(height: 2),
                       Text(
-                        '-$discount%',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: AppColors.success,
-                          fontWeight: FontWeight.w800,
+                        'Includes ${formatRupees(vat)} VAT',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
+                    const SizedBox(height: 16),
+                    VariantPicker(
+                      variants: product.variants,
+                      selectedIndex: _variant,
+                      onSelected: (i) => setState(() => _variant = i),
+                    ),
+                    const SizedBox(height: 16),
+                    _QuantityRow(
+                      quantity: _quantity,
+                      minOrder: product.minOrder,
+                      onChanged: (value) => setState(() => _quantity = value),
+                    ),
                   ],
                 ),
-                if (vat != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    'Includes ${formatRupees(vat)} VAT',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                VariantPicker(
-                  variants: product.variants,
-                  selectedIndex: _variant,
-                  onSelected: (i) => setState(() => _variant = i),
-                ),
-                const SizedBox(height: 16),
-                _QuantityRow(
-                  quantity: _quantity,
-                  minOrder: product.minOrder,
-                  onChanged: (value) => setState(() => _quantity = value),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _DeliveryCard(freeDelivery: product.freeDelivery),
-          const SizedBox(height: 14),
-          AssuranceRow(assurances: product.assurances),
-          if (product.highlights.isNotEmpty) ...[
-            _SectionTitle('Highlights'),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _HighlightsGrid(highlights: product.highlights),
-            ),
-          ],
-          _SectionTitle('Description'),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.description,
-                  maxLines: _descriptionExpanded ? null : 3,
-                  overflow: _descriptionExpanded
-                      ? TextOverflow.visible
-                      : TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
-                ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    onPressed: () => setState(
-                        () => _descriptionExpanded = !_descriptionExpanded),
-                    child: Text(_descriptionExpanded ? 'Show less' : 'Read more'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _SectionTitle('Specifications'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _SpecTable(specs: product.specs),
-          ),
-          if (product.ratingSummary != null) ...[
-            _SectionTitle('Ratings and reviews'),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-              child: RatingsSummary(
-                summary: product.ratingSummary!,
-                reviews: product.reviews,
               ),
-            ),
-          ],
-          if (product.similar.isNotEmpty)
-            ProductRail(
-              title: 'Similar products',
-              leadingIcon: Icons.compare_arrows,
-              items: product.similar,
-              onSeeAll: () {},
-            ),
+              const SizedBox(height: 16),
+              _DeliveryCard(freeDelivery: product.freeDelivery),
+              const SizedBox(height: 14),
+              AssuranceRow(assurances: product.assurances),
+              if (product.highlights.isNotEmpty) ...[
+                _SectionTitle('Highlights'),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _HighlightsGrid(highlights: product.highlights),
+                ),
+              ],
+              _SectionTitle('Description'),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product.description,
+                      maxLines: _descriptionExpanded ? null : 3,
+                      overflow: _descriptionExpanded
+                          ? TextOverflow.visible
+                          : TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        onPressed: () => setState(
+                          () => _descriptionExpanded = !_descriptionExpanded,
+                        ),
+                        child: Text(
+                          _descriptionExpanded ? 'Show less' : 'Read more',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _SectionTitle('Specifications'),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _SpecTable(specs: product.specs),
+              ),
+              if (product.ratingSummary != null) ...[
+                _SectionTitle('Ratings and reviews'),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: RatingsSummary(
+                    summary: product.ratingSummary!,
+                    reviews: product.reviews,
+                  ),
+                ),
+              ],
+              if (product.similar.isNotEmpty)
+                ProductRail(
+                  title: 'Similar products',
+                  leadingIcon: Icons.compare_arrows,
+                  items: product.similar,
+                  onSeeAll: () {},
+                ),
+              const SizedBox(height: 24),
+            ],
+          ),
         ],
       ),
       bottomNavigationBar: _BuyBar(
@@ -302,8 +360,9 @@ class _HighlightsGrid extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       item.value,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
@@ -326,9 +385,7 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Text(
         label,
-        style: Theme.of(context)
-            .textTheme
-            .titleSmall
+        style: Theme.of(context).textTheme.titleSmall
             ?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
@@ -359,8 +416,9 @@ class _QuantityRow extends StatelessWidget {
       children: [
         Text(
           'Quantity',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(fontWeight: FontWeight.w600),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(width: 12),
         DecoratedBox(
@@ -381,8 +439,9 @@ class _QuantityRow extends StatelessWidget {
                 child: Text(
                   '$quantity',
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               IconButton(
@@ -397,8 +456,9 @@ class _QuantityRow extends StatelessWidget {
         if (minOrder > 1)
           Text(
             'Min $minOrder',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
       ],
     );
@@ -431,14 +491,18 @@ class _DeliveryCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.location_on_outlined,
-                    size: 18, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.location_on_outlined,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'Deliver to Lalitpur',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 TextButton(onPressed: () {}, child: const Text('Change')),
@@ -447,8 +511,11 @@ class _DeliveryCard extends StatelessWidget {
             const SizedBox(height: 4),
             Row(
               children: [
-                Icon(Icons.local_shipping_outlined,
-                    size: 18, color: theme.colorScheme.onSurfaceVariant),
+                Icon(
+                  Icons.local_shipping_outlined,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -459,8 +526,9 @@ class _DeliveryCard extends StatelessWidget {
                       color: freeDelivery
                           ? AppColors.success
                           : theme.colorScheme.onSurfaceVariant,
-                      fontWeight:
-                          freeDelivery ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight: freeDelivery
+                          ? FontWeight.w600
+                          : FontWeight.w400,
                     ),
                   ),
                 ),
@@ -495,13 +563,16 @@ class _SpecTable extends StatelessWidget {
                 border: i == specs.length - 1
                     ? null
                     : Border(
-                        bottom:
-                            BorderSide(color: theme.colorScheme.outlineVariant),
+                        bottom: BorderSide(
+                          color: theme.colorScheme.outlineVariant,
+                        ),
                       ),
               ),
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

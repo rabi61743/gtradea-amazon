@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/product/data/product_detail_content.dart';
 import 'package:gtradea_amazon/features/product/presentation/product_detail_screen.dart';
+import 'package:gtradea_amazon/features/product/widgets/product_gallery.dart';
 
 Widget _wrap(Widget child) => MaterialApp(theme: AppTheme.light, home: child);
 
@@ -166,5 +167,49 @@ void main() {
     await tester.tap(find.text('Read more'));
     await tester.pump();
     expect(find.text('Show less'), findsOneWidget);
+  });
+
+  testWidgets('Save and Share live in the app bar, not on the photo',
+      (tester) async {
+    // They used to float on the gallery, which is the reference app pattern
+    // and made them invisible against a white-background product shot.
+    await _pumpDetail(tester);
+
+    final save = find.byTooltip('Save');
+    expect(save, findsOneWidget);
+    expect(find.byTooltip('Share'), findsOneWidget);
+
+    expect(
+      find.ancestor(of: save, matching: find.byType(SliverAppBar)),
+      findsOneWidget,
+      reason: "actions belong to the app bar",
+    );
+    expect(
+      find.descendant(of: find.byType(ProductGallery), matching: save),
+      findsNothing,
+      reason: "nothing sits on the photograph",
+    );
+  });
+
+  testWidgets('the app bar stays pinned, so Save survives a scroll',
+      (tester) async {
+    await _pumpDetail(tester);
+
+    await tester.scrollUntilVisible(find.text('Specifications'), 400,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    // Deep in the page, the actions are still there -- the whole point of
+    // pinning rather than letting the bar scroll away.
+    expect(find.byTooltip('Save'), findsOneWidget);
+    expect(find.byTooltip('Share'), findsOneWidget);
+  });
+
+  testWidgets('rating and sales read beside the title', (tester) async {
+    await _pumpDetail(tester);
+
+    expect(find.text('4.3'), findsOneWidget);
+    expect(find.text('(128)'), findsOneWidget);
+    expect(find.text('2.0k sold'), findsOneWidget);
   });
 }
