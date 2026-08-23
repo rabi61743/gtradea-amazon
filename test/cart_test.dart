@@ -5,6 +5,7 @@ import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/cart/presentation/cart_screen.dart';
 import 'package:gtradea_amazon/features/checkout/presentation/checkout_screen.dart';
+import 'package:gtradea_amazon/features/product/data/product_detail_content.dart';
 import 'package:gtradea_amazon/features/product/presentation/product_detail_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -34,6 +35,44 @@ const _dress = CartLine(
   unitPrice: 1808,
 );
 
+/// A product whose first colourway is gone, to prove the page does not open on
+/// an option the picker refuses to select.
+const _firstVariantSoldOut = ProductDetail(
+  title: 'Test jacket',
+  price: 1000,
+  rating: 4,
+  reviewCount: 1,
+  images: ['https://example.invalid/1.jpg'],
+  variants: [
+    ProductVariant(
+      label: 'Blush pink',
+      imageUrl: 'https://example.invalid/p.jpg',
+      inStock: false,
+    ),
+    ProductVariant(label: 'Ivory', imageUrl: 'https://example.invalid/i.jpg'),
+  ],
+  specs: [],
+  description: 'x',
+);
+
+/// Nothing left at all, so there is no in-stock option to fall back to.
+const _allSoldOut = ProductDetail(
+  title: 'Test jacket',
+  price: 1000,
+  rating: 4,
+  reviewCount: 1,
+  images: ['https://example.invalid/1.jpg'],
+  variants: [
+    ProductVariant(
+      label: 'Blush pink',
+      imageUrl: 'https://example.invalid/p.jpg',
+      inStock: false,
+    ),
+  ],
+  specs: [],
+  description: 'x',
+);
+
 Widget _wrap(Widget child) => MaterialApp(theme: AppTheme.light, home: child);
 
 /// The default 600x800 test window hides anything below the fold, so widget
@@ -54,7 +93,21 @@ void main() {
   group('CartLine', () {
     test('variant is part of the identity', () {
       expect(_jacketPink.key, isNot(_jacketIvory.key));
-      expect(_dress.key, 'dress|', reason: 'no variant still has a stable key');
+      expect(_dress.key, 'dress', reason: 'no variant still has a stable key');
+    });
+
+    test('a delimiter in the title cannot collide two products onto one line',
+        () {
+      // The product id here is the title, so it can contain anything a visible
+      // separator would have used.
+      const a = CartLine(productId: 'Shirt|Red', title: 'x', unitPrice: 1);
+      const b = CartLine(
+        productId: 'Shirt',
+        variantLabel: 'Red',
+        title: 'x',
+        unitPrice: 1,
+      );
+      expect(a.key, isNot(b.key));
     });
 
     test('line total multiplies by quantity', () {
@@ -559,6 +612,37 @@ void main() {
       await tester.pump();
 
       expect(CartStore.instance.count, 2);
+    });
+
+    testWidgets('the page opens on a buyable colour, not a sold-out one',
+        (tester) async {
+      _useTallWindow(tester);
+      await tester.pumpWidget(_wrap(
+        const ProductDetailScreen(product: _firstVariantSoldOut),
+      ));
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Index 0 is sold out and the picker refuses to select it, so opening
+      // there would strand the page on an option that cannot be bought.
+      expect(find.text('Ivory'), findsWidgets);
+      await tester.tap(find.text('Add to cart'));
+      await tester.pump();
+      expect(CartStore.instance.lines.single.variantLabel, 'Ivory');
+    });
+
+    testWidgets('a sold-out selection is refused by the page, not just hidden',
+        (tester) async {
+      _useTallWindow(tester);
+      await tester.pumpWidget(_wrap(
+        const ProductDetailScreen(product: _allSoldOut),
+      ));
+      await tester.pump(const Duration(milliseconds: 200));
+
+      await tester.tap(find.text('Add to cart'));
+      await tester.pump();
+
+      expect(CartStore.instance.isEmpty, isTrue);
+      expect(find.textContaining('is sold out'), findsOneWidget);
     });
 
     testWidgets('Buy now adds the line and goes straight to the cart',

@@ -42,7 +42,12 @@ class CartLine {
 
   /// Identity of a line. Product plus variant, because adding the blush pink
   /// after the ivory must not silently overwrite the ivory.
-  String get key => '$productId|${variantLabel ?? ''}';
+  ///
+  /// Separated by NUL, and never parsed back apart. The product id here is the
+  /// product title, which can contain any printable character -- a visible
+  /// delimiter like `|` could appear in a title and make two different
+  /// products collide onto one line.
+  String get key => CartStore.keyOf(productId, variantLabel);
 
   num get lineTotal => unitPrice * quantity;
 
@@ -202,7 +207,7 @@ class CartStore extends ChangeNotifier {
       (email == null || email.isEmpty) ? _guestKey : 'gtradea_cart_$email';
 
   static String keyOf(String productId, String? variantLabel) =>
-      '$productId|${variantLabel ?? ''}';
+      variantLabel == null ? productId : '$productId\u0000$variantLabel';
 
   bool contains(String productId, [String? variantLabel]) =>
       _lines.any((line) => line.key == keyOf(productId, variantLabel));

@@ -40,6 +40,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     // So the app-bar badge is right on first paint rather than counting up
     // after the cart happens to load.
     CartStore.instance.load();
+
+    // Open on something buyable. The picker refuses to select a sold-out
+    // swatch, so defaulting to index 0 when index 0 is sold out would strand
+    // the page on an option the shopper cannot change away from by tapping it.
+    final firstInStock =
+        widget.product.variants.indexWhere((variant) => variant.inStock);
+    if (firstInStock > 0) _variant = firstInStock;
   }
 
   ProductDetail get _product => widget.product;
@@ -78,7 +85,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     ).push(MaterialPageRoute(builder: (_) => const CartScreen()));
   }
 
+  /// True when the page is sitting on an option that cannot be bought -- every
+  /// variant sold out, so there is nothing to default to.
+  bool get _selectionUnavailable => _selectedVariant?.inStock == false;
+
   void _addToCart() {
+    // Guarded here as well as in the picker. A rule that lives only in a
+    // widget is one the next entry point into this page walks straight around.
+    if (_selectionUnavailable) {
+      _snack('${_selectedVariant!.label} is sold out');
+      return;
+    }
     final inCart = CartStore.instance.add(_cartLine);
     final variant = _selectedVariant?.label;
     ScaffoldMessenger.of(context)
@@ -98,6 +115,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// Buy now is add-to-cart that keeps going, rather than a second path with
   /// its own idea of what is being bought.
   void _buyNow() {
+    if (_selectionUnavailable) {
+      _snack('${_selectedVariant!.label} is sold out');
+      return;
+    }
     CartStore.instance.add(_cartLine);
     _openCart();
   }
