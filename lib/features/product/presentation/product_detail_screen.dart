@@ -3,6 +3,8 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
+import '../../cart/data/cart_store.dart';
+import '../../cart/presentation/cart_screen.dart';
 import '../../home/widgets/product_rail.dart';
 import '../data/product_detail_content.dart';
 import '../../wishlist/data/wishlist_store.dart';
@@ -32,6 +34,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int _quantity = 1;
   bool _descriptionExpanded = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // So the app-bar badge is right on first paint rather than counting up
+    // after the cart happens to load.
+    CartStore.instance.load();
+  }
+
   ProductDetail get _product => widget.product;
 
   void _snack(String message) {
@@ -43,6 +53,54 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// Stable id for the sample product. A real build keys on the catalogue
   /// id; the title is unique enough for placeholder data.
   String get _productId => _product.title;
+
+  ProductVariant? get _selectedVariant =>
+      _product.variants.isEmpty ? null : _product.variants[_variant];
+
+  /// The line this page would add, at the currently chosen variant and
+  /// quantity. Built in one place so Add-to-cart and Buy-now cannot end up
+  /// disagreeing about what is being bought.
+  CartLine get _cartLine => CartLine(
+    productId: _productId,
+    variantLabel: _selectedVariant?.label,
+    title: _product.title,
+    unitPrice: _product.price,
+    listPrice: _product.listPrice,
+    imageUrl: _product.images.isEmpty ? null : _product.images.first,
+    quantity: _quantity,
+    minOrder: _product.minOrder,
+    freeDelivery: _product.freeDelivery,
+  );
+
+  void _openCart() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const CartScreen()));
+  }
+
+  void _addToCart() {
+    final inCart = CartStore.instance.add(_cartLine);
+    final variant = _selectedVariant?.label;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            variant == null
+                ? 'Added to your cart. $inCart in cart.'
+                : 'Added $variant to your cart. $inCart in cart.',
+          ),
+          action: SnackBarAction(label: 'View cart', onPressed: _openCart),
+        ),
+      );
+  }
+
+  /// Buy now is add-to-cart that keeps going, rather than a second path with
+  /// its own idea of what is being bought.
+  void _buyNow() {
+    CartStore.instance.add(_cartLine);
+    _openCart();
+  }
 
   SavedProduct get _savedProduct => SavedProduct(
     id: _productId,
@@ -124,14 +182,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 tooltip: 'Share',
                 onPressed: _share,
               ),
-              IconButton(
-                icon: Badge.count(
-                  count: 0,
-                  isLabelVisible: true,
-                  child: const Icon(Icons.shopping_cart_outlined),
+              ListenableBuilder(
+                listenable: CartStore.instance,
+                builder: (context, _) => IconButton(
+                  icon: Badge.count(
+                    count: CartStore.instance.count,
+                    isLabelVisible: true,
+                    child: const Icon(Icons.shopping_cart_outlined),
+                  ),
+                  tooltip: 'Cart',
+                  onPressed: _openCart,
                 ),
-                tooltip: 'Cart',
-                onPressed: () {},
               ),
             ],
           ),
@@ -312,8 +373,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       ),
       bottomNavigationBar: _BuyBar(
         total: product.price * _quantity,
-        onAddToCart: () => _snack('Added $_quantity to your cart'),
-        onBuyNow: () => _snack('Starting checkout'),
+        onAddToCart: _addToCart,
+        onBuyNow: _buyNow,
       ),
     );
   }

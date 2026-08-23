@@ -22,12 +22,12 @@ void main() {
 
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
         0);
-    // Cart at index 3: Saved and Account both open pages instead of switching
-    // the selection, so they are not the ones to assert this with.
-    await tester.tap(find.text('Cart'));
+    // Menu at index 4: Saved, Account and Cart all open pages instead of
+    // switching the selection, so they are not the ones to assert this with.
+    await tester.tap(find.text('Menu'));
     await tester.pumpAndSettle();
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-        3);
+        4);
   });
 
   testWidgets('uses the GtradeA teal primary, not a Flutter default',

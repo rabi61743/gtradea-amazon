@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../shared/widgets/app_bottom_nav.dart';
 import '../account/presentation/account_screen.dart';
 import '../auth/data/auth_store.dart';
+import '../cart/data/cart_store.dart';
+import '../cart/presentation/cart_screen.dart';
 import '../search/presentation/search_entry_screen.dart';
 import '../wishlist/data/wishlist_store.dart';
 import '../wishlist/presentation/wishlist_screen.dart';
@@ -36,6 +38,10 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     WishlistStore.instance.load();
     AuthStore.instance.load();
+    // Bound before the load so a sign-in that lands mid-startup still moves
+    // the cart to the right identity.
+    CartStore.instance.bindToAuth();
+    CartStore.instance.load();
   }
 
   void _openPage(BuildContext context, Widget page) {
@@ -155,20 +161,26 @@ class _HomeScreenState extends State<HomeScreen> {
         listenable: Listenable.merge([
           WishlistStore.instance,
           AuthStore.instance,
+          CartStore.instance,
         ]),
         builder: (context, _) => AppBottomNav(
           currentIndex: _tab,
           savedCount: WishlistStore.instance.count,
+          cartCount: CartStore.instance.count,
           isSignedIn: AuthStore.instance.isSignedIn,
           onSelected: (i) {
-            // Saved and Account are pages, not tabs this shell hosts, so they
-            // open on top and the nav selection stays where it was.
+            // Saved, Account and Cart are pages, not tabs this shell hosts, so
+            // they open on top and the nav selection stays where it was.
             if (i == 1) {
               _openPage(context, const WishlistScreen());
               return;
             }
             if (i == 2) {
               _openPage(context, const AccountScreen());
+              return;
+            }
+            if (i == 3) {
+              _openPage(context, const CartScreen());
               return;
             }
             setState(() => _tab = i);
