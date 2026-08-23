@@ -1,30 +1,32 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:gtradea_amazon/core/theme/colors.dart';
 import 'package:gtradea_amazon/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('app boots and shows the placeholder home', (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+    expect(find.text('GtradeA Amazon'), findsWidgets);
+    expect(find.text('Primary action'), findsOneWidget);
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets('uses the GtradeA teal primary, not a Flutter default',
+      (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+    final theme = Theme.of(tester.element(find.byType(Scaffold)));
+    expect(theme.colorScheme.primary, AppColors.primaryLight);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  testWidgets('stays on the white version even when the device is dark',
+      (tester) async {
+    // themeMode is pinned to light, so a dark platform brightness must not
+    // flip the app — that is what "white version" means here.
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.pumpWidget(const GtradeaAmazonApp());
+    final theme = Theme.of(tester.element(find.byType(Scaffold)));
+    expect(theme.brightness, Brightness.light);
+    expect(theme.scaffoldBackgroundColor, AppColors.backgroundLight);
   });
 }
