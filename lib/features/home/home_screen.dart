@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../shared/widgets/app_bottom_nav.dart';
 import '../account/presentation/account_screen.dart';
+import '../address/data/address_store.dart';
 import '../auth/data/auth_store.dart';
 import '../cart/data/cart_store.dart';
 import '../cart/presentation/cart_screen.dart';
@@ -49,6 +50,8 @@ class _HomeScreenState extends State<HomeScreen> {
     CartStore.instance.bindToAuth();
     OrderStore.instance.bindToAuth();
     NotificationStore.instance.bindToAuth();
+    AddressStore.instance.bindToAuth();
+    AddressStore.instance.load();
     OrderStore.instance.load();
     CartStore.instance.load();
 

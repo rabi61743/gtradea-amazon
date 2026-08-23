@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../../core/l10n/app_strings.dart';
+import '../../address/data/address_store.dart';
+import '../../address/presentation/address_list_screen.dart';
 import '../../auth/data/auth_store.dart';
 import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
@@ -41,6 +43,7 @@ class _AccountScreenState extends State<AccountScreen> {
     RecentlyViewedStore.instance.load();
     OrderStore.instance.load();
     LanguageStore.instance.load();
+    AddressStore.instance.load();
   }
 
   void _push(Widget page) {
@@ -67,6 +70,7 @@ class _AccountScreenState extends State<AccountScreen> {
         RecentlyViewedStore.instance,
         OrderStore.instance,
         LanguageStore.instance,
+        AddressStore.instance,
       ]),
       builder: (context, _) {
         final account = AuthStore.instance.account;
@@ -138,7 +142,10 @@ class _AccountScreenState extends State<AccountScreen> {
                   _RowSpec(
                     icon: Icons.location_on_outlined,
                     label: 'Delivery addresses',
-                    onTap: () => _todo('Addresses'),
+                    trailing: AddressStore.instance.count == 0
+                        ? null
+                        : '${AddressStore.instance.count}',
+                    onTap: () => _push(const AddressListScreen()),
                   ),
                   _RowSpec(
                     icon: Icons.payments_outlined,

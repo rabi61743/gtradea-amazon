@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
+import 'package:gtradea_amazon/features/address/data/address_store.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/cart/presentation/cart_screen.dart';
@@ -88,7 +89,19 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     CartStore.instance.resetForTest();
     AuthStore.instance.resetForTest();
+    AddressStore.instance.resetForTest();
   });
+
+  /// Checkout will not place an order with nowhere to send it, so the tests
+  /// that get that far need somewhere to send it.
+  void seedAddress() => AddressStore.instance.add(
+        label: AddressLabel.home,
+        fullName: 'Rabi Yadav',
+        phone: '9800000000',
+        province: 'Bagmati',
+        city: 'Lalitpur',
+        area: 'Jhamsikhel, house 12',
+      );
 
   group('CartLine', () {
     test('variant is part of the identity', () {
@@ -551,6 +564,7 @@ void main() {
     testWidgets('placing the order empties the cart and confirms',
         (tester) async {
       _useTallWindow(tester);
+      seedAddress();
       CartStore.instance.add(_jacketPink);
       await tester.pumpWidget(_wrap(const CartScreen()));
       await tester.pumpAndSettle();
@@ -573,6 +587,7 @@ void main() {
     testWidgets('an item added after checkout opened survives the order',
         (tester) async {
       _useTallWindow(tester);
+      seedAddress();
       CartStore.instance.add(_jacketPink);
       await tester.pumpWidget(_wrap(const CartScreen()));
       await tester.pumpAndSettle();

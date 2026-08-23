@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/colors.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../address/data/address_store.dart';
+import '../../address/presentation/address_picker_sheet.dart';
 import '../../auth/data/auth_store.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/widgets/cart_summary.dart';
@@ -35,10 +38,35 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   _Payment _payment = _Payment.cashOnDelivery;
   bool _placing = false;
 
-  static const _address = 'Lalitpur, Bagmati';
+  Address? _address;
+
+  @override
+  void initState() {
+    super.initState();
+    AddressStore.instance.load().then((_) {
+      if (mounted) setState(() => _address ??= AddressStore.instance.defaultAddress);
+    });
+  }
+
+  Future<void> _chooseAddress() async {
+    final chosen = await AddressPickerSheet.show(
+      context,
+      selectedId: _address?.id,
+    );
+    if (chosen != null && mounted) setState(() => _address = chosen);
+  }
 
   Future<void> _placeOrder() async {
     if (_placing) return;
+
+    // An order with nowhere to go is not an order. Asked for rather than
+    // guessed at, and the sheet opens straight away so the shopper is one
+    // step from finishing rather than being told off.
+    if (_address == null) {
+      await _chooseAddress();
+      if (!mounted || _address == null) return;
+    }
+
     setState(() => _placing = true);
 
     final account = AuthStore.instance.account;
@@ -47,8 +75,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // The delivery agreed now, frozen onto the order: changing the rule
       // later must not rewrite what this order cost.
       delivery: widget.totals.delivery,
-      recipient: account?.displayName ?? 'Guest',
-      address: _address,
+      recipient: _address?.fullName ?? account?.displayName ?? 'Guest',
+      address: _address?.full ?? '',
       paymentState: _payment == _Payment.cashOnDelivery
           ? PaymentState.cashOnDelivery
           // Prepaid methods stay pending until a gateway says otherwise.
@@ -120,18 +148,70 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  account?.displayName ?? 'Guest',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _address,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                if (_address == null)
+                  // No address on file. Asked for before the order rather
+                  // than after, and this is the only thing standing between
+                  // the shopper and Place order.
+                  OutlinedButton.icon(
+                    onPressed: _chooseAddress,
+                    icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+                    label: const Text('Add a delivery address'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  )
+                else
+                  InkWell(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+                    onTap: _chooseAddress,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            _address!.label.icon,
+                            size: 19,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _address!.fullName,
+                                  style: theme.textTheme.bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _address!.full,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    height: 1.35,
+                                  ),
+                                ),
+                                if (_address!.phone.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _address!.phone,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _chooseAddress,
+                            child: const Text('Change'),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
                 if (account == null) ...[
                   const SizedBox(height: 6),
                   // Guests can order -- cash on delivery does not need an
