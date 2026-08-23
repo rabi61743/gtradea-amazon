@@ -280,6 +280,20 @@ void main() {
           'Ice silk jacket');
     });
 
+    test('rapid changes persist in the order they were made', () async {
+      // Two taps on the stepper are two writes in quick succession. If they
+      // land out of order the older quantity wins on disk and the shopper's
+      // last change is silently lost.
+      CartStore.instance.add(_jacketPink);
+      CartStore.instance.increment(_jacketPink.key);
+      CartStore.instance.increment(_jacketPink.key);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      CartStore.instance.resetForTest();
+      await CartStore.instance.load();
+      expect(CartStore.instance.count, 3);
+    });
+
     test('a corrupt cart degrades to empty rather than throwing', () async {
       SharedPreferences.setMockInitialValues({'gtradea_cart': 'not json'});
       CartStore.instance.resetForTest();

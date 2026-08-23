@@ -7,6 +7,8 @@ import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/presentation/cart_screen.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
+import '../../orders/data/order_store.dart';
+import '../../orders/presentation/orders_screen.dart';
 import '../../product/presentation/product_detail_screen.dart';
 import '../../wishlist/data/wishlist_store.dart';
 import '../../wishlist/presentation/wishlist_screen.dart';
@@ -34,6 +36,7 @@ class _AccountScreenState extends State<AccountScreen> {
     WishlistStore.instance.load();
     CartStore.instance.load();
     RecentlyViewedStore.instance.load();
+    OrderStore.instance.load();
   }
 
   void _push(Widget page) {
@@ -58,6 +61,7 @@ class _AccountScreenState extends State<AccountScreen> {
         WishlistStore.instance,
         CartStore.instance,
         RecentlyViewedStore.instance,
+        OrderStore.instance,
       ]),
       builder: (context, _) {
         final account = AuthStore.instance.account;
@@ -91,7 +95,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 // anything in it for them.
                 onOrders: account == null
                     ? () => _openAuth(AuthMode.signIn)
-                    : () => _todo('Orders'),
+                    : () => _push(const OrdersScreen()),
                 onSaved: () => _push(const WishlistScreen()),
                 onCart: () => _push(const CartScreen()),
                 onHelp: () => _todo('Help centre'),

@@ -5,6 +5,8 @@ import '../../auth/data/auth_store.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
+import '../../orders/data/order_store.dart';
+import '../../orders/presentation/order_detail_screen.dart';
 
 /// Review and place the order.
 ///
@@ -33,9 +35,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   _Payment _payment = _Payment.cashOnDelivery;
   bool _placing = false;
 
+  static const _address = 'Lalitpur, Bagmati';
+
   Future<void> _placeOrder() async {
     if (_placing) return;
     setState(() => _placing = true);
+
+    final account = AuthStore.instance.account;
+    final order = OrderStore.instance.place(
+      lines: widget.lines,
+      // The delivery agreed now, frozen onto the order: changing the rule
+      // later must not rewrite what this order cost.
+      delivery: widget.totals.delivery,
+      recipient: account?.displayName ?? 'Guest',
+      address: _address,
+      paymentState: _payment == _Payment.cashOnDelivery
+          ? PaymentState.cashOnDelivery
+          // Prepaid methods stay pending until a gateway says otherwise.
+          // There is no gateway here, so claiming "Paid" would be a lie.
+          : PaymentState.pending,
+    );
 
     // Only the lines this screen was handed are cleared. Anything added to the
     // cart from another screen after checkout opened is not part of this order
@@ -45,7 +64,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     if (!mounted) return;
-    await showDialog<void>(
+    final track = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         icon: const Icon(Icons.check_circle, color: AppColors.success, size: 40),
@@ -57,9 +76,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           '${_payment == _Payment.cashOnDelivery ? 'Pay the courier on delivery.' : 'Payment confirmation will follow.'}',
         ),
         actions: [
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('Done'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Track order'),
           ),
         ],
       ),
@@ -69,6 +92,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // Back to wherever the shopper was before the cart: the order is done and
     // the cart behind this screen is now empty.
     Navigator.of(context).pop();
+
+    if ((track ?? false) && mounted) {
+      // Pushed after the pop so Back from tracking lands on the storefront
+      // rather than on a checkout screen for an order already placed.
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => OrderDetailScreen(orderId: order.id),
+        ),
+      );
+    }
   }
 
   @override
@@ -94,7 +127,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Lalitpur, Bagmati',
+                  _address,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

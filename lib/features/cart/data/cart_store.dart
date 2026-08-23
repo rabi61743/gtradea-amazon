@@ -165,6 +165,52 @@ class CartTotals {
     itemCount: 0,
     lineCount: 0,
   );
+
+  /// The one place money is added up.
+  ///
+  /// A past order passes [delivery] so its charge stays whatever was agreed at
+  /// the time; changing the delivery rule must not silently rewrite what an
+  /// old order cost. Everything else derives from the lines, whose prices were
+  /// snapshotted when they were added.
+  static CartTotals of(Iterable<CartLine> lines, {num? delivery}) {
+    if (lines.isEmpty) {
+      return delivery == null || delivery == 0
+          ? empty
+          : CartTotals(
+              subtotal: 0,
+              savings: 0,
+              delivery: delivery,
+              vatIncluded: 0,
+              itemCount: 0,
+              lineCount: 0,
+            );
+    }
+
+    num subtotal = 0;
+    num savings = 0;
+    num vat = 0;
+    var items = 0;
+    var lineCount = 0;
+    var everythingFree = true;
+
+    for (final line in lines) {
+      subtotal += line.lineTotal;
+      savings += line.lineSaving ?? 0;
+      vat += line.vatIncluded;
+      items += line.quantity;
+      lineCount++;
+      if (!line.freeDelivery) everythingFree = false;
+    }
+
+    return CartTotals(
+      subtotal: subtotal,
+      savings: savings,
+      delivery: delivery ?? (everythingFree ? 0 : CartStore.deliveryFee),
+      vatIncluded: vat,
+      itemCount: items,
+      lineCount: lineCount,
+    );
+  }
 }
 
 /// The cart, shared across screens.
@@ -224,32 +270,7 @@ class CartStore extends ChangeNotifier {
   /// Everything owed, derived from the lines. The single source of truth for
   /// money in this app -- the cart screen and the checkout screen both read it
   /// rather than each adding things up their own way.
-  CartTotals get totals {
-    if (_lines.isEmpty) return CartTotals.empty;
-
-    num subtotal = 0;
-    num savings = 0;
-    num vat = 0;
-    var items = 0;
-    var everythingFree = true;
-
-    for (final line in _lines) {
-      subtotal += line.lineTotal;
-      savings += line.lineSaving ?? 0;
-      vat += line.vatIncluded;
-      items += line.quantity;
-      if (!line.freeDelivery) everythingFree = false;
-    }
-
-    return CartTotals(
-      subtotal: subtotal,
-      savings: savings,
-      delivery: everythingFree ? 0 : deliveryFee,
-      vatIncluded: vat,
-      itemCount: items,
-      lineCount: _lines.length,
-    );
-  }
+  CartTotals get totals => CartTotals.of(_lines);
 
   /// Follows the signed-in account for the rest of the app's life.
   ///
@@ -460,22 +481,34 @@ class CartStore extends ChangeNotifier {
     return _write(key, payload);
   }
 
-  Future<void> _write(String key, String payload) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(key, payload);
-    } catch (_) {
-      // Best effort, like the other stores: a failed write costs persistence
-      // across a restart, never the change just made.
-    }
+  /// Writes run one after another, in the order they were asked for.
+  ///
+  /// Without the chain, two mutations in quick succession -- a shopper tapping
+  /// the stepper twice -- are two concurrent writes whose completion order is
+  /// not guaranteed, so the older quantity can land last and the newer one is
+  /// silently lost on the next read.
+  Future<void> _writes = Future<void>.value();
+
+  Future<void> _write(String key, String payload) {
+    return _writes = _writes.then((_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(key, payload);
+      } catch (_) {
+        // Best effort, like the other stores: a failed write costs persistence
+        // across a restart, never the change just made.
+      }
+    });
   }
 
-  Future<void> _clearStored(String key) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(key);
-    } catch (_) {
-      // See _persist.
-    }
+  Future<void> _clearStored(String key) {
+    return _writes = _writes.then((_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(key);
+      } catch (_) {
+        // See _persist.
+      }
+    });
   }
 }
