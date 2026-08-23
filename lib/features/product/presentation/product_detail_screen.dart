@@ -3,6 +3,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
+import '../../account/data/recently_viewed_store.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/presentation/cart_screen.dart';
 import '../../home/widgets/product_rail.dart';
@@ -47,6 +48,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final firstInStock =
         widget.product.variants.indexWhere((variant) => variant.inStock);
     if (firstInStock > 0) _variant = firstInStock;
+
+    // Opening the page is the visit. Recorded after the first frame so it
+    // never competes with building it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      RecentlyViewedStore.instance.load().then((_) {
+        if (mounted) RecentlyViewedStore.instance.record(_savedProduct);
+      });
+    });
   }
 
   ProductDetail get _product => widget.product;
