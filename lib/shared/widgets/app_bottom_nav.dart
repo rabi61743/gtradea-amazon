@@ -83,8 +83,9 @@ class AppBottomNav extends StatelessWidget {
           label: 'Cart',
         ),
         const NavigationDestination(
-          icon: Icon(Icons.menu),
-          label: 'Menu',
+          icon: Icon(Icons.grid_view_outlined),
+          selectedIcon: Icon(Icons.grid_view),
+          label: 'Browse',
         ),
       ],
     );

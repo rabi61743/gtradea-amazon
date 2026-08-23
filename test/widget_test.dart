@@ -16,18 +16,29 @@ void main() {
     expect(find.text('Cart'), findsOneWidget);
   });
 
-  testWidgets('selecting a bottom-nav destination updates the selection',
+  testWidgets('the bottom bar is shortcuts, and Home stays the shell',
       (tester) async {
     await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pump(const Duration(milliseconds: 200));
 
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-        0);
-    // Menu at index 4: Saved, Account and Cart all open pages instead of
-    // switching the selection, so they are not the ones to assert this with.
-    await tester.tap(find.text('Menu'));
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      0,
+    );
+
+    // Every other destination opens on top of Home rather than switching a
+    // tab, so the selection never moves off Home -- highlighting a destination
+    // for a page that had since been popped would be a lie.
+    await tester.tap(find.text('Browse'));
     await tester.pumpAndSettle();
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-        4);
+    expect(find.text('Browse'), findsWidgets);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      0,
+    );
   });
 
   testWidgets('uses the GtradeA teal primary, not a Flutter default',

@@ -7,6 +7,7 @@ import '../account/presentation/account_screen.dart';
 import '../auth/data/auth_store.dart';
 import '../cart/data/cart_store.dart';
 import '../cart/presentation/cart_screen.dart';
+import '../catalog/presentation/browse_screen.dart';
 import '../notifications/data/notification_store.dart';
 import '../orders/data/order_store.dart';
 import '../search/presentation/search_entry_screen.dart';
@@ -35,7 +36,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _tab = 0;
 
   @override
   void initState() {
@@ -198,7 +198,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: 'Shop by category',
                   leadingIcon: Icons.grid_view,
                   entries: HomeContent.departments,
-                  onSeeAll: () {},
+                  // The full tree, rather than a link that goes nowhere.
+                  onSeeAll: () => _openPage(context, const BrowseScreen()),
                 ),
               ],
             ),
@@ -214,27 +215,21 @@ class _HomeScreenState extends State<HomeScreen> {
           AuthStore.instance,
           CartStore.instance,
         ]),
+        // Home is the shell and every other destination opens on top of it, so
+        // the selected index is always Home. The bar is a row of shortcuts
+        // rather than a tab controller; tracking a selection would leave a
+        // destination highlighted for a page that had since been popped.
         builder: (context, _) => AppBottomNav(
-          currentIndex: _tab,
+          currentIndex: 0,
           savedCount: WishlistStore.instance.count,
           cartCount: CartStore.instance.count,
           isSignedIn: AuthStore.instance.isSignedIn,
-          onSelected: (i) {
-            // Saved, Account and Cart are pages, not tabs this shell hosts, so
-            // they open on top and the nav selection stays where it was.
-            if (i == 1) {
-              _openPage(context, const WishlistScreen());
-              return;
-            }
-            if (i == 2) {
-              _openPage(context, const AccountScreen());
-              return;
-            }
-            if (i == 3) {
-              _openPage(context, const CartScreen());
-              return;
-            }
-            setState(() => _tab = i);
+          onSelected: (i) => switch (i) {
+            1 => _openPage(context, const WishlistScreen()),
+            2 => _openPage(context, const AccountScreen()),
+            3 => _openPage(context, const CartScreen()),
+            4 => _openPage(context, const BrowseScreen()),
+            _ => null,
           },
         ),
       ),
