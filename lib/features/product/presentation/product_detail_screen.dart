@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
-import '../../home/widgets/product_rail.dart' show formatRupees;
+import '../../home/widgets/product_rail.dart';
 import '../data/product_detail_content.dart';
+import '../widgets/assurance_row.dart';
 import '../widgets/product_gallery.dart';
+import '../widgets/ratings_summary.dart';
 import '../widgets/variant_picker.dart';
 
 /// Product detail: gallery, price, variants, delivery, specs, and a pinned
@@ -146,7 +148,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ),
           const SizedBox(height: 16),
           _DeliveryCard(freeDelivery: product.freeDelivery),
-          const SizedBox(height: 8),
+          const SizedBox(height: 14),
+          AssuranceRow(assurances: product.assurances),
+          if (product.highlights.isNotEmpty) ...[
+            _SectionTitle('Highlights'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _HighlightsGrid(highlights: product.highlights),
+            ),
+          ],
           _SectionTitle('Description'),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
@@ -177,6 +187,23 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _SpecTable(specs: product.specs),
           ),
+          if (product.ratingSummary != null) ...[
+            _SectionTitle('Ratings and reviews'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              child: RatingsSummary(
+                summary: product.ratingSummary!,
+                reviews: product.reviews,
+              ),
+            ),
+          ],
+          if (product.similar.isNotEmpty)
+            ProductRail(
+              title: 'Similar products',
+              leadingIcon: Icons.compare_arrows,
+              items: product.similar,
+              onSeeAll: () {},
+            ),
         ],
       ),
       bottomNavigationBar: _BuyBar(
@@ -189,6 +216,57 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   static String _compact(int n) =>
       n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : '$n';
+}
+
+/// The handful of facts a shopper checks first, two to a row.
+///
+/// Not collapsible, unlike the reference. These are six short pairs; hiding
+/// them behind a chevron saves a few hundred pixels and costs the shopper
+/// the tap that answers "is this the right thing".
+class _HighlightsGrid extends StatelessWidget {
+  const _HighlightsGrid({required this.highlights});
+
+  final List<ProductSpec> highlights;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 12.0;
+        final columnWidth = (constraints.maxWidth - gap) / 2;
+        return Wrap(
+          spacing: gap,
+          runSpacing: 14,
+          children: [
+            for (final item in highlights)
+              SizedBox(
+                width: columnWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      item.label,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.value,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _SectionTitle extends StatelessWidget {
