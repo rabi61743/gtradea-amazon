@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/colors.dart';
+import 'package:gtradea_amazon/features/home/widgets/product_rail.dart';
 import 'package:gtradea_amazon/main.dart';
 
 void main() {
@@ -45,5 +46,67 @@ void main() {
     final theme = Theme.of(tester.element(find.byType(Scaffold)));
     expect(theme.brightness, Brightness.light);
     expect(theme.scaffoldBackgroundColor, AppColors.backgroundLight);
+  });
+
+  testWidgets('product rail shows title, rating and price', (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+
+    // The rail is below the fold in the default test viewport, so it is not
+    // built until scrolled to.
+    await tester.scrollUntilVisible(find.text('Top picks for you'), 400,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Top picks for you'), findsOneWidget);
+    expect(find.text('Wireless over-ear headphones, 40h battery'),
+        findsOneWidget);
+    expect(find.text('Rs. 8,990'), findsOneWidget);
+  });
+
+  testWidgets('a list price is struck through only when it is a saving',
+      (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+
+    // The rail is below the fold in the default test viewport, so it is not
+    // built until scrolled to.
+    await tester.scrollUntilVisible(find.text('Top picks for you'), 400,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    final struck = tester.widget<Text>(
+      find.text('Rs. 12,500'),
+    );
+    expect(struck.style?.decoration, TextDecoration.lineThrough);
+
+    // The keyboard has no listPrice, so nothing is crossed out for it.
+    expect(find.text('Rs. 6,750'), findsOneWidget);
+  });
+
+  testWidgets('departments render as a grid with an all-departments link',
+      (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+
+    // Below the fold, so scroll it into view first.
+    await tester.scrollUntilVisible(find.text('Explore departments'), 400,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Explore departments'), findsOneWidget);
+    expect(find.text('Beauty'), findsOneWidget);
+    expect(find.text('All departments'), findsOneWidget);
+  });
+
+  group('formatRupees', () {
+    test('groups thousands', () {
+      expect(formatRupees(8990), 'Rs. 8,990');
+      expect(formatRupees(27590), 'Rs. 27,590');
+      expect(formatRupees(1234567), 'Rs. 1,234,567');
+    });
+
+    test('leaves short values ungrouped and rounds to whole rupees', () {
+      expect(formatRupees(999), 'Rs. 999');
+      expect(formatRupees(0), 'Rs. 0');
+      expect(formatRupees(1250.6), 'Rs. 1,251');
+    });
   });
 }

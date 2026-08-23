@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../shared/widgets/app_bottom_nav.dart';
 import 'widgets/category_section.dart';
+import 'widgets/department_grid.dart';
+import 'widgets/product_rail.dart';
 import 'widgets/promo_rail.dart';
 import 'widgets/search_header.dart';
 
@@ -84,6 +86,73 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
   ];
 
+  static const _topPicks = [
+    ProductItem(
+      title: 'Wireless over-ear headphones, 40h battery',
+      price: 8990,
+      listPrice: 12500,
+      rating: 4.5,
+      reviewCount: 128,
+      icon: Icons.headphones,
+      tint: Color(0xFF6366F1),
+    ),
+    ProductItem(
+      title: 'Portable bluetooth speaker, waterproof',
+      price: 4250,
+      listPrice: 5600,
+      rating: 4.0,
+      reviewCount: 64,
+      icon: Icons.speaker,
+      tint: Color(0xFFF97316),
+    ),
+    ProductItem(
+      title: 'Mechanical keyboard, hot-swappable switches',
+      price: 6750,
+      rating: 5.0,
+      reviewCount: 12,
+      icon: Icons.keyboard,
+      tint: Color(0xFFE84326),
+    ),
+    ProductItem(
+      title: '10-inch tablet with folio case',
+      price: 21900,
+      listPrice: 24500,
+      rating: 3.5,
+      reviewCount: 41,
+      icon: Icons.tablet_mac,
+      tint: Color(0xFF0EA5E9),
+    ),
+  ];
+
+  static const _departments = [
+    DepartmentEntry(label: 'Beauty', icon: Icons.brush, tint: Color(0xFFEC4899)),
+    DepartmentEntry(
+      label: 'Home and kitchen',
+      icon: Icons.chair,
+      tint: Color(0xFF0891B2),
+    ),
+    DepartmentEntry(
+      label: 'Sports and outdoors',
+      icon: Icons.sports_baseball,
+      tint: Color(0xFF059669),
+    ),
+    DepartmentEntry(
+      label: 'Electronics',
+      icon: Icons.memory,
+      tint: Color(0xFF6366F1),
+    ),
+    DepartmentEntry(
+      label: 'Outdoor clothing',
+      icon: Icons.backpack,
+      tint: Color(0xFFF59E0B),
+    ),
+    DepartmentEntry(
+      label: 'Pet supplies',
+      icon: Icons.pets,
+      tint: Color(0xFFA855F7),
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -102,10 +171,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   entries: _electronics,
                   onShopMore: () {},
                 ),
+                ProductRail(
+                  title: 'Top picks for you',
+                  items: _topPicks,
+                  onSeeAll: () {},
+                ),
                 CategorySection(
                   title: 'Score the top PCs & accessories',
                   entries: _computing,
                   onShopMore: () {},
+                ),
+                DepartmentGrid(
+                  title: 'Explore departments',
+                  entries: _departments,
+                  onSeeAll: () {},
                 ),
               ],
             ),

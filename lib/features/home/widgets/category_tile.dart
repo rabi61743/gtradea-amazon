@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/widgets/artwork_panel.dart';
 
 /// One category: a square artwork panel with its label underneath.
-///
-/// The panel is a two-stop gradient behind an icon rather than a photograph.
-/// This app has no image pipeline yet, and a tinted panel reads as deliberate
-/// where a grey placeholder box reads as missing. Swapping in real imagery
-/// later only touches this widget.
 class CategoryTile extends StatelessWidget {
   const CategoryTile({
     super.key,
@@ -37,33 +33,7 @@ class CategoryTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          AspectRatio(
-            aspectRatio: 1,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    tint.withValues(alpha: 0.28),
-                    tint.withValues(alpha: 0.10),
-                  ],
-                ),
-              ),
-              child: Center(
-                // Sized off the panel rather than fixed: the icon stands in for
-                  // product photography, so it has to carry the tile.
-                  child: LayoutBuilder(
-                    builder: (context, constraints) => Icon(
-                      icon,
-                      size: constraints.maxWidth * 0.42,
-                      color: tint,
-                    ),
-                  ),
-              ),
-            ),
-          ),
+          ArtworkPanel(icon: icon, tint: tint),
           const SizedBox(height: 8),
           Text(
             label,
