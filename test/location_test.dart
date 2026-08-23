@@ -127,6 +127,20 @@ void main() {
           greaterThan(kMaxMatchKm));
     });
 
+    test('every province the detector can produce is one the form offers', () {
+      // The province becomes the dropdown's selected value, and a value
+      // outside its items makes it assert -- the form would never open.
+      for (final city in kServedCities) {
+        expect(kProvinces, contains(city.province), reason: city.city);
+      }
+      for (final city in kServedCities) {
+        final resolved =
+            LocationDetector.matchPosition(city.latitude, city.longitude);
+        expect(kProvinces, contains((resolved as DetectResolved).province),
+            reason: city.city);
+      }
+    });
+
     test('every served city resolves to itself', () {
       for (final city in kServedCities) {
         final resolved =
@@ -402,7 +416,53 @@ void main() {
       await tapDetect(tester);
 
       expect(find.textContaining('took too long'), findsOneWidget);
-      expect(find.text('Try again'), findsWidgets);
+      // Exactly one. The primary action here IS retry, and a second identical
+      // button beside it reads as a rendering bug.
+      expect(find.text('Try again'), findsOneWidget);
+    });
+
+    testWidgets('a state whose remedy is not retry offers both', (tester) async {
+      _useDetector([const DetectServiceDisabled()]);
+      await pumpPicker(tester);
+      await tapDetect(tester);
+
+      expect(find.text('Enable location'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+    });
+
+    testWidgets('an approximate result hedges on the field it is about',
+        (tester) async {
+      _useDetector([
+        const DetectResolved(
+          city: 'Pokhara',
+          province: 'Gandaki',
+          distanceKm: 40,
+          fromGeocoder: false,
+        ),
+      ]);
+      await pumpPicker(tester);
+      await tapDetect(tester);
+
+      // Not a snack bar: the form opens over it in the same frame and would
+      // bury the message. The caveat sits on the city field instead.
+      expect(find.text('New address'), findsOneWidget);
+      expect(find.textContaining('We guessed this'), findsOneWidget);
+    });
+
+    testWidgets('a confident result carries no hedge', (tester) async {
+      _useDetector([
+        const DetectResolved(
+          city: 'Lalitpur',
+          province: 'Bagmati',
+          street: 'Jhamsikhel',
+          distanceKm: 0,
+          fromGeocoder: true,
+        ),
+      ]);
+      await pumpPicker(tester);
+      await tapDetect(tester);
+
+      expect(find.textContaining('We guessed this'), findsNothing);
     });
 
     testWidgets('an unavailable position offers typing instead',

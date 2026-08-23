@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
+import 'address_store.dart' show kProvinces;
+
 /// A city this shop delivers to, and where it is.
 class ServedCity {
   const ServedCity(this.city, this.province, this.latitude, this.longitude);
@@ -65,6 +67,10 @@ class DetectResolved extends DetectResult {
   });
 
   final String city;
+
+  /// Always one of kProvinces, or empty when nothing recognisable was found.
+  /// Never raw geocoder text: this becomes the form dropdown's value, and a
+  /// value outside its items makes it assert.
   final String province;
 
   /// Street and house, when the platform geocoder could name one.
@@ -188,6 +194,13 @@ class LocationDetector {
   /// How long to wait for a fix before giving up and saying so.
   static const fixTimeout = Duration(seconds: 15);
 
+  /// How long to wait on the permission dialog. Generous, because a shopper
+  /// reads it, but bounded, because it can never come back at all.
+  static const permissionTimeout = Duration(seconds: 60);
+
+  /// A ceiling on the whole attempt, so no single step can hang the UI.
+  static const overallTimeout = Duration(seconds: 90);
+
   /// Built once. In geocoding 5 the reverse lookup hangs off an instance
   /// rather than a top-level function.
   static final _geocoding = Geocoding();
@@ -204,7 +217,13 @@ class LocationDetector {
   /// Opens this app's settings page, for a permission refused for good.
   Future<bool> openAppSettings() => Geolocator.openAppSettings();
 
-  Future<DetectResult> detect() async {
+  /// Bounded end to end. Every individual step already has its own limit, but
+  /// a plugin that never replies would otherwise leave the caller with a
+  /// spinner and no way out, so the whole attempt is capped too.
+  Future<DetectResult> detect() =>
+      _detect().timeout(overallTimeout, onTimeout: () => const DetectTimeout());
+
+  Future<DetectResult> _detect() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
         return const DetectServiceDisabled();
@@ -212,7 +231,15 @@ class LocationDetector {
 
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+        // Bounded, because the permission request is not guaranteed to come
+        // back. On Android a dialog dismissed with Back -- or interrupted by a
+        // call -- delivers an empty grantResults, which the plugin drops
+        // without completing its reply. The future then never resolves and the
+        // caller is left spinning with nothing to tap.
+        permission = await Geolocator.requestPermission()
+            .timeout(permissionTimeout, onTimeout: () {
+          return LocationPermission.denied;
+        });
       }
       if (permission == LocationPermission.deniedForever) {
         return const DetectPermissionDenied(permanently: true);
@@ -269,9 +296,12 @@ class LocationDetector {
       if (place != null && city != null) {
         return DetectResolved(
           city: city,
-          province: _province(place, latitude, longitude),
+          province: _province(place, latitude, longitude) ?? '',
           street: _firstNonEmpty([place.street, place.thoroughfare]),
-          area: _firstNonEmpty([place.subLocality, place.subThoroughfare]),
+          // subLocality only. subThoroughfare is the house NUMBER, not a
+          // neighbourhood, and putting a bare "12" in the area reads as
+          // nonsense next to a street that already carries it.
+          area: _firstNonEmpty([place.subLocality]),
           postalCode: _firstNonEmpty([place.postalCode]),
           distanceKm: 0,
           fromGeocoder: true,
@@ -286,18 +316,39 @@ class LocationDetector {
     return matchPosition(latitude, longitude);
   }
 
-  /// Province, preferring what the geocoder said and falling back to the
-  /// nearest served city's, since the geocoder often gives a district name
-  /// this shop's province list would not recognise.
-  static String _province(Placemark place, double latitude, double longitude) {
+  /// Province, as one of the names the form's dropdown actually offers.
+  ///
+  /// Whatever comes back here ends up as the dropdown's selected value, and a
+  /// value that is not among its items makes it assert -- so the form would
+  /// never open at all. Everything below therefore resolves to a member of
+  /// [kProvinces] or to null, and never to raw geocoder text.
+  ///
+  /// Geocoders decorate the name in ways a bare comparison misses: "Bagmati
+  /// Province", "Province No. 3", or a district like "Kaski" that is not a
+  /// province at all. A decorated match is accepted and canonicalised; a
+  /// district falls through to the nearest served city, which is the right
+  /// answer for it.
+  static String? _province(
+    Placemark place,
+    double latitude,
+    double longitude,
+  ) {
     final given = _firstNonEmpty([place.administrativeArea]);
     if (given != null) {
-      for (final city in kServedCities) {
-        if (city.province.toLowerCase() == given.toLowerCase()) return given;
+      final lower = given.toLowerCase();
+      for (final province in kProvinces) {
+        final name = province.toLowerCase();
+        if (lower == name || lower.contains(name)) return province;
       }
     }
+
     final nearest = matchPosition(latitude, longitude);
-    return nearest is DetectResolved ? nearest.province : (given ?? '');
+    if (nearest is DetectResolved) return nearest.province;
+
+    // Outside the served area and the geocoder gave something unrecognised.
+    // Null leaves the form on its own default rather than on a province that
+    // is not in the list.
+    return null;
   }
 
   static String? _firstNonEmpty(List<String?> candidates) {

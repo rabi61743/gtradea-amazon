@@ -14,7 +14,12 @@ import '../data/address_store.dart';
 /// reach them, then province down to the door -- rather than the way a
 /// database would store it.
 class AddressFormSheet extends StatefulWidget {
-  const AddressFormSheet({super.key, this.existing, this.seed});
+  const AddressFormSheet({
+    super.key,
+    this.existing,
+    this.seed,
+    this.seedApproximate = false,
+  });
 
   /// The address being edited, or null when adding a new one.
   final Address? existing;
@@ -25,16 +30,26 @@ class AddressFormSheet extends StatefulWidget {
   /// and silently save nothing.
   final Address? seed;
 
+  /// True when the seeded city was a nearest-town guess rather than a real
+  /// geocoded address. Surfaced on the city field itself, which is where the
+  /// shopper can act on it.
+  final bool seedApproximate;
+
   static Future<Address?> show(
     BuildContext context, {
     Address? existing,
     Address? seed,
+    bool seedApproximate = false,
   }) {
     return showModalBottomSheet<Address>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => AddressFormSheet(existing: existing, seed: seed),
+      builder: (_) => AddressFormSheet(
+        existing: existing,
+        seed: seed,
+        seedApproximate: seedApproximate,
+      ),
     );
   }
 
@@ -55,7 +70,11 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
   late final _postal = TextEditingController(text: _start?.postalCode);
 
   late AddressLabel _label = _start?.label ?? AddressLabel.home;
-  late String _province = (_start?.province.isNotEmpty ?? false)
+  /// Guarded, not trusted. The dropdown asserts when its value is not among
+  /// its items, which would mean the form never opens at all -- so a seed
+  /// carrying anything the list does not know falls back to the default
+  /// rather than taking the whole sheet down.
+  late String _province = kProvinces.contains(_start?.province)
       ? _start!.province
       : kProvinces[2];
   late bool _makeDefault = widget.existing == null ||
@@ -209,9 +228,14 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
                 controller: _city,
                 textCapitalization: TextCapitalization.words,
                 textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'City or district',
-                  prefixIcon: Icon(Icons.location_city_outlined),
+                  prefixIcon: const Icon(Icons.location_city_outlined),
+                  helperText: widget.seedApproximate
+                      ? 'We guessed this from your rough position -- change it '
+                          'if it is wrong'
+                      : null,
+                  helperMaxLines: 2,
                 ),
                 validator: (value) =>
                     (value ?? '').trim().isEmpty ? 'Enter a city' : null,

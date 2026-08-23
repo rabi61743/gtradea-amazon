@@ -9,6 +9,7 @@ typedef DetectedPlace = ({
   String province,
   String? addressLine,
   String? postalCode,
+  bool approximate,
 });
 
 /// "Use my current location", with the whole flow behind it.
@@ -76,6 +77,16 @@ class _UseMyLocationTileState extends State<UseMyLocationTile>
     final result = await LocationDetector.instance.detect();
     if (!mounted) return;
 
+    setState(() => _busy = false);
+
+    // A modal sheet on top of this one means the shopper has moved on -- they
+    // tapped Add address, or a quick city, while this was still running. The
+    // tile stays mounted underneath, so `mounted` alone does not catch it, and
+    // opening a second prefilled form over the one they are typing into would
+    // bury their work.
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+
     switch (result) {
       case DetectResolved(
           :final city,
@@ -84,25 +95,21 @@ class _UseMyLocationTileState extends State<UseMyLocationTile>
           :final postalCode,
           :final isApproximate,
         ):
-        setState(() {
-          _busy = false;
-          _problem = null;
-        });
-        _say(isApproximate
-            ? 'Looks like you are near $city. Change it if that is wrong.'
-            : 'Found you in $city.');
+        setState(() => _problem = null);
+        // Nothing is said in a snack bar here: onDetected opens a sheet over
+        // this one in the same frame, and the message would be drawn
+        // underneath it. The hedge travels with the result instead, so it
+        // lands on the field it is actually about.
         widget.onDetected((
           city: city,
           province: province,
           addressLine: addressLine,
           postalCode: postalCode,
+          approximate: isApproximate,
         ));
 
       default:
-        setState(() {
-          _busy = false;
-          _problem = result;
-        });
+        setState(() => _problem = result);
     }
   }
 
@@ -114,12 +121,6 @@ class _UseMyLocationTileState extends State<UseMyLocationTile>
   Future<void> _openAppSettings() async {
     _awaitingSettings = true;
     await LocationDetector.instance.openAppSettings();
-  }
-
-  void _say(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -283,10 +284,13 @@ class _Problem extends StatelessWidget {
                 onPressed: action,
                 child: Text(actionLabel),
               ),
-              const SizedBox(width: 8),
-              // Always offered alongside, because the shopper may have fixed
-              // the problem another way -- stepping outdoors, for instance.
-              TextButton(onPressed: onRetry, child: const Text('Try again')),
+              // Only when the primary action is something else. Four of these
+              // states already retry, and two identical buttons side by side
+              // reads as a rendering bug.
+              if (actionLabel != 'Try again') ...[
+                const SizedBox(width: 8),
+                TextButton(onPressed: onRetry, child: const Text('Try again')),
+              ],
             ],
           ),
         ],

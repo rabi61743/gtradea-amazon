@@ -93,6 +93,7 @@ class _AddressPickerSheetState extends State<AddressPickerSheet> {
               area: found.addressLine ?? '',
               postalCode: found.postalCode,
             ),
+      seedApproximate: found?.approximate ?? false,
     );
     if (created != null && mounted) Navigator.of(context).pop(created);
   }
@@ -143,6 +144,7 @@ class _AddressPickerSheetState extends State<AddressPickerSheet> {
                               province: province,
                               addressLine: null,
                               postalCode: null,
+                              approximate: false,
                             )),
                       )
                     else ...[

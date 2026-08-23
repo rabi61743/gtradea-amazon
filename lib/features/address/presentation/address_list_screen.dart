@@ -76,6 +76,7 @@ class _AddressListScreenState extends State<AddressListScreen> {
                           area: found.addressLine ?? '',
                           postalCode: found.postalCode,
                         ),
+                        seedApproximate: found.approximate,
                       ),
                     ),
                     const SizedBox(height: 16),

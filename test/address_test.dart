@@ -299,6 +299,32 @@ void main() {
       expect(AddressStore.instance.isDefault(saved.id), isTrue);
     });
 
+    testWidgets('a province the dropdown does not know does not crash it',
+        (tester) async {
+      _useTallWindow(tester);
+      // A geocoder can return 'Bagmati Province' or a district name. Handing
+      // that straight to the dropdown asserts, and the form never opens at
+      // all -- so the seed is guarded rather than trusted.
+      await tester.pumpWidget(_wrap(
+        const AddressFormSheet(
+          seed: Address(
+            id: '',
+            label: AddressLabel.home,
+            fullName: '',
+            phone: '',
+            province: 'Province No. 3',
+            city: 'Kathmandu',
+            area: '',
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('New address'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, 'Kathmandu'), findsOneWidget);
+    });
+
     testWidgets('a seeded form is still an add, not an edit', (tester) async {
       _useTallWindow(tester);
       // The picker seeds city and province from a chip. Treating that as an
