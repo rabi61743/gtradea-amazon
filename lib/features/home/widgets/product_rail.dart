@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/artwork_panel.dart';
+import '../../../shared/widgets/section_header.dart';
 
 /// A product as the home rails render it.
 class ProductItem {
@@ -34,37 +35,24 @@ class ProductRail extends StatelessWidget {
     super.key,
     required this.title,
     required this.items,
+    this.leadingIcon,
     this.onSeeAll,
   });
 
   final String title;
+  final IconData? leadingIcon;
   final List<ProductItem> items;
   final VoidCallback? onSeeAll;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 24, 8, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    height: 1.15,
-                  ),
-                ),
-              ),
-              if (onSeeAll != null)
-                TextButton(onPressed: onSeeAll, child: const Text('See all')),
-            ],
-          ),
+        SectionHeader(
+          title: title,
+          leadingIcon: leadingIcon,
+          onSeeAll: onSeeAll,
         ),
         SizedBox(
           // Grows with the device text scale. The card is title + rating +

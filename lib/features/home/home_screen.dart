@@ -153,6 +153,25 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
   ];
 
+  static const _homeGoods = [
+    CategoryEntry(label: 'Bedsheets', icon: Icons.bed, tint: Color(0xFF0891B2)),
+    CategoryEntry(
+      label: 'Pillows',
+      icon: Icons.airline_seat_individual_suite,
+      tint: Color(0xFFA855F7),
+    ),
+    CategoryEntry(
+      label: 'Duvet covers',
+      icon: Icons.king_bed,
+      tint: Color(0xFFF59E0B),
+    ),
+    CategoryEntry(
+      label: 'Throws and blankets',
+      icon: Icons.dry_cleaning,
+      tint: Color(0xFF059669),
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -167,22 +186,32 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 const PromoRail(items: _promos),
                 CategorySection(
-                  title: 'Plug in with our electronics',
+                  title: 'Electronics',
+                  leadingIcon: Icons.memory,
                   entries: _electronics,
-                  onShopMore: () {},
+                  onSeeAll: () {},
                 ),
                 ProductRail(
-                  title: 'Top picks for you',
+                  title: 'Recommended for you',
+                  leadingIcon: Icons.auto_awesome,
                   items: _topPicks,
                   onSeeAll: () {},
                 ),
                 CategorySection(
-                  title: 'Score the top PCs & accessories',
+                  title: 'Computing',
+                  leadingIcon: Icons.laptop_chromebook,
                   entries: _computing,
-                  onShopMore: () {},
+                  onSeeAll: () {},
+                ),
+                CategorySection(
+                  title: 'Home and living',
+                  leadingIcon: Icons.chair,
+                  entries: _homeGoods,
+                  onSeeAll: () {},
                 ),
                 DepartmentGrid(
-                  title: 'Explore departments',
+                  title: 'Shop by category',
+                  leadingIcon: Icons.grid_view,
                   entries: _departments,
                   onSeeAll: () {},
                 ),

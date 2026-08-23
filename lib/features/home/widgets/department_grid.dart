@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/artwork_panel.dart';
+import '../../../shared/widgets/section_header.dart';
 
 class DepartmentEntry {
   const DepartmentEntry({
@@ -25,10 +26,12 @@ class DepartmentGrid extends StatelessWidget {
     super.key,
     required this.title,
     required this.entries,
+    this.leadingIcon,
     this.onSeeAll,
   });
 
   final String title;
+  final IconData? leadingIcon;
   final List<DepartmentEntry> entries;
   final VoidCallback? onSeeAll;
 
@@ -39,16 +42,7 @@ class DepartmentGrid extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 14),
-          child: Text(
-            title,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              height: 1.15,
-            ),
-          ),
-        ),
+        SectionHeader(title: title, leadingIcon: leadingIcon, onSeeAll: onSeeAll),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: GridView.builder(
@@ -92,13 +86,6 @@ class DepartmentGrid extends StatelessWidget {
                 ),
               );
             },
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),
-          child: TextButton(
-            onPressed: onSeeAll,
-            child: const Text('All departments'),
           ),
         ),
       ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/widgets/section_header.dart';
 import 'category_tile.dart';
 
 /// A category as the home feed models it.
@@ -15,7 +16,7 @@ class CategoryEntry {
   final Color tint;
 }
 
-/// A titled block of category tiles with a trailing "Shop more".
+/// A titled block of category tiles.
 ///
 /// Non-scrolling and shrink-wrapped: the whole page is one scroll view, so a
 /// nested scrollable here would fight it.
@@ -24,29 +25,24 @@ class CategorySection extends StatelessWidget {
     super.key,
     required this.title,
     required this.entries,
-    this.onShopMore,
+    this.leadingIcon,
+    this.onSeeAll,
   });
 
   final String title;
+  final IconData? leadingIcon;
   final List<CategoryEntry> entries;
-  final VoidCallback? onShopMore;
+  final VoidCallback? onSeeAll;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 14),
-          child: Text(
-            title,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              height: 1.15,
-            ),
-          ),
+        SectionHeader(
+          title: title,
+          leadingIcon: leadingIcon,
+          onSeeAll: onSeeAll,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -58,7 +54,6 @@ class CategorySection extends StatelessWidget {
               crossAxisCount: 2,
               mainAxisSpacing: 16,
               crossAxisSpacing: 14,
-              // Room for the square panel plus its label line.
               childAspectRatio: 0.86,
             ),
             itemCount: entries.length,
@@ -71,13 +66,6 @@ class CategorySection extends StatelessWidget {
                 onTap: () {},
               );
             },
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),
-          child: TextButton(
-            onPressed: onShopMore,
-            child: const Text('Shop more'),
           ),
         ),
       ],

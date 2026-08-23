@@ -10,9 +10,9 @@ void main() {
     await tester.pumpWidget(const GtradeaAmazonApp());
 
     expect(find.text('Search products'), findsOneWidget);
-    expect(find.text('Plug in with our electronics'), findsOneWidget);
+    expect(find.text('Electronics'), findsOneWidget);
     expect(find.text('Headphones'), findsOneWidget);
-    expect(find.text('Shop more'), findsWidgets);
+    expect(find.text('See All'), findsWidgets);
     expect(find.text('Cart'), findsOneWidget);
   });
 
@@ -53,11 +53,11 @@ void main() {
 
     // The rail is below the fold in the default test viewport, so it is not
     // built until scrolled to.
-    await tester.scrollUntilVisible(find.text('Top picks for you'), 400,
+    await tester.scrollUntilVisible(find.text('Recommended for you'), 400,
         scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Top picks for you'), findsOneWidget);
+    expect(find.text('Recommended for you'), findsOneWidget);
     expect(find.text('Wireless over-ear headphones, 40h battery'),
         findsOneWidget);
     expect(find.text('Rs. 8,990'), findsOneWidget);
@@ -69,7 +69,7 @@ void main() {
 
     // The rail is below the fold in the default test viewport, so it is not
     // built until scrolled to.
-    await tester.scrollUntilVisible(find.text('Top picks for you'), 400,
+    await tester.scrollUntilVisible(find.text('Recommended for you'), 400,
         scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
 
@@ -87,13 +87,13 @@ void main() {
     await tester.pumpWidget(const GtradeaAmazonApp());
 
     // Below the fold, so scroll it into view first.
-    await tester.scrollUntilVisible(find.text('Explore departments'), 400,
+    await tester.scrollUntilVisible(find.text('Shop by category'), 400,
         scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Explore departments'), findsOneWidget);
+    expect(find.text('Shop by category'), findsOneWidget);
     expect(find.text('Beauty'), findsOneWidget);
-    expect(find.text('All departments'), findsOneWidget);
+    expect(find.text('Beauty'), findsOneWidget);
   });
 
   group('formatRupees', () {
