@@ -11,6 +11,8 @@ import 'package:gtradea_amazon/features/orders/data/order_store.dart';
 import 'package:gtradea_amazon/features/orders/presentation/order_detail_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/orders.dart';
+
 const _jacket = CartLine(
   productId: 'jacket',
   variantLabel: 'Blush pink',
@@ -27,13 +29,14 @@ void _useTallWindow(WidgetTester tester) {
   addTearDown(tester.view.reset);
 }
 
-Order _placeAgo(Duration ago) => OrderStore.instance.place(
+/// An order the carrier says has reached [reached].
+///
+/// Notifications are derived from the stages an order has actually passed
+/// through, which the server now decides rather than a clock.
+Order _at(OrderStage reached) => seedOrder(
+      reached: reached,
+      status: reached == OrderStage.delivered ? 'delivered' : 'processing',
       lines: const [_jacket],
-      delivery: 0,
-      recipient: 'Rabi',
-      address: 'Lalitpur, Bagmati',
-      paymentState: PaymentState.cashOnDelivery,
-      placedAt: DateTime.now().subtract(ago),
     );
 
 int _sync() =>
@@ -51,7 +54,7 @@ void main() {
 
   group('deriving notifications from orders', () {
     test('a brand new order announces placement and payment only', () {
-      _placeAgo(Duration.zero);
+      _at(OrderStage.placed);
       _sync();
 
       final categories =
@@ -63,7 +66,7 @@ void main() {
     });
 
     test('an order that has run its course announces every stage', () {
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
 
       final categories =
@@ -81,7 +84,7 @@ void main() {
     });
 
     test('syncing twice does not announce anything twice', () {
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       final first = _sync();
       expect(first, greaterThan(0));
 
@@ -91,7 +94,7 @@ void main() {
 
     test('a later stage is announced on the next sync, not before', () {
       // Placed just before the confirm boundary.
-      final order = _placeAgo(Order.stageAfter[1] - const Duration(seconds: 1));
+      _at(OrderStage.placed);
       _sync();
       expect(
         NotificationStore.instance.items
@@ -99,11 +102,9 @@ void main() {
         isFalse,
       );
 
-      // A moment later the order has moved on, and so does the feed.
-      NotificationStore.instance.syncFromOrders(
-        OrderStore.instance.orders,
-        now: order.placedAt.add(Order.stageAfter[2]),
-      );
+      // The carrier moves it on, and the feed follows.
+      _at(OrderStage.packed);
+      NotificationStore.instance.syncFromOrders(OrderStore.instance.orders);
       expect(
         NotificationStore.instance.items
             .any((n) => n.category == NotificationCategory.orderConfirmed),
@@ -112,7 +113,7 @@ void main() {
     });
 
     test('a cancelled order is announced and stops there', () {
-      final order = _placeAgo(const Duration(seconds: 1));
+      final order = _at(OrderStage.placed);
       OrderStore.instance.cancel(order.id);
       _sync();
 
@@ -123,7 +124,7 @@ void main() {
     });
 
     test('a return is announced as a refund', () {
-      final order = _placeAgo(Order.stageAfter.last);
+      final order = _at(OrderStage.delivered);
       OrderStore.instance.requestReturn(order.id);
       _sync();
 
@@ -133,7 +134,7 @@ void main() {
     });
 
     test('a failed order gets no parcel announcements', () {
-      final order = _placeAgo(Order.stageAfter.last);
+      final order = _at(OrderStage.delivered);
       OrderStore.instance.markFailed(order.id);
       NotificationStore.instance.resetForTest();
       _sync();
@@ -148,7 +149,7 @@ void main() {
     });
 
     test('order notifications carry the order they are about', () {
-      final order = _placeAgo(Duration.zero);
+      final order = _at(OrderStage.placed);
       _sync();
 
       for (final item in NotificationStore.instance.items) {
@@ -159,7 +160,7 @@ void main() {
 
   group('read, dismiss and undo', () {
     test('everything arrives unread', () {
-      _placeAgo(Duration.zero);
+      _at(OrderStage.placed);
       _sync();
       expect(NotificationStore.instance.unreadCount,
           NotificationStore.instance.count);
@@ -167,7 +168,7 @@ void main() {
     });
 
     test('one can be marked read without touching the others', () {
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
       final before = NotificationStore.instance.unreadCount;
 
@@ -178,7 +179,7 @@ void main() {
     });
 
     test('marking all read clears the badge', () {
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
       NotificationStore.instance.markAllRead();
 
@@ -189,7 +190,7 @@ void main() {
     });
 
     test('a dismissed notification does not come back on the next sync', () {
-      _placeAgo(Duration.zero);
+      _at(OrderStage.placed);
       _sync();
       final victim = NotificationStore.instance.items.first;
 
@@ -203,7 +204,7 @@ void main() {
     });
 
     test('undo puts it back where it was', () {
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
       final victim = NotificationStore.instance.items[1];
       final index = NotificationStore.instance.indexOf(victim.id);
@@ -214,7 +215,7 @@ void main() {
     });
 
     test('newest is first', () {
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
       final items = NotificationStore.instance.items;
       for (var i = 1; i < items.length; i++) {
@@ -237,7 +238,7 @@ void main() {
     test('a muted group produces nothing', () {
       NotificationSettings.instance
           .setEnabled(NotificationGroup.orders, false);
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
 
       final groups =
@@ -250,7 +251,7 @@ void main() {
     test('turning a group back on does not backfill what it missed', () {
       NotificationSettings.instance
           .setEnabled(NotificationGroup.orders, false);
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
 
       NotificationSettings.instance.setEnabled(NotificationGroup.orders, true);
@@ -274,7 +275,7 @@ void main() {
 
   group('persistence', () {
     test('the feed and its read state survive a reload', () async {
-      _placeAgo(Duration.zero);
+      _at(OrderStage.placed);
       _sync();
       NotificationStore.instance.markAllRead();
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -309,7 +310,7 @@ void main() {
     });
 
     test('dismissals survive a reload too', () async {
-      _placeAgo(Duration.zero);
+      _at(OrderStage.placed);
       _sync();
       final victim = NotificationStore.instance.items.first;
       NotificationStore.instance.remove(victim.id);
@@ -386,7 +387,7 @@ void main() {
 
     testWidgets('lists notifications under a day heading', (tester) async {
       _useTallWindow(tester);
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
 
       await tester.pumpWidget(_wrap(const NotificationsScreen()));
@@ -399,7 +400,7 @@ void main() {
 
     testWidgets('Mark all read clears every unread marker', (tester) async {
       _useTallWindow(tester);
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
 
       await tester.pumpWidget(_wrap(const NotificationsScreen()));
@@ -415,7 +416,7 @@ void main() {
 
     testWidgets('a single one can be marked read from its dot', (tester) async {
       _useTallWindow(tester);
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
       final before = NotificationStore.instance.unreadCount;
 
@@ -430,7 +431,7 @@ void main() {
     testWidgets('tapping an order notification opens that order',
         (tester) async {
       _useTallWindow(tester);
-      final order = _placeAgo(Order.stageAfter.last);
+      final order = _at(OrderStage.delivered);
       _sync();
 
       await tester.pumpWidget(_wrap(const NotificationsScreen()));
@@ -440,12 +441,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(OrderDetailScreen), findsOneWidget);
-      expect(find.text(order.id), findsWidgets);
+      expect(find.text(order.displayReference), findsWidgets);
     });
 
     testWidgets('swiping a notification away dismisses it', (tester) async {
       _useTallWindow(tester);
-      _placeAgo(Order.stageAfter.last);
+      _at(OrderStage.delivered);
       _sync();
       final before = NotificationStore.instance.count;
 
@@ -465,7 +466,7 @@ void main() {
 
   group('NotificationBell', () {
     testWidgets('shows the unread count and opens the feed', (tester) async {
-      _placeAgo(Duration.zero);
+      _at(OrderStage.placed);
       _sync();
       final unread = NotificationStore.instance.unreadCount;
 
@@ -483,7 +484,7 @@ void main() {
 
     testWidgets('carries no badge when everything has been read',
         (tester) async {
-      _placeAgo(Duration.zero);
+      _at(OrderStage.placed);
       _sync();
       NotificationStore.instance.markAllRead();
 

@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+import 'support/api.dart';
 import 'support/auth.dart';
+import 'package:gtradea_amazon/features/orders/data/orders_repository.dart';
+import 'support/orders.dart';
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/orders/data/order_store.dart';
 import 'package:gtradea_amazon/features/orders/presentation/order_detail_screen.dart';
@@ -34,16 +37,25 @@ void _useTallWindow(WidgetTester tester) {
   addTearDown(tester.view.reset);
 }
 
-/// Places an order that was made [ago] in the past, so a given stage is
-/// already reached without any waiting.
-Order _placeAgo(Duration ago, {List<CartLine> lines = const [_jacket]}) {
-  return OrderStore.instance.place(
+/// An order the server says has reached [reached].
+///
+/// Progress comes from the carrier now, not from a clock, so a test says which
+/// stage it wants rather than how long ago the order was placed.
+Order _at(
+  OrderStage reached, {
+  List<CartLine> lines = const [_jacket],
+  String status = 'processing',
+  String paymentStatus = 'pending',
+  String id = 'order-1',
+  DateTime? placedAt,
+}) {
+  return seedOrder(
+    reached: reached,
+    id: id,
+    status: status,
+    paymentStatus: paymentStatus,
     lines: lines,
-    delivery: 0,
-    recipient: 'Rabi',
-    address: 'Lalitpur, Bagmati',
-    paymentState: PaymentState.cashOnDelivery,
-    placedAt: DateTime.now().subtract(ago),
+    placedAt: placedAt,
   );
 }
 
@@ -56,53 +68,103 @@ void main() {
   });
 
   group('stage progression', () {
-    final placed = DateTime(2026, 8, 23, 12);
-
-    test('walks the six stages in order as time passes', () {
-      OrderStage at(Duration elapsed) =>
-          Order.stageAt(placed, placed.add(elapsed));
-
-      expect(at(Duration.zero), OrderStage.placed);
-      expect(at(Order.stageAfter[1]), OrderStage.confirmed);
-      expect(at(Order.stageAfter[2]), OrderStage.packed);
-      expect(at(Order.stageAfter[3]), OrderStage.shipped);
-      expect(at(Order.stageAfter[4]), OrderStage.outForDelivery);
-      expect(at(Order.stageAfter[5]), OrderStage.delivered);
-    });
-
-    test('never goes past delivered however long it has been', () {
-      expect(
-        Order.stageAt(placed, placed.add(const Duration(days: 400))),
-        OrderStage.delivered,
-      );
-    });
-
-    test('the stage table is monotonic', () {
-      // A schedule that went backwards would make the timeline jump about.
-      for (var i = 1; i < Order.stageAfter.length; i++) {
-        expect(Order.stageAfter[i] > Order.stageAfter[i - 1], isTrue,
-            reason: 'stage $i');
+    test('follows the carrier, not a clock', () {
+      // The previous build advanced an order through six stages on a timer:
+      // thirty seconds to confirmed, fourteen minutes to delivered. Nothing
+      // about a real parcel works that way, and a shopper watching their order
+      // "arrive" while it sat in a warehouse is worse than no timeline.
+      for (final stage in OrderStage.values) {
+        expect(_at(stage).stage(), stage, reason: stage.name);
       }
     });
 
-    test('estimated delivery is read off the same table as the stages', () {
-      final order = _placeAgo(Duration.zero);
-      expect(
-        order.estimatedDelivery.difference(order.placedAt),
-        Order.stageAfter.last,
-        reason: 'the estimate cannot contradict the progression',
+    test('an order placed long ago has still only been placed', () {
+      final old = seedOrder(
+        reached: OrderStage.placed,
+        status: 'pending',
+        placedAt: DateTime.now().subtract(const Duration(days: 400)),
       );
+      expect(old.stage(), OrderStage.placed);
+      expect(old.isSettled(), isFalse);
+    });
+
+    test('"out for delivery" is not "delivered"', () {
+      // One string contains the other, so a naive substring match reports a
+      // parcel on a van as already handed over.
+      expect(_at(OrderStage.outForDelivery).stage(), OrderStage.outForDelivery);
+      expect(_at(OrderStage.outForDelivery).isSettled(), isFalse);
+    });
+
+    test('falls back to the order status when there is no tracking yet', () {
+      // Tracking is a separate request that can fail or lag. The order's own
+      // status is coarser but still true.
+      final shipped = seedOrder(status: 'shipped', withTracking: false);
+      expect(shipped.stage(), OrderStage.shipped);
+
+      final done = seedOrder(status: 'completed', withTracking: false);
+      expect(done.stage(), OrderStage.delivered);
+      expect(done.isSettled(), isTrue);
+    });
+
+    test('a stage code nobody anticipated does not reset the progress', () {
+      // The carrier owns its vocabulary and can add to it. An unfamiliar step
+      // contributes nothing rather than dragging the timeline back to placed.
+      final tracking = OrderTracking.fromJson({
+        'shipments': [
+          {
+            'timeline': [
+              {'stage': 'TRANSIT', 'label': 'In transit', 'status': 'done'},
+              {'stage': 'CUSTOMS_HELD', 'label': 'At customs', 'status': 'done'},
+            ],
+          },
+        ],
+      });
+      final order = _at(OrderStage.placed).withTracking(tracking);
+      expect(order.stage(), OrderStage.shipped);
+    });
+
+    test('an unfamiliar step status counts as not reached', () {
+      // The only enum on the wire in this domain. Decoded strictly it would
+      // throw and blank the whole tracking screen.
+      final step = TrackingStep.fromJson(
+        const {'stage': 'TRANSIT', 'label': 'x', 'status': 'quantum'},
+      );
+      expect(step.state, TrackingStepState.upcoming);
+    });
+
+    test('no delivery date is invented when nobody has given one', () {
+      final order = seedOrder(withTracking: false);
+      expect(order.estimatedDelivery, isNull);
+    });
+
+    test('the delivery date is the carrier window', () {
+      final when = DateTime.now().add(const Duration(days: 5));
+      final order = seedOrder(reached: OrderStage.shipped, etaTo: when);
+      expect(order.estimatedDelivery!.day, when.day);
+    });
+
+    test('a delivered order reports when it actually arrived', () {
+      final order = _at(OrderStage.delivered, status: 'delivered');
+      expect(order.estimatedDelivery, isNotNull);
+      expect(order.isSettled(), isTrue);
     });
   });
 
   group('OrderStore', () {
     test('placing records an order with a readable id and newest first', () {
-      final first = _placeAgo(const Duration(minutes: 30));
-      final second = _placeAgo(Duration.zero);
+      final first = _at(
+        OrderStage.delivered,
+        status: 'delivered',
+        id: 'order-old',
+        placedAt: DateTime.now().subtract(const Duration(days: 2)),
+      );
+      final second = _at(OrderStage.placed);
 
       expect(OrderStore.instance.count, 2);
       expect(OrderStore.instance.orders.first.id, second.id);
-      expect(first.id, startsWith('GT'));
+      // The id is a server UUID; the reference is the short number a shopper
+      // can read out over the phone.
+      expect(first.displayReference, startsWith('GT'));
       expect(first.id, isNot(second.id));
     });
 
@@ -146,7 +208,7 @@ void main() {
     });
 
     test('survives a reload from disk', () async {
-      final order = _placeAgo(const Duration(minutes: 3));
+      final order = _at(OrderStage.shipped, status: 'shipped');
       await Future<void>.delayed(Duration.zero);
 
       OrderStore.instance.resetForTest();
@@ -156,8 +218,8 @@ void main() {
       expect(reloaded, isNotNull);
       expect(reloaded!.lines.single.title, 'Ice silk jacket');
       expect(reloaded.recipient, 'Rabi');
-      // The stage keeps advancing across a restart, because it is derived from
-      // when the order was placed rather than stored.
+      // The stage survives a restart because the server's own status is cached
+      // alongside the order, not re-derived from a clock.
       expect(reloaded.stage().index,
           greaterThanOrEqualTo(OrderStage.packed.index));
     });
@@ -183,7 +245,7 @@ void main() {
     });
 
     test('guest orders follow the shopper into their account', () async {
-      _placeAgo(Duration.zero);
+      _at(OrderStage.placed);
       OrderStore.instance.bindToAuth();
 
       signInForTest(email: 'rabi@example.com');
@@ -199,12 +261,12 @@ void main() {
 
   group('cancel, return and failure', () {
     test('an order can be cancelled before it ships, not after', () {
-      final early = _placeAgo(const Duration(seconds: 5));
+      final early = _at(OrderStage.placed);
       expect(early.canCancel(), isTrue);
       expect(OrderStore.instance.cancel(early.id), isTrue);
       expect(OrderStore.instance.byId(early.id)!.outcome, OrderOutcome.cancelled);
 
-      final shipped = _placeAgo(Order.stageAfter[3]);
+      final shipped = _at(OrderStage.shipped, status: 'shipped');
       expect(shipped.canCancel(), isFalse);
       expect(OrderStore.instance.cancel(shipped.id), isFalse,
           reason: 'the parcel has already gone');
@@ -212,7 +274,7 @@ void main() {
     });
 
     test('a cancelled order freezes at the stage it had reached', () {
-      final order = _placeAgo(Order.stageAfter[2]);
+      final order = _at(OrderStage.packed);
       OrderStore.instance.cancel(order.id);
       final cancelled = OrderStore.instance.byId(order.id)!;
 
@@ -224,25 +286,25 @@ void main() {
     });
 
     test('a return can only be asked for once it has arrived', () {
-      final enRoute = _placeAgo(Order.stageAfter[4]);
+      final enRoute = _at(OrderStage.outForDelivery);
       expect(enRoute.canReturn(), isFalse);
       expect(OrderStore.instance.requestReturn(enRoute.id), isFalse);
 
-      final delivered = _placeAgo(Order.stageAfter[5]);
+      final delivered = _at(OrderStage.delivered, status: 'delivered');
       expect(delivered.canReturn(), isTrue);
       expect(OrderStore.instance.requestReturn(delivered.id), isTrue);
       expect(OrderStore.instance.byId(delivered.id)!.statusLabel(), 'Returned');
     });
 
     test('a cancelled order cannot then be returned', () {
-      final order = _placeAgo(Duration.zero);
+      final order = _at(OrderStage.placed);
       OrderStore.instance.cancel(order.id);
       expect(OrderStore.instance.requestReturn(order.id), isFalse);
       expect(OrderStore.instance.byId(order.id)!.outcome, OrderOutcome.cancelled);
     });
 
     test('a failed order reports a failed payment too', () {
-      final order = _placeAgo(Duration.zero);
+      final order = _at(OrderStage.placed);
       expect(OrderStore.instance.markFailed(order.id), isTrue);
       final failed = OrderStore.instance.byId(order.id)!;
       expect(failed.outcome, OrderOutcome.failed);
@@ -250,18 +312,18 @@ void main() {
     });
 
     test('cancelled and failed orders carry no tracking number', () {
-      final cancelled = _placeAgo(Order.stageAfter[4]);
+      final cancelled = _at(OrderStage.outForDelivery);
       OrderStore.instance.cancel(cancelled.id);
       // canCancel is false past shipped, so this one stays live -- use a
       // failure, which can be set at any point.
-      final failed = _placeAgo(Order.stageAfter[4]);
+      final failed = _at(OrderStage.outForDelivery);
       OrderStore.instance.markFailed(failed.id);
 
       expect(OrderStore.instance.byId(failed.id)!.trackingNumber(), isNull);
     });
 
     test('a settled order survives a reload still settled', () async {
-      final order = _placeAgo(Duration.zero);
+      final order = _at(OrderStage.placed);
       OrderStore.instance.cancel(order.id);
       // Two fire-and-forget writes back to back -- placing, then settling.
       // One microtask turn only lets the first of them land.
@@ -275,9 +337,9 @@ void main() {
 
   group('tracking number', () {
     test('appears only once there is a parcel with a courier', () {
-      expect(_placeAgo(const Duration(seconds: 1)).trackingNumber(), isNull);
-      expect(_placeAgo(Order.stageAfter[2]).trackingNumber(), isNull);
-      expect(_placeAgo(Order.stageAfter[3]).trackingNumber(), isNotNull);
+      expect(_at(OrderStage.placed).trackingNumber(), isNull);
+      expect(_at(OrderStage.packed).trackingNumber(), isNull);
+      expect(_at(OrderStage.shipped, status: 'shipped').trackingNumber(), isNotNull);
     });
   });
 
@@ -292,11 +354,11 @@ void main() {
     testWidgets('lists an order with its id, status and total', (tester) async {
       _useTallWindow(tester);
       // Delivered, so no ticker runs and pumpAndSettle is safe.
-      final order = _placeAgo(Order.stageAfter[5]);
+      final order = _at(OrderStage.delivered, status: 'delivered');
       await tester.pumpWidget(_wrap(const OrdersScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.text(order.id), findsOneWidget);
+      expect(find.text(order.displayReference), findsOneWidget);
       expect(find.text('Delivered'), findsOneWidget);
       expect(find.textContaining('2 items'), findsOneWidget);
       expect(find.textContaining('Rs. 2,260'), findsOneWidget);
@@ -304,11 +366,11 @@ void main() {
 
     testWidgets('opens the order when tapped', (tester) async {
       _useTallWindow(tester);
-      final order = _placeAgo(Order.stageAfter[5]);
+      final order = _at(OrderStage.delivered, status: 'delivered');
       await tester.pumpWidget(_wrap(const OrdersScreen()));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(order.id));
+      await tester.tap(find.text(order.displayReference));
       await tester.pumpAndSettle();
 
       expect(find.byType(OrderDetailScreen), findsOneWidget);
@@ -320,7 +382,7 @@ void main() {
     testWidgets('shows every stage, dates, items, address and payment',
         (tester) async {
       _useTallWindow(tester);
-      final order = _placeAgo(Order.stageAfter[5]);
+      final order = _at(OrderStage.delivered, status: 'delivered');
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));
       await tester.pumpAndSettle();
 
@@ -330,16 +392,17 @@ void main() {
       }
       expect(find.text('Ice silk jacket'), findsOneWidget);
       expect(find.text('Blush pink · Qty 2'), findsOneWidget);
-      expect(find.text('Lalitpur, Bagmati'), findsOneWidget);
+      expect(find.text('Jhamsikhel, Lalitpur, Bagmati'), findsOneWidget);
       expect(find.text('Cash on delivery'), findsOneWidget);
       expect(find.text('Tracking'), findsOneWidget);
-      expect(find.textContaining('GTX'), findsOneWidget);
+      // The carrier's own reference, not one this app made up.
+      expect(find.text('SHIP-77'), findsOneWidget);
     });
 
     testWidgets('hides tracking until something has been dispatched',
         (tester) async {
       _useTallWindow(tester);
-      final order = _placeAgo(const Duration(seconds: 1));
+      final order = _at(OrderStage.placed);
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));
       await tester.pump();
 
@@ -353,14 +416,14 @@ void main() {
     testWidgets('offers Cancel early and Return once delivered',
         (tester) async {
       _useTallWindow(tester);
-      final early = _placeAgo(const Duration(seconds: 1));
+      final early = _at(OrderStage.placed);
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: early.id)));
       await tester.pump();
       expect(find.text('Cancel order'), findsOneWidget);
       expect(find.text('Request a return'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
 
-      final delivered = _placeAgo(Order.stageAfter[5]);
+      final delivered = _at(OrderStage.delivered, status: 'delivered');
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: delivered.id)));
       await tester.pumpAndSettle();
       expect(find.text('Request a return'), findsOneWidget);
@@ -370,7 +433,16 @@ void main() {
     testWidgets('cancelling asks first and then shows the cancelled state',
         (tester) async {
       _useTallWindow(tester);
-      final order = _placeAgo(const Duration(seconds: 1));
+      // Cancelling asks the server, and the server's answer is what the screen
+      // shows -- it does not mark the order cancelled on its own say-so.
+      final api = stubCatalog()
+        ..on('POST', '/order-cancellations', status: 201, body: const {})
+        ..on('GET', '/orders', body: [
+          orderJson(status: 'cancelled', paymentStatus: 'refunded'),
+        ]);
+      signInForTest();
+
+      final order = _at(OrderStage.placed);
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));
       await tester.pump();
 
@@ -382,6 +454,8 @@ void main() {
       await tester.tap(find.text('Cancel order').last);
       await tester.pumpAndSettle();
 
+      expect(api.calls.any((c) => c.path == '/order-cancellations'), isTrue);
+
       expect(OrderStore.instance.byId(order.id)!.outcome,
           OrderOutcome.cancelled);
       expect(find.textContaining('Nothing will be delivered'), findsOneWidget);
@@ -392,7 +466,7 @@ void main() {
     testWidgets('backing out of the cancel dialog keeps the order',
         (tester) async {
       _useTallWindow(tester);
-      final order = _placeAgo(const Duration(seconds: 1));
+      final order = _at(OrderStage.placed);
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));
       await tester.pump();
 
@@ -410,7 +484,7 @@ void main() {
 
     testWidgets('a failed order shows no onward stages', (tester) async {
       _useTallWindow(tester);
-      final order = _placeAgo(Duration.zero);
+      final order = _at(OrderStage.placed);
       OrderStore.instance.markFailed(order.id);
 
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));
@@ -427,7 +501,7 @@ void main() {
     testWidgets('a returned order says so and offers no further action',
         (tester) async {
       _useTallWindow(tester);
-      final order = _placeAgo(Order.stageAfter[5]);
+      final order = _at(OrderStage.delivered, status: 'delivered');
       OrderStore.instance.requestReturn(order.id);
 
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));

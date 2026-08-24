@@ -36,6 +36,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   void initState() {
     super.initState();
     OrderStore.instance.load();
+    // The carrier's view is a separate request that fails on its own, so it is
+    // asked for here rather than folded into the order fetch.
+    unawaited(OrderStore.instance.loadTracking(widget.orderId));
     _syncTicker();
   }
 
@@ -85,12 +88,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
     // Between opening the dialog and confirming, the parcel may have shipped.
     // The store re-checks, and says so rather than silently doing nothing.
-    final done = OrderStore.instance.cancel(order.id);
+    // The server decides, not this screen: between opening the dialog and
+    // confirming, the parcel may have gone out.
+    final done = await OrderStore.instance.requestCancellation(order.id);
     if (!mounted) return;
     if (!done) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This order has already been dispatched'),
+        SnackBar(
+          content: Text(OrderStore.instance.error?.message ??
+              'This order could not be cancelled'),
         ),
       );
     }
@@ -120,8 +126,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
     if (!(confirmed ?? false)) return;
 
-    OrderStore.instance.requestReturn(order.id);
-    if (mounted) _syncTicker();
+    final done = await OrderStore.instance.requestReturnFor(order.id);
+    if (!mounted) return;
+    if (!done) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(OrderStore.instance.error?.message ??
+              'This return could not be requested'),
+        ),
+      );
+    }
+    _syncTicker();
   }
 
   @override
@@ -139,7 +154,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         }
 
         return Scaffold(
-          appBar: AppBar(title: Text(order.id)),
+          appBar: AppBar(title: Text(order.displayReference)),
           body: ListView(
             padding: const EdgeInsets.only(bottom: 32),
             children: [
@@ -234,11 +249,21 @@ class _StatusHeader extends StatelessWidget {
           'A courier will collect it.';
     } else if (outcome == OrderOutcome.failed) {
       detail = 'The payment did not go through, so this order was not placed.';
-    } else if (settled) {
-      detail = 'Delivered ${formatWhen(order.estimatedDelivery)}.';
     } else {
-      detail = 'Arriving ${formatDay(order.estimatedDelivery)}, by '
-          '${formatWhen(order.estimatedDelivery).split(', ').last}.';
+      // The carrier's window, or an honest silence. A date invented here is
+      // one the shop has not promised and cannot be held to.
+      final eta = order.estimatedDelivery;
+      if (settled) {
+        detail = eta == null ? 'Delivered.' : 'Delivered ${formatWhen(eta)}.';
+      } else if (eta == null) {
+        detail = 'A delivery date will appear here once the courier has one.';
+      } else if (order.isBehindSchedule) {
+        detail = 'Running late. Now expected ${formatDay(eta)}.';
+      } else {
+        detail = order.deliveryIsEstimate
+            ? 'Estimated to arrive ${formatDay(eta)}.'
+            : 'Arriving ${formatDay(eta)}.';
+      }
     }
 
     return Padding(
@@ -307,7 +332,9 @@ class _TrackingSection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      order.courier,
+                      // Named by the carrier, or described plainly. Inventing a
+                      // courier name would be a claim about who has the parcel.
+                      order.courier ?? 'On its way',
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(fontWeight: FontWeight.w600),
                     ),

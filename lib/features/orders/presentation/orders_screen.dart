@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -19,42 +17,12 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
-  Timer? _ticker;
-  DateTime _now = DateTime.now();
+  final DateTime _now = DateTime.now();
 
   @override
   void initState() {
     super.initState();
     OrderStore.instance.load();
-    _syncTicker();
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
-
-  /// Runs a clock only while something can still change.
-  ///
-  /// Status is derived from the time since the order was placed, so the list
-  /// has to re-read the clock to stay current. Once every order has settled
-  /// there is nothing left to tick for, and a timer that outlives its purpose
-  /// is a battery cost and, in tests, a pending-timer failure.
-  void _syncTicker() {
-    final anyMoving =
-        OrderStore.instance.orders.any((order) => !order.isSettled(_now));
-
-    if (!anyMoving) {
-      _ticker?.cancel();
-      _ticker = null;
-      return;
-    }
-    _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _now = DateTime.now());
-      _syncTicker();
-    });
   }
 
   @override
@@ -63,15 +31,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
       listenable: OrderStore.instance,
       builder: (context, _) {
         final orders = OrderStore.instance.orders;
-        // A newly placed order restarts the clock.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _syncTicker();
-        });
 
         return Scaffold(
           appBar: AppBar(title: const Text('Your orders')),
-          body: orders.isEmpty
-              ? const _NoOrders()
+          body: RefreshIndicator(
+            onRefresh: OrderStore.instance.refreshFromServer,
+            child: orders.isEmpty
+              ? ListView(children: const [SizedBox(height: 120), _NoOrders()])
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   itemCount: orders.length,
@@ -85,6 +51,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     ),
                   ),
                 ),
+          ),
         );
       },
     );
@@ -122,7 +89,7 @@ class _OrderCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      order.id,
+                      order.displayReference,
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w700,
@@ -192,10 +159,11 @@ class _OrderCard extends StatelessWidget {
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                        if (!settled) ...[
+                        // Only once the courier has actually given a date.
+                        if (!settled && order.estimatedDelivery != null) ...[
                           const SizedBox(height: 2),
                           Text(
-                            'Arriving ${formatDay(order.estimatedDelivery)}',
+                            'Arriving ${formatDay(order.estimatedDelivery!)}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.primary,
                               fontWeight: FontWeight.w600,

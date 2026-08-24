@@ -313,7 +313,10 @@ class NotificationStore extends ChangeNotifier {
         added += _offer(
           id: 'order:${order.id}:${stage.name}',
           category: category,
-          createdAt: order.whenStageReached(stage),
+          // When the carrier says it happened. Falling back to the order date
+          // keeps a notification in a sane place in the feed when a step
+          // carries no timestamp.
+          createdAt: order.whenStageReached(stage) ?? order.placedAt,
           orderId: order.id,
           // The category's wording, not the stage's: a timeline row reads
           // "Delivered" in the context of an order, but a notification arrives

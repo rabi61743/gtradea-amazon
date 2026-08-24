@@ -5,7 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../auth/data/auth_store.dart';
+import '../../../core/network/api_error.dart';
+import '../../../core/network/json.dart';
 import '../../cart/data/cart_store.dart';
+import 'orders_repository.dart';
 
 /// The happy path a parcel walks, in order.
 ///
@@ -54,6 +57,7 @@ enum PaymentState {
 class Order {
   const Order({
     required this.id,
+    this.reference,
     required this.placedAt,
     required this.lines,
     required this.delivery,
@@ -64,9 +68,21 @@ class Order {
     required this.paymentState,
     this.outcome,
     this.outcomeAt,
+    this.server,
+    this.tracking,
   });
 
   final String id;
+
+  /// What the shopper sees and quotes to support. The id is a UUID; the
+  /// reference is the short number the server prints on the order.
+  ///
+  /// Falls back to the id for an order placed on this device that the server
+  /// has not numbered yet.
+  final String? reference;
+
+  String get displayReference => reference ?? id;
+
   final DateTime placedAt;
   final List<CartLine> lines;
 
@@ -86,6 +102,14 @@ class Order {
   final OrderOutcome? outcome;
   final DateTime? outcomeAt;
 
+  /// The order as the server describes it, once it has been fetched.
+  ///
+  /// Null only for an order this device placed and has not yet read back.
+  final ServerOrder? server;
+
+  /// The carrier's view, when the tracking endpoint has answered.
+  final OrderTracking? tracking;
+
   CartTotals get totals => CartTotals.of(
         lines,
         delivery: delivery,
@@ -93,75 +117,239 @@ class Order {
         couponCode: couponCode,
       );
 
-  /// How long after placement each stage is reached.
+  /// Which stage this order has reached.
   ///
-  /// **Compressed on purpose.** There is no courier API here, so progress is
-  /// derived from the clock in order to be observable at all -- a real build
-  /// replaces [stageAt] with the carrier's status and this table disappears.
-  /// The estimated delivery is read off the same table, so the two can never
-  /// contradict each other.
-  static const stageAfter = <Duration>[
-    Duration.zero,
-    Duration(seconds: 30),
-    Duration(minutes: 2),
-    Duration(minutes: 5),
-    Duration(minutes: 9),
-    Duration(minutes: 14),
-  ];
-
-  /// Which stage an order placed at [placedAt] has reached by [now].
-  static OrderStage stageAt(DateTime placedAt, DateTime now) {
-    final elapsed = now.difference(placedAt);
-    var reached = OrderStage.placed;
-    for (var i = 0; i < stageAfter.length; i++) {
-      if (elapsed >= stageAfter[i]) reached = OrderStage.values[i];
-    }
-    return reached;
-  }
-
-  /// The furthest stage reached.
+  /// Read from the carrier where there is a carrier, and from the order's own
+  /// status otherwise. Nothing here is derived from the clock: an order does
+  /// not become "shipped" because five minutes passed, and the previous
+  /// build's compressed timetable was a placeholder that said it did.
   ///
-  /// An order that left the happy path is frozen at the stage it had got to
-  /// when it left: a parcel cancelled while packed did not go on to ship.
+  /// The [now] parameter is kept so the screens and their tests need no
+  /// change, and is deliberately unused.
   OrderStage stage([DateTime? now]) {
-    final at = outcomeAt ?? now ?? DateTime.now();
-    return stageAt(placedAt, at);
+    final steps = tracking?.timeline ?? const <TrackingStep>[];
+    if (steps.isNotEmpty) {
+      OrderStage? furthest;
+      for (final step in steps) {
+        if (step.state == TrackingStepState.upcoming) continue;
+        final mapped = _stageFromCode(step.stage) ?? _stageFromText(step.label);
+        if (mapped == null) continue;
+        if (furthest == null || mapped.index > furthest.index) furthest = mapped;
+      }
+      if (furthest != null) return furthest;
+    }
+
+    final status = server?.status;
+    if (status != null && status.isNotEmpty) {
+      return _stageFromText(status) ?? OrderStage.placed;
+    }
+
+    // Placed on this device and not yet read back. It has been placed, and
+    // claiming anything further would be a guess.
+    return OrderStage.placed;
   }
 
-  DateTime whenStageReached(OrderStage stage) =>
-      placedAt.add(stageAfter[stage.index]);
+  /// Maps a carrier stage code onto the six stages this app shows.
+  ///
+  /// The carrier's vocabulary is its own and can grow; an unrecognised code
+  /// contributes nothing rather than resetting the progress to the start.
+  static OrderStage? _stageFromCode(String code) =>
+      _stageFromText(code.toLowerCase().replaceAll('_', ' '));
 
-  DateTime get estimatedDelivery => whenStageReached(OrderStage.delivered);
+  static OrderStage? _stageFromText(String raw) {
+    final text = raw.toLowerCase();
+    // Checked before 'deliver', because "out for delivery" contains it and is
+    // emphatically not the same thing as delivered.
+    if (text.contains('out for deliver') || text.contains('out_for_deliver')) {
+      return OrderStage.outForDelivery;
+    }
+    if (text.contains('deliver') || text.contains('complete')) {
+      return OrderStage.delivered;
+    }
+    if (text.contains('ship') ||
+        text.contains('transit') ||
+        text.contains('dispatch')) {
+      return OrderStage.shipped;
+    }
+    if (text.contains('pack') || text.contains('ready')) {
+      return OrderStage.packed;
+    }
+    if (text.contains('confirm') || text.contains('accept')) {
+      return OrderStage.confirmed;
+    }
+    if (text.contains('placed') || text.contains('pending')) {
+      return OrderStage.placed;
+    }
+    return null;
+  }
+
+  /// When each stage was actually reached, where the carrier said so.
+  DateTime? whenStageReached(OrderStage stage) {
+    for (final step in tracking?.timeline ?? const <TrackingStep>[]) {
+      if (step.state == TrackingStepState.upcoming) continue;
+      final mapped = _stageFromCode(step.stage) ?? _stageFromText(step.label);
+      if (mapped == stage) return step.reachedAt;
+    }
+    if (stage == OrderStage.placed) return placedAt;
+    if (stage == OrderStage.delivered) return tracking?.deliveredAt;
+    return null;
+  }
+
+  /// The window the order is expected in, as the carrier quotes it.
+  ///
+  /// Null when nobody has committed to one yet -- which the screen says, rather
+  /// than inventing a date the shop has not promised.
+  DateTime? get estimatedDelivery =>
+      tracking?.deliveredAt ?? tracking?.etaTo ?? tracking?.etaFrom;
+
+  /// True when the estimate is a guess rather than a commitment.
+  bool get deliveryIsEstimate => tracking?.etaEstimated ?? true;
+
+  bool get isBehindSchedule => tracking?.behindSchedule ?? false;
 
   /// True once nothing further will happen on its own.
   bool isSettled([DateTime? now]) =>
-      outcome != null || stage(now) == OrderStage.delivered;
+      outcome != null ||
+      (server?.isCancelled ?? false) ||
+      stage(now) == OrderStage.delivered;
 
   /// What to show as the headline status.
-  String statusLabel([DateTime? now]) =>
-      outcome?.label ?? stage(now).label;
+  ///
+  /// The carrier's own wording wins where there is any: it knows more about
+  /// its states than a six-way client-side map does.
+  String statusLabel([DateTime? now]) {
+    if (outcome != null) return outcome!.label;
+    if (server?.isCancelled ?? false) return OrderOutcome.cancelled.label;
+    final carrier = tracking?.statusLabel;
+    if (carrier != null && carrier.isNotEmpty) return carrier;
+    return stage(now).label;
+  }
 
   /// Cancelling is only honest while the parcel has not left.
   bool canCancel([DateTime? now]) =>
-      outcome == null && stage(now).index < OrderStage.shipped.index;
+      outcome == null &&
+      !(server?.isCancelled ?? false) &&
+      !(server?.isDelivered ?? false) &&
+      stage(now).index < OrderStage.shipped.index;
 
   /// Returns are offered once it has actually arrived.
   bool canReturn([DateTime? now]) =>
-      outcome == null && stage(now) == OrderStage.delivered;
+      outcome == null &&
+      !(server?.isCancelled ?? false) &&
+      stage(now) == OrderStage.delivered;
 
-  /// A courier reference only exists once something was handed to a courier.
+  /// The carrier's own reference, or nothing.
+  ///
+  /// Never invented. A made-up number that no courier can look up is worse
+  /// than no number, because a shopper will spend time trying to use it.
   String? trackingNumber([DateTime? now]) {
     if (outcome == OrderOutcome.cancelled || outcome == OrderOutcome.failed) {
       return null;
     }
+    // Nothing to track until something was handed to a courier. A shipment
+    // number that exists before dispatch is not one anybody can look up yet.
     if (stage(now).index < OrderStage.shipped.index) return null;
-    return 'GTX${id.replaceAll(RegExp('[^0-9A-Z]'), '')}';
+    final number = tracking?.shipments.firstOrNull?.shipmentNo;
+    return (number != null && number.isNotEmpty) ? number : null;
   }
 
-  String get courier => 'GtradeA Express';
+  /// How the parcel is travelling, where the carrier said.
+  String? get courier {
+    final label = tracking?.shipments.firstOrNull?.modeLabel;
+    return (label != null && label.isNotEmpty) ? label : null;
+  }
+
+  /// Builds the screen's view of an order from the server's record.
+  ///
+  /// [cached] is whatever this device already held for the same order. Used
+  /// only to fill gaps -- a photograph the server does not return, or the
+  /// tracking already fetched -- never to override a figure the server sent.
+  factory Order.fromServer(ServerOrder row, [Order? cached]) {
+    final address = row.shippingAddress;
+    final recipient = asString(address['full_name']) ??
+        asString(address['name']) ??
+        cached?.recipient ??
+        '';
+
+    final lines = row.items.isEmpty
+        ? (cached?.lines ?? const <CartLine>[])
+        : [
+            for (final item in row.items)
+              CartLine(
+                productId: item.sourceProductId ?? item.productId ?? item.id,
+                variantLabel: item.variantLabel,
+                title: item.name,
+                unitPrice: item.unitPrice ?? 0,
+                imageUrl: item.imageUrl,
+                quantity: item.quantity,
+              ),
+          ];
+
+    return Order(
+      id: row.id,
+      // Shown to the shopper and quoted to support; the id is a UUID nobody
+      // can read over the phone.
+      reference: row.orderNumber.isEmpty ? row.id : row.orderNumber,
+      placedAt: row.placedAt ?? cached?.placedAt ?? DateTime.now(),
+      lines: List.unmodifiable(lines),
+      delivery: cached?.delivery ?? 0,
+      discount: cached?.discount ?? 0,
+      couponCode: cached?.couponCode,
+      recipient: recipient,
+      address: _addressLine(address) ?? cached?.address ?? '',
+      paymentState: _paymentStateOf(row),
+      outcome: row.isCancelled ? OrderOutcome.cancelled : null,
+      server: row,
+      tracking: cached?.tracking,
+    );
+  }
+
+  Order withTracking(OrderTracking tracking) => Order(
+        id: id,
+        reference: reference,
+        placedAt: placedAt,
+        lines: lines,
+        delivery: delivery,
+        discount: discount,
+        couponCode: couponCode,
+        recipient: recipient,
+        address: address,
+        paymentState: paymentState,
+        outcome: outcome,
+        outcomeAt: outcomeAt,
+        server: server,
+        tracking: tracking,
+      );
+
+  /// The address on one line, from whichever fields the server filled in.
+  static String? _addressLine(Map<String, dynamic> address) {
+    final parts = [
+      asString(address['address_line1']) ?? asString(address['street']),
+      asString(address['address_line2']),
+      asString(address['city']),
+      asString(address['state']),
+      asString(address['postal_code']),
+    ].whereType<String>().toList();
+    return parts.isEmpty ? null : parts.join(', ');
+  }
+
+  /// Free text on the wire, so matched by substring rather than mapped from a
+  /// closed set the server never promised.
+  static PaymentState _paymentStateOf(ServerOrder row) {
+    if (row.paymentFailed) return PaymentState.failed;
+    if (row.isPaid) return PaymentState.paid;
+    final method = row.paymentMethod?.toLowerCase() ?? '';
+    if (method.contains('cod') || method.contains('cash')) {
+      return PaymentState.cashOnDelivery;
+    }
+    return PaymentState.pending;
+  }
 
   Order copyWith({OrderOutcome? outcome, DateTime? outcomeAt}) => Order(
         id: id,
+        reference: reference,
+        server: server,
+        tracking: tracking,
         placedAt: placedAt,
         lines: lines,
         delivery: delivery,
@@ -188,6 +376,12 @@ class Order {
         'paymentState': paymentState.name,
         'outcome': outcome?.name,
         'outcomeAt': outcomeAt?.millisecondsSinceEpoch,
+        'reference': reference,
+        // Enough of the server's record to show the right stage offline. The
+        // whole row is not worth caching -- the tracking is fetched again on
+        // open anyway, and a stale carrier timeline is worse than none.
+        'serverStatus': server?.status,
+        'serverPaymentStatus': server?.paymentStatus,
       };
 
   static Order? fromJson(Map<String, dynamic> json) {
@@ -228,6 +422,15 @@ class Order {
       outcomeAt: json['outcomeAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(json['outcomeAt'] as int)
           : null,
+      reference: asString(json['reference']),
+      server: asString(json['serverStatus']) == null
+          ? null
+          : ServerOrder(
+              id: id,
+              orderNumber: asString(json['reference']) ?? '',
+              status: asString(json['serverStatus'])!,
+              paymentStatus: asString(json['serverPaymentStatus']) ?? '',
+            ),
     );
   }
 
@@ -269,6 +472,117 @@ class OrderStore extends ChangeNotifier {
   static String storageKeyFor(String? email) =>
       (email == null || email.isEmpty) ? _guestKey : 'gtradea_orders_$email';
 
+  // ---------------------------------------------------------------------
+  // Server
+  // ---------------------------------------------------------------------
+
+  bool _refreshing = false;
+  ApiError? _error;
+
+  ApiError? get error => _error;
+  bool get isRefreshing => _refreshing;
+
+  /// Fetches the account's orders and replaces what is held.
+  ///
+  /// Orders are the server's record, not this device's. The local copy exists
+  /// only so the list renders on a dead connection.
+  Future<void> refreshFromServer() async {
+    if (!AuthStore.instance.isSignedIn || _refreshing) return;
+    _refreshing = true;
+    notifyListeners();
+
+    try {
+      final rows = await OrdersRepository.instance.list();
+      final cached = {for (final order in _orders) order.id: order};
+      _orders
+        ..clear()
+        ..addAll(rows.map((row) => Order.fromServer(row, cached[row.id])));
+      _sort();
+      _error = null;
+    } on ApiError catch (e) {
+      // Whatever was cached stays. An empty order history shown because the
+      // network failed is the single most alarming thing this screen can say.
+      _error = e;
+    } finally {
+      _refreshing = false;
+      notifyListeners();
+      unawaited(_persist());
+    }
+  }
+
+  /// Loads the carrier's view of one order and attaches it.
+  ///
+  /// Separate from the order itself because it is a separate request, it fails
+  /// on its own, and most screens never need it.
+  Future<void> loadTracking(String orderId) async {
+    if (!AuthStore.instance.isSignedIn) return;
+    final index = _orders.indexWhere((order) => order.id == orderId);
+    if (index == -1) return;
+
+    try {
+      final tracking = await OrdersRepository.instance.tracking(orderId);
+      final at = _orders.indexWhere((order) => order.id == orderId);
+      if (at == -1) return;
+      _orders[at] = _orders[at].withTracking(tracking);
+      notifyListeners();
+    } on ApiError {
+      // The order still renders without it; the screen says tracking is not
+      // available rather than failing whole.
+    }
+  }
+
+  /// Asks the server to cancel, then takes its word for what happened.
+  ///
+  /// Returns false when the request was refused, so the screen can say the
+  /// parcel has already gone out rather than appearing to succeed.
+  Future<bool> requestCancellation(
+    String orderId, {
+    String reason = 'changed_mind',
+    String? details,
+  }) async {
+    try {
+      await OrdersRepository.instance.requestCancellation(
+        orderId: orderId,
+        reason: reason,
+        details: details,
+      );
+      await refreshFromServer();
+      return true;
+    } on ApiError catch (e) {
+      _error = e;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> requestReturnFor(
+    String orderId, {
+    String reason = 'changed_mind',
+    String? details,
+  }) async {
+    final order = byId(orderId);
+    final items = order?.server?.items ?? const <ServerOrderItem>[];
+    if (items.isEmpty) return false;
+
+    try {
+      await OrdersRepository.instance.requestReturn(
+        orderId: orderId,
+        reason: reason,
+        details: details,
+        items: [
+          for (final item in items)
+            (orderItemId: item.id, quantity: item.quantity),
+        ],
+      );
+      await refreshFromServer();
+      return true;
+    } on ApiError catch (e) {
+      _error = e;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Order? byId(String id) {
     for (final order in _orders) {
       if (order.id == id) return order;
@@ -304,6 +618,10 @@ class OrderStore extends ChangeNotifier {
     notifyListeners();
 
     if (hadPending) unawaited(_persist());
+
+    // The account's orders are the record. The cache above only exists so the
+    // list renders before this answers, and on a dead connection.
+    await refreshFromServer();
   }
 
   void _onIdentityChanged() {
@@ -328,6 +646,8 @@ class OrderStore extends ChangeNotifier {
       unawaited(_clearStored(_guestKey));
       unawaited(_persist());
     }
+
+    if (email != null) unawaited(refreshFromServer());
     _sort();
 
     _loaded = true;
@@ -411,6 +731,19 @@ class OrderStore extends ChangeNotifier {
   void clear() {
     if (_orders.isEmpty) return;
     _orders.clear();
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  /// Puts orders in the store without a server, for tests.
+  @visibleForTesting
+  void seedForTest(List<Order> orders) {
+    for (final order in orders) {
+      _orders.removeWhere((existing) => existing.id == order.id);
+      _orders.add(order);
+    }
+    _sort();
+    _loaded = true;
     notifyListeners();
     unawaited(_persist());
   }
