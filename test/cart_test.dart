@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'support/api.dart';
 import 'support/catalog.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/address/data/address_store.dart';
@@ -86,6 +87,18 @@ void _useTallWindow(WidgetTester tester) {
   tester.view.physicalSize = const Size(1200, 2400);
   tester.view.devicePixelRatio = 2.0;
   addTearDown(tester.view.reset);
+}
+
+/// A signed-in shopper with a server that accepts an order.
+///
+/// Placing an order is a real POST now, and the server owns the cart it is
+/// built from -- so there is no such thing as a guest order.
+void _stubCheckout() {
+  stubCatalog().on('POST', '/checkout', body: const {
+    'orderId': 'order-1',
+    'orderNumber': 'GT-1001',
+  });
+  signInForTest();
 }
 
 void main() {
@@ -568,6 +581,7 @@ void main() {
     testWidgets('placing the order empties the cart and confirms',
         (tester) async {
       _useTallWindow(tester);
+      _stubCheckout();
       seedAddress();
       CartStore.instance.add(_jacketPink);
       await tester.pumpWidget(_wrap(const CartScreen()));
@@ -578,7 +592,7 @@ void main() {
       await tester.tap(find.textContaining('Place order'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Order placed'), findsOneWidget);
+      expect(find.text('Order GT-1001 placed'), findsOneWidget);
       expect(CartStore.instance.isEmpty, isTrue);
 
       await tester.tap(find.text('Done'));
@@ -591,6 +605,7 @@ void main() {
     testWidgets('an item added after checkout opened survives the order',
         (tester) async {
       _useTallWindow(tester);
+      _stubCheckout();
       seedAddress();
       CartStore.instance.add(_jacketPink);
       await tester.pumpWidget(_wrap(const CartScreen()));

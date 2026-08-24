@@ -658,9 +658,24 @@ class CartStore extends ChangeNotifier {
   /// rows the server sends back thin.
   void _adoptServerCart(ServerCart cart) {
     final known = {for (final line in _lines) line.key: line};
+
+    // Lines added on this device that have not been pushed yet. Dropping them
+    // would lose something the shopper added while the account's cart was
+    // still loading -- a race that happens on every sign-in, because the tap
+    // and the fetch overlap.
+    final unpushed = _lines.where((line) => line.serverId == null).toList();
+
+    final adopted = cart.items
+        .map((item) => _lineFromServer(item, known))
+        .toList(growable: true);
+    final adoptedKeys = adopted.map((line) => line.key).toSet();
+
     _lines
       ..clear()
-      ..addAll(cart.items.map((item) => _lineFromServer(item, known)));
+      ..addAll(adopted)
+      ..addAll(unpushed.where((line) => !adoptedKeys.contains(line.key)));
+
+    if (_lines.length != adopted.length) _scheduleSync();
   }
 
   CartLine _lineFromServer(ServerCartItem item, Map<String, CartLine> known) {
@@ -719,6 +734,17 @@ class CartStore extends ChangeNotifier {
 
   /// Retries after a failed sync, from the cart screen's banner.
   Future<void> retrySync() => _reconcile();
+
+  /// Runs the pending sync now instead of waiting out the debounce.
+  ///
+  /// For tests: waiting on a wall-clock timer makes them flaky the moment the
+  /// machine is busy, and a flaky test about money is worse than no test.
+  @visibleForTesting
+  Future<void> flushSyncForTest() async {
+    _syncDebounce?.cancel();
+    _syncDebounce = null;
+    await _reconcile();
+  }
 
   /// Schedules a reconcile, coalescing a burst of stepper taps into one.
   void _scheduleSync() {

@@ -46,9 +46,11 @@ Map<String, dynamic> row(
       'product_data': {'name': name, 'price': price, 'image': null},
     };
 
-/// The debounce in front of the reconcile, plus room for the requests.
-Future<void> settleSync() =>
-    Future<void>.delayed(const Duration(milliseconds: 900));
+/// Runs whatever sync is pending, without waiting out the debounce.
+///
+/// Sleeping past a wall-clock timer makes these flaky the moment the machine
+/// is loaded, and a flaky test about money is worse than no test.
+Future<void> settleSync() => CartStore.instance.flushSyncForTest();
 
 void main() {
   late FakeApi api;

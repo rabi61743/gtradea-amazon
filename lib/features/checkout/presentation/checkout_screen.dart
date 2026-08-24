@@ -1,16 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_error.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../address/data/address_store.dart';
 import '../../address/presentation/address_picker_sheet.dart';
 import '../../auth/data/auth_store.dart';
+import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../orders/data/order_store.dart';
 import '../../promo/data/coupon_store.dart';
 import '../../orders/presentation/order_detail_screen.dart';
+import '../../../shared/widgets/loadable_view.dart';
+import '../data/checkout_models.dart';
+import '../data/checkout_repository.dart';
 
 /// Review and place the order.
 ///
@@ -19,8 +26,9 @@ import '../../orders/presentation/order_detail_screen.dart';
 /// they tapped Checkout. If the cart changes in another screen while this one
 /// is open, this order is unaffected -- which is the point.
 ///
-/// **Nothing is submitted anywhere.** There is no orders API in this app; the
-/// button empties the cart and confirms. The swap point is [_placeOrder].
+/// Placing an order is a real POST to /checkout. The figures shown are the
+/// app's own, and the server recomputes them -- so what it returns is what is
+/// actually charged, and this screen defers to it.
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({
     super.key,
@@ -38,6 +46,11 @@ class CheckoutScreen extends StatefulWidget {
 class _CheckoutScreenState extends State<CheckoutScreen> {
   _Payment _payment = _Payment.cashOnDelivery;
   bool _placing = false;
+
+  /// Why the last attempt did not become an order. Shown on the screen rather
+  /// than in a snack bar: this is the moment a shopper most needs to know what
+  /// happened and whether they were charged.
+  String? _failure;
 
   Address? _address;
 
@@ -68,50 +81,115 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (!mounted || _address == null) return;
     }
 
-    setState(() => _placing = true);
+    // The server holds the cart the order is built from, and it only holds one
+    // for a signed-in shopper. Sending them to sign in beats a refusal from
+    // the gateway that says nothing about what to do next.
+    if (!AuthStore.instance.isSignedIn) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+      );
+      if (!mounted) return;
+      if (!AuthStore.instance.isSignedIn) {
+        _say('Sign in to place this order.');
+        return;
+      }
+    }
 
-    final account = AuthStore.instance.account;
-    final order = OrderStore.instance.place(
-      lines: widget.lines,
-      // The delivery agreed now, frozen onto the order: changing the rule
-      // later must not rewrite what this order cost.
-      delivery: widget.totals.delivery,
-      // Frozen from the snapshot this screen was handed, not re-derived: the
-      // shopper agreed to the figure they saw.
-      discount: widget.totals.discount,
-      couponCode: widget.totals.couponCode,
-      recipient: _address?.fullName ?? account?.displayName ?? 'Guest',
-      address: _address?.full ?? '',
-      paymentState: _payment == _Payment.cashOnDelivery
-          ? PaymentState.cashOnDelivery
-          // Prepaid methods stay pending until a gateway says otherwise.
-          // There is no gateway here, so claiming "Paid" would be a lie.
-          : PaymentState.pending,
+    setState(() {
+      _placing = true;
+      _failure = null;
+    });
+
+    final input = CheckoutOrderInput(
+      shippingAddress: CheckoutAddress.fromAddress(_address!),
+      // Only the lines this screen was handed. An empty list would mean
+      // "everything in the cart", which is not what was on screen.
+      selectedCartItemIds: [
+        for (final line in widget.lines)
+          if (line.serverId != null) line.serverId!,
+      ],
+      promoCode: widget.totals.couponCode,
+      termsAccepted: true,
     );
 
-    // The code is spent. Doing it here rather than on apply means a coupon
-    // tried and abandoned is still available next time.
+    try {
+      final placed = _payment == _Payment.cashOnDelivery
+          ? await CheckoutRepository.instance.placeCashOnDelivery(input)
+          : await CheckoutRepository.instance
+              .initiatePayment(_gatewayFor(_payment), input);
+
+      if (!mounted) return;
+
+      // Store credit can cover the whole thing, in which case there is no
+      // gateway payload at all whichever method was chosen -- so this is
+      // checked before reaching for one.
+      if (_payment != _Payment.cashOnDelivery && !placed.paidByWallet) {
+        // The gateway handshake needs an in-app browser, which this build does
+        // not carry yet. The order exists either way; saying so beats leaving
+        // the shopper on a spinner.
+        _finish(
+          placed,
+          message: 'Order ${placed.orderNumber} created. Finish paying from '
+              'your order page.',
+        );
+        return;
+      }
+
+      _finish(
+        placed,
+        message: _payment == _Payment.cashOnDelivery
+            ? 'Pay the courier when it arrives.'
+            : 'Paid in full with store credit.',
+      );
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _placing = false;
+        _failure = e.isNetwork
+            ? 'No connection, so the order was not placed. Nothing has been '
+                'charged.'
+            : e.message;
+      });
+    }
+  }
+
+  /// Which gateway path a chosen method maps to.
+  String _gatewayFor(_Payment payment) => switch (payment) {
+        _Payment.khalti => 'khalti',
+        _Payment.esewa => 'esewa',
+        _Payment.cashOnDelivery => 'cod',
+      };
+
+  /// Everything that happens once the server has an order.
+  Future<void> _finish(PlacedOrder placed, {required String message}) async {
+    // The code is spent. Done here rather than on apply, so a coupon tried and
+    // abandoned is still available next time.
     final code = widget.totals.couponCode;
     if (code != null) CouponStore.instance.redeem(code);
 
-    // Only the lines this screen was handed are cleared. Anything added to the
-    // cart from another screen after checkout opened is not part of this order
-    // and must survive it.
+    // The server consumed the ordered rows, so this device's copy of them is
+    // stale. Only the ordered lines are dropped: anything added from another
+    // screen after checkout opened is not part of this order and must survive
+    // it -- which is exactly what clearing the whole cart would destroy.
     for (final line in widget.lines) {
       CartStore.instance.remove(line.key);
     }
+    unawaited(OrderStore.instance.refreshFromServer());
 
     if (!mounted) return;
+    setState(() => _placing = false);
+
     final track = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         icon: const Icon(Icons.check_circle, color: AppColors.success, size: 40),
-        title: const Text('Order placed'),
+        title: Text(placed.orderNumber.isEmpty
+            ? 'Order placed'
+            : 'Order ${placed.orderNumber} placed'),
         content: Text(
           '${widget.totals.itemCount} '
           '${widget.totals.itemCount == 1 ? 'item' : 'items'} for '
-          '${formatRupees(widget.totals.total)}. '
-          '${_payment == _Payment.cashOnDelivery ? 'Pay the courier on delivery.' : 'Payment confirmation will follow.'}',
+          '${formatRupees(widget.totals.total)}. $message',
         ),
         actions: [
           TextButton(
@@ -131,15 +209,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // the cart behind this screen is now empty.
     Navigator.of(context).pop();
 
-    if ((track ?? false) && mounted) {
+    if ((track ?? false) && mounted && placed.orderId.isNotEmpty) {
       // Pushed after the pop so Back from tracking lands on the storefront
       // rather than on a checkout screen for an order already placed.
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => OrderDetailScreen(orderId: order.id),
+          builder: (_) => OrderDetailScreen(orderId: placed.orderId),
         ),
       );
     }
+  }
+
+  void _say(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -307,6 +391,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ],
             ),
           ),
+          if (_failure != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: LoadFailed(
+                compact: true,
+                message: _failure!,
+                onRetry: _placeOrder,
+              ),
+            ),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -337,7 +430,7 @@ enum _Payment {
     'Pay the courier when it arrives',
   ),
   esewa('eSewa', 'Pay now from your eSewa wallet'),
-  card('Card', 'Visa or Mastercard');
+  khalti('Khalti', 'Pay now from your Khalti wallet');
 
   const _Payment(this.label, this.detail);
 
