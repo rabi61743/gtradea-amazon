@@ -13,6 +13,7 @@ class ApiError implements Exception {
     required this.statusCode,
     required this.message,
     this.body,
+    this.local = false,
   });
 
   /// Null when the request never reached the server at all.
@@ -22,9 +23,16 @@ class ApiError implements Exception {
 
   bool get isUnauthorized => statusCode == 401;
 
-  /// No status means no response: airplane mode, dead wifi, DNS, a timeout.
-  /// Worth separating because it is the one failure the shopper can fix.
-  bool get isNetwork => statusCode == null;
+  /// True when the failure happened inside the app rather than on the wire.
+  ///
+  /// It matters because both arrive with no status code, and telling someone
+  /// on full signal to check their connection sends them to fix a router when
+  /// the bug is ours.
+  final bool local;
+
+  /// No response at all: airplane mode, dead wifi, DNS, a timeout. Worth
+  /// separating because it is the one failure the shopper can actually fix.
+  bool get isNetwork => statusCode == null && !local;
 
   bool get isNotFound => statusCode == 404;
 

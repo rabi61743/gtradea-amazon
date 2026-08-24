@@ -5,16 +5,21 @@ import '../data/product_detail_content.dart';
 /// Colourway swatches with the selected one named above them.
 ///
 /// The name is spelled out rather than left to the swatch alone: "Selected:
-/// Blush pink" is checkable, a highlighted thumbnail is a guess. Sold-out
+/// White / S" is checkable, a highlighted thumbnail is a guess. Sold-out
 /// options stay in place, dimmed and struck, so a shopper can see the range
 /// exists instead of hunting for a colour that was quietly removed.
 class VariantPicker extends StatelessWidget {
   const VariantPicker({
     super.key,
+    this.label = 'Option',
     required this.variants,
     required this.selectedIndex,
     required this.onSelected,
   });
+
+  /// What these options are called: Colour, Size, or several axes at once.
+  /// Named by the listing, so a size is never labelled a colour.
+  final String label;
 
   final List<ProductVariant> variants;
   final int selectedIndex;
@@ -31,7 +36,7 @@ class VariantPicker extends StatelessWidget {
         Row(
           children: [
             Text(
-              'Colour: ',
+              ': ',
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),

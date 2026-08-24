@@ -73,6 +73,8 @@ const _palette = [
 /// A catalogue row as a rail card.
 ProductItem toProductItem(Product product, {VoidCallback? onTap}) => ProductItem(
       onTap: onTap,
+      // Units sold, which is the only popularity signal this catalogue has.
+      footnote: product.salesLabel,
       title: product.title,
       price: product.displayPrice ?? 0,
       // No strike-through: the server publishes one price, and inventing a

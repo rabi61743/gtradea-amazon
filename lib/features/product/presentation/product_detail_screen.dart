@@ -447,6 +447,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ],
                     const SizedBox(height: 16),
                     VariantPicker(
+                      label: product.variantLabel,
                       variants: product.variants,
                       selectedIndex: _variant,
                       onSelected: (i) => setState(() => _variant = i),

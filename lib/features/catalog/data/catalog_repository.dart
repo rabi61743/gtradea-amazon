@@ -224,12 +224,14 @@ class CatalogRepository {
         // Departments with no subcategories still beat an empty screen.
       }
 
-      final tree = tops
-          .map((top) => top.withChildren(
-                (byParent[top.cid] ?? const [])
-                  ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder)),
-              ))
-          .toList()
+      final tree = tops.map((top) {
+        // A copy, and never the const empty list: most departments come back
+        // with no children -- the bulk query is capped server-side -- and
+        // sorting an unmodifiable list throws.
+        final kids = [...?byParent[top.cid]]
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        return top.withChildren(kids);
+      }).toList()
         ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
       return tree;
     });

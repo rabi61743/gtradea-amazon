@@ -187,14 +187,25 @@ class _BannerCard extends StatelessWidget {
                 ),
               ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              // Keeps clear of the artwork rather than assuming a fixed text
+              // column. Campaign headlines are written by whoever set the
+              // banner up and run long, and a hard-coded 190px ellipsised most
+              // of them mid-word.
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                url != null && url.isNotEmpty ? 166 : 16,
+                16,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SizedBox(
-                    width: 190,
-                    child: Text(
+                  // Skipped rather than rendered blank: a banner whose artwork
+                  // already carries the words sends no title, and an empty Text
+                  // still takes up a line.
+                  if (item.headline.isNotEmpty) ...[
+                    Text(
                       item.headline,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -204,11 +215,10 @@ class _BannerCard extends StatelessWidget {
                         height: 1.15,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    width: 190,
-                    child: Text(
+                    const SizedBox(height: 4),
+                  ],
+                  if (item.caption.isNotEmpty) ...[
+                    Text(
                       item.caption,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -216,8 +226,9 @@ class _BannerCard extends StatelessWidget {
                         color: AppColors.onPrimary.withValues(alpha: 0.9),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
+                    const SizedBox(height: 4),
+                  ],
+                  const SizedBox(height: 6),
                   DecoratedBox(
                     decoration: BoxDecoration(
                       color: Colors.white,

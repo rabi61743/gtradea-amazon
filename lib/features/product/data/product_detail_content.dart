@@ -129,6 +129,7 @@ class ProductDetail {
     this.soldCount,
     this.freeDelivery = false,
     this.unitLabel = 'pcs',
+    this.variantLabel = 'Option',
     this.sellerName,
     this.location,
     this.tiers = const [],
@@ -172,6 +173,10 @@ class ProductDetail {
   /// What one unit is called: pieces, sets, metres. Wholesale rows are not
   /// always sold by the piece, and "2 sets" is not "2 pieces".
   final String unitLabel;
+
+  /// What the options are: Colour, Size, or several axes at once. Named by the
+  /// listing rather than assumed, so a size is never labelled a colour.
+  final String variantLabel;
 
   final String? sellerName;
   final String? location;
@@ -235,6 +240,7 @@ class ProductDetail {
         soldCount: soldCount,
         freeDelivery: freeDelivery,
         unitLabel: unitLabel,
+        variantLabel: variantLabel,
         sellerName: sellerName,
         location: location,
         tiers: tiers,
@@ -324,6 +330,7 @@ class ProductDetail {
       categoryCid: asString(item['category_id']) ?? fallback?.categoryCid,
       soldCount: asInt(item['total_sold']) ?? fallback?.sales,
       unitLabel: _unit(asString(item['sell_unit']) ?? asString(item['unit'])),
+      variantLabel: _axisLabel(skus),
       sellerName: asString(seller['shop_name']) ??
           asString(seller['nick']) ??
           asString(item['seller_nick']),
@@ -356,6 +363,13 @@ List<_Sku> _skus(Map<String, dynamic> item) {
               .map((p) => asString(p['value']))
               .whereType<String>()
               .toList(growable: false),
+      names: parts is! List
+          ? const []
+          : parts
+              .whereType<Map>()
+              .map((p) => asString(p['name']))
+              .whereType<String>()
+              .toList(growable: false),
     );
   }).where((s) => s.skuId.isNotEmpty && s.values.isNotEmpty).toList();
 }
@@ -367,6 +381,7 @@ class _Sku {
     this.specId,
     this.quantity,
     this.imageUrl,
+    this.names = const [],
   });
 
   final String skuId;
@@ -374,6 +389,22 @@ class _Sku {
   final int? quantity;
   final String? imageUrl;
   final List<String> values;
+
+  /// The axis each value belongs to: Colour, Size, Material.
+  final List<String> names;
+}
+
+/// What to call the row of options.
+///
+/// Taken from the SKU attributes rather than hard-coded, because these are not
+/// always colours -- a listing can sell by size, by material, or by three axes
+/// at once, and calling a size "Colour" is worse than saying nothing.
+String _axisLabel(List<_Sku> skus) {
+  for (final sku in skus) {
+    final names = sku.names.where((n) => n.isNotEmpty).toList();
+    if (names.isNotEmpty) return names.join(' / ');
+  }
+  return 'Option';
 }
 
 /// Flattens the SKUs into the selectable list the picker shows.

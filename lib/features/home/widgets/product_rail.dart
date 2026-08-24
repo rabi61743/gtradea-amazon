@@ -16,6 +16,7 @@ class ProductItem {
     this.imageUrl,
     this.listPrice,
     this.onTap,
+    this.footnote,
   });
 
   final String title;
@@ -36,6 +37,10 @@ class ProductItem {
   /// What tapping the card does. Supplied by whoever built the list, because
   /// only they know which catalogue row this card stands for.
   final VoidCallback? onTap;
+
+  /// A small fact shown where the rating would be, for catalogues that do not
+  /// have ratings. Units sold, usually.
+  final String? footnote;
 }
 
 /// Horizontally scrolling product cards under a section heading.
@@ -117,7 +122,11 @@ class _ProductCard extends StatelessWidget {
               style: theme.textTheme.bodyMedium?.copyWith(height: 1.25),
             ),
             const SizedBox(height: 6),
-            _Stars(rating: item.rating, count: item.reviewCount),
+            _Stars(
+              rating: item.rating,
+              count: item.reviewCount,
+              footnote: item.footnote,
+            ),
             const SizedBox(height: 6),
             Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -155,15 +164,33 @@ class _ProductCard extends StatelessWidget {
 }
 
 /// Five stars with the rating filled in, plus the review count.
+///
+/// When nothing has been rated it shows the footnote instead, or nothing at
+/// all. Five empty stars beside a zero is not "unrated" to anyone looking at
+/// it -- it reads as a product everybody disliked.
 class _Stars extends StatelessWidget {
-  const _Stars({required this.rating, required this.count});
+  const _Stars({required this.rating, required this.count, this.footnote});
 
   final double rating;
   final int count;
+  final String? footnote;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    if (count <= 0) {
+      final note = footnote;
+      if (note == null) return const SizedBox(height: 13);
+      return Text(
+        note,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
 
     return Row(
       children: [

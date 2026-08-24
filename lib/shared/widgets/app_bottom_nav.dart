@@ -80,12 +80,16 @@ class AppBottomNav extends StatelessWidget {
         NavigationDestination(
           icon: Badge.count(
             count: cartCount,
-            isLabelVisible: true,
+            // Hidden at zero, like the saved badge. A badge reading 0 is a
+            // notification about nothing.
+            isLabelVisible: cartCount > 0,
             child: const Icon(Icons.shopping_cart_outlined),
           ),
           selectedIcon: Badge.count(
             count: cartCount,
-            isLabelVisible: true,
+            // Hidden at zero, like the saved badge. A badge reading 0 is a
+            // notification about nothing.
+            isLabelVisible: cartCount > 0,
             child: const Icon(Icons.shopping_cart),
           ),
           label: t.cart,

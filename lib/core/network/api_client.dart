@@ -63,8 +63,21 @@ Future<T> guarded<T>(Future<T> Function() call) async {
     throw ApiError.fromDio(e);
   } on ApiError {
     rethrow;
-  } catch (e) {
-    throw ApiError(statusCode: null, message: e.toString());
+  } catch (e, stack) {
+    // Something in our own decoding threw. Reported as a distinct kind of
+    // failure: it arrives with no status code, exactly like a dead connection,
+    // and without the flag the screen tells a shopper on full signal to check
+    // their network.
+    assert(() {
+      debugPrint('[api] failed inside the app: $e\n$stack');
+      return true;
+    }());
+    throw ApiError(
+      statusCode: null,
+      message: 'Something went wrong loading this.',
+      body: e,
+      local: true,
+    );
   }
 }
 

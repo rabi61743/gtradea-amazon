@@ -138,6 +138,10 @@ class ResultCard extends StatelessWidget {
   }
 }
 
+/// Stars and the review count.
+///
+/// Absent entirely when nothing has been rated: five empty stars beside a zero
+/// reads as a product everybody disliked, not as one nobody has rated yet.
 class _Rating extends StatelessWidget {
   const _Rating({required this.rating, required this.count});
 
@@ -147,6 +151,9 @@ class _Rating extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    if (count <= 0) return const SizedBox.shrink();
+
     return Row(
       children: [
         for (var i = 1; i <= 5; i++)
