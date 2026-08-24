@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../checkout/presentation/checkout_screen.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
+import '../../../shared/widgets/loadable_view.dart';
 import '../data/cart_store.dart';
 import '../../promo/data/coupon_store.dart';
 import '../../promo/presentation/promo_section.dart';
@@ -137,26 +138,47 @@ class _CartScreenState extends State<CartScreen> {
           ),
           body: lines.isEmpty
               ? const _EmptyCart()
-              : ListView(
-                  padding: const EdgeInsets.only(top: 8, bottom: 24),
-                  children: [
-                    for (final line in lines)
-                      _CartTile(
-                        line: line,
-                        onIncrement: () => store.increment(line.key),
-                        onDecrement: () => store.decrement(line.key),
-                        onRemove: () => _removeWithUndo(line),
+              : RefreshIndicator(
+                  // The account's cart may have moved on another device.
+                  onRefresh: store.refreshFromServer,
+                  child: ListView(
+                    padding: const EdgeInsets.only(top: 8, bottom: 24),
+                    children: [
+                      if (store.syncError != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                          child: LoadFailed(
+                            compact: true,
+                            // Said plainly rather than swallowed. A cart that
+                            // exists only on this phone is one the shopper will
+                            // not find on their laptop, and they should know
+                            // that before relying on it.
+                            message: store.syncError!.isNetwork
+                                ? 'Saved on this device only - no connection '
+                                    'to your account.'
+                                : 'Not saved to your account: '
+                                    '${store.syncError!.message}',
+                            onRetry: store.retrySync,
+                          ),
+                        ),
+                      for (final line in lines)
+                        _CartTile(
+                          line: line,
+                          onIncrement: () => store.increment(line.key),
+                          onDecrement: () => store.decrement(line.key),
+                          onRemove: () => _removeWithUndo(line),
+                        ),
+                      const SizedBox(height: 8),
+                      PromoSection(lines: lines),
+                      Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: CartSummary(totals: totals),
+                        ),
                       ),
-                    const SizedBox(height: 8),
-                    PromoSection(lines: lines),
-                    Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: CartSummary(totals: totals),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
           bottomNavigationBar:
               lines.isEmpty ? null : _CheckoutBar(totals: totals, onCheckout: _checkout),

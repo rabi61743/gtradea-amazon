@@ -4,8 +4,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/network/api_error.dart';
+import '../../../core/network/json.dart';
 import '../../auth/data/auth_store.dart';
 import '../../promo/data/coupon_store.dart';
+import 'cart_repository.dart';
 
 /// One line of the cart: a product in a chosen variant, with a quantity.
 ///
@@ -26,6 +29,10 @@ class CartLine {
     this.minOrder = 1,
     this.freeDelivery = false,
     this.category,
+    this.source = 'local',
+    this.skuId,
+    this.specId,
+    this.serverId,
   });
 
   final String productId;
@@ -46,6 +53,21 @@ class CartLine {
   /// Null on a line saved before categories existed, which simply means no
   /// category-restricted coupon matches it.
   final String? category;
+
+  /// Which catalogue the product came from. The server routes an order for an
+  /// imported product differently from a local one.
+  final String source;
+
+  /// The exact SKU chosen, and the spec hash that goes with it. The order the
+  /// server places upstream is against a SKU, not against a colour name.
+  final String? skuId;
+  final String? specId;
+
+  /// The id of this line's row on the server, once it has one.
+  ///
+  /// Null for a guest line, and for a line added while offline that has not
+  /// been pushed yet -- which is exactly how the sync tells the two apart.
+  final String? serverId;
 
   /// Identity of a line. Product plus variant, because adding the blush pink
   /// after the ivory must not silently overwrite the ivory.
@@ -70,7 +92,7 @@ class CartLine {
   /// the displayed price includes it, and adding it again would double-charge.
   num get vatIncluded => lineTotal * 13 / 113;
 
-  CartLine copyWith({int? quantity}) => CartLine(
+  CartLine copyWith({int? quantity, String? serverId}) => CartLine(
         productId: productId,
         variantLabel: variantLabel,
         title: title,
@@ -81,6 +103,10 @@ class CartLine {
         minOrder: minOrder,
         freeDelivery: freeDelivery,
         category: category,
+        source: source,
+        skuId: skuId,
+        specId: specId,
+        serverId: serverId ?? this.serverId,
       );
 
   Map<String, dynamic> toJson() => {
@@ -94,6 +120,10 @@ class CartLine {
         'minOrder': minOrder,
         'freeDelivery': freeDelivery,
         'category': category,
+        'source': source,
+        'skuId': skuId,
+        'specId': specId,
+        'serverId': serverId,
       };
 
   /// Tolerant: a blob written by an older build may be missing fields, and one
@@ -129,6 +159,10 @@ class CartLine {
       minOrder: minOrder,
       freeDelivery: json['freeDelivery'] == true,
       category: json['category'] is String ? json['category'] as String : null,
+      source: json['source'] is String ? json['source'] as String : 'local',
+      skuId: json['skuId'] is String ? json['skuId'] as String : null,
+      specId: json['specId'] is String ? json['specId'] as String : null,
+      serverId: json['serverId'] is String ? json['serverId'] as String : null,
     );
   }
 }
@@ -360,6 +394,17 @@ class CartStore extends ChangeNotifier {
     notifyListeners();
 
     if (hadPending) unawaited(_persist());
+
+    // On a cold start the account wins: what is in it is what the shopper left
+    // there, possibly from another device. Anything added on this device in
+    // the meantime is pushed by the reconcile that follows.
+    if (!isGuestCart) {
+      if (hadPending) {
+        await _reconcile();
+      } else {
+        await refreshFromServer();
+      }
+    }
   }
 
   /// Switches to the cart belonging to [email], merging a guest cart in.
@@ -398,6 +443,17 @@ class CartStore extends ChangeNotifier {
 
     _loaded = true;
     notifyListeners();
+
+    if (email != null) {
+      // Signing in with things in a guest cart: push them, which the reconcile
+      // does by adding every local line the account does not already have.
+      // Signing in with an empty one: just take the account's cart.
+      if (carried.isNotEmpty) {
+        await _reconcile();
+      } else {
+        await refreshFromServer();
+      }
+    }
   }
 
   /// Adds [line] to the cart, or raises the quantity of a matching line.
@@ -408,6 +464,7 @@ class CartStore extends ChangeNotifier {
     final resulting = _mergeIn(line);
     notifyListeners();
     unawaited(_persist());
+    _scheduleSync();
     return resulting;
   }
 
@@ -441,6 +498,7 @@ class CartStore extends ChangeNotifier {
     _lines[index] = line.copyWith(quantity: next);
     notifyListeners();
     unawaited(_persist());
+    _scheduleSync();
   }
 
   void increment(String key) {
@@ -459,6 +517,7 @@ class CartStore extends ChangeNotifier {
     if (_lines.length == before) return;
     notifyListeners();
     unawaited(_persist());
+    _scheduleSync();
   }
 
   /// Puts a removed line back where it was, for undo.
@@ -467,6 +526,7 @@ class CartStore extends ChangeNotifier {
     _lines.insert(index.clamp(0, _lines.length), line);
     notifyListeners();
     unawaited(_persist());
+    _scheduleSync();
   }
 
   int indexOf(String key) => _lines.indexWhere((line) => line.key == key);
@@ -476,7 +536,200 @@ class CartStore extends ChangeNotifier {
     _lines.clear();
     notifyListeners();
     unawaited(_persist());
+    _scheduleSync();
   }
+
+  // ---------------------------------------------------------------------
+  // Server sync
+  //
+  // The rule is: the shopper's most recent intent wins, and the server is
+  // made to match it. A tap on the stepper takes effect on screen at once and
+  // the network catches up, because a cart that waits for a round trip before
+  // showing a number feels broken on a Nepali mobile connection.
+  //
+  // The exception is a cold start, where the server wins: whatever is in the
+  // account is what the shopper left there, possibly on another device.
+  // ---------------------------------------------------------------------
+
+  /// True while a reconcile is in flight.
+  bool _syncing = false;
+
+  /// Set when the cart on screen has not made it to the account.
+  ///
+  /// Surfaced rather than swallowed. A shopper who adds three things on a train
+  /// and later opens the app on a laptop should not silently find one of them.
+  ApiError? _syncError;
+
+  ApiError? get syncError => _syncError;
+  bool get isSyncing => _syncing;
+
+  /// True when this cart lives only on the device.
+  bool get isGuestCart => !AuthStore.instance.isSignedIn;
+
+  /// Pushes local state to the server and adopts what comes back.
+  ///
+  /// Reconcile rather than a queue of deltas: a queue has to survive being
+  /// killed mid-flight, and replaying it wrong charges someone for two of
+  /// something. Comparing the two lists cannot double-add.
+  Future<void> _reconcile() async {
+    if (isGuestCart || _syncing) return;
+    _syncing = true;
+    notifyListeners();
+
+    try {
+      final server = await CartRepository.instance.list();
+      final remaining = {for (final item in server.items) item.id: item};
+
+      for (var i = 0; i < _lines.length; i++) {
+        final line = _lines[i];
+        final match = _matchOnServer(line, remaining.values);
+
+        if (match == null) {
+          final created = await CartRepository.instance.add(
+            quantity: line.quantity,
+            source: line.source,
+            sourceProductId: line.source == 'local' ? null : line.productId,
+            productId: line.source == 'local' ? line.productId : null,
+            variantLabel: line.variantLabel,
+            productData: _snapshotOf(line),
+          );
+          _lines[i] = line.copyWith(serverId: created.id);
+          continue;
+        }
+
+        remaining.remove(match.id);
+        if (match.quantity != line.quantity) {
+          await CartRepository.instance.setQuantity(match.id, line.quantity);
+        }
+        if (line.serverId != match.id) {
+          _lines[i] = line.copyWith(serverId: match.id);
+        }
+      }
+
+      // Rows the shopper removed on this device. Removed one at a time because
+      // there is no batch delete.
+      for (final orphan in remaining.values) {
+        await CartRepository.instance.remove(orphan.id);
+      }
+
+      _syncError = null;
+    } on ApiError catch (e) {
+      // The cart on screen is still what the shopper wants; it just is not
+      // saved yet. Kept, not rolled back.
+      _syncError = e;
+    } finally {
+      _syncing = false;
+      notifyListeners();
+      unawaited(_persist());
+    }
+  }
+
+  /// Finds the row that stands for [line], by id first and by product second.
+  ///
+  /// The fallback matters on the first sync after signing in, when the account
+  /// already holds the same product added from the web and the local line has
+  /// no server id yet -- without it that product would be added twice.
+  ServerCartItem? _matchOnServer(CartLine line, Iterable<ServerCartItem> rows) {
+    for (final row in rows) {
+      if (row.id == line.serverId) return row;
+    }
+    for (final row in rows) {
+      if (row.key == line.productId && row.variantLabel == line.variantLabel) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  /// What the server stores so the line still renders when the upstream
+  /// listing changes or disappears.
+  Map<String, dynamic> _snapshotOf(CartLine line) => {
+        'name': line.title,
+        'price': line.unitPrice,
+        'image': ?line.imageUrl,
+        'category': ?line.category,
+        'moq': line.minOrder,
+        'skuId': ?line.skuId,
+        'specId': ?line.specId,
+        'variantLabel': ?line.variantLabel,
+      };
+
+  /// Replaces the cart with the account's, keeping local snapshots for the
+  /// rows the server sends back thin.
+  void _adoptServerCart(ServerCart cart) {
+    final known = {for (final line in _lines) line.key: line};
+    _lines
+      ..clear()
+      ..addAll(cart.items.map((item) => _lineFromServer(item, known)));
+  }
+
+  CartLine _lineFromServer(ServerCartItem item, Map<String, CartLine> known) {
+    final data = item.productData;
+    final cached = known[keyOf(item.key, item.variantLabel)];
+
+    final price = asNum(data['price']) ??
+        asNum(data['display_price']) ??
+        cached?.unitPrice ??
+        0;
+
+    return CartLine(
+      productId: item.key,
+      variantLabel: item.variantLabel,
+      title: asString(data['name']) ??
+          asString(data['title']) ??
+          cached?.title ??
+          'Item',
+      unitPrice: price,
+      imageUrl: asString(data['image']) ??
+          asString(data['pic_url']) ??
+          asString(data['image_url']) ??
+          cached?.imageUrl,
+      quantity: item.quantity,
+      minOrder: asInt(data['moq']) ?? cached?.minOrder ?? 1,
+      category: asString(data['category']) ?? cached?.category,
+      source: item.source,
+      skuId: asString(data['skuId']) ?? cached?.skuId,
+      specId: asString(data['specId']) ?? cached?.specId,
+      serverId: item.id,
+    );
+  }
+
+  /// Asks the server again and takes its answer.
+  ///
+  /// Used on a cold start and by pull-to-refresh: what is in the account is
+  /// what the shopper left there, and this device's cache may be older than
+  /// another device's changes.
+  Future<void> refreshFromServer() async {
+    if (isGuestCart) return;
+    _syncing = true;
+    notifyListeners();
+    try {
+      _adoptServerCart(await CartRepository.instance.list());
+      _syncError = null;
+    } on ApiError catch (e) {
+      // Keep whatever is cached. An empty cart shown because the network
+      // failed reads as "we lost your things".
+      _syncError = e;
+    } finally {
+      _syncing = false;
+      notifyListeners();
+      unawaited(_persist());
+    }
+  }
+
+  /// Retries after a failed sync, from the cart screen's banner.
+  Future<void> retrySync() => _reconcile();
+
+  /// Schedules a reconcile, coalescing a burst of stepper taps into one.
+  void _scheduleSync() {
+    if (isGuestCart) return;
+    _syncDebounce?.cancel();
+    _syncDebounce = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_reconcile());
+    });
+  }
+
+  Timer? _syncDebounce;
 
   CartLine? _lineByKey(String key) {
     for (final line in _lines) {
@@ -491,6 +744,10 @@ class CartStore extends ChangeNotifier {
     _scope = null;
     _loaded = false;
     _bound = false;
+    _syncing = false;
+    _syncError = null;
+    _syncDebounce?.cancel();
+    _syncDebounce = null;
   }
 
   Future<void> _readInto(List<CartLine> target, String key) async {

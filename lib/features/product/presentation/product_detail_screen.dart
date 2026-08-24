@@ -167,6 +167,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     minOrder: _product.minOrder,
     freeDelivery: _product.freeDelivery,
     category: _product.category,
+    // Everything in this catalogue is imported, and the SKU is what the
+    // server actually orders upstream -- a colour name would not identify it.
+    source: '1688',
+    skuId: _selectedVariant?.skuId,
+    specId: _selectedVariant?.specId,
   );
 
   void _openCart() {

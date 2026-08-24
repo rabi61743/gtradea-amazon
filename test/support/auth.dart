@@ -2,6 +2,7 @@ import 'package:gtradea_amazon/core/network/session_store.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_repository.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
 
+import 'api.dart';
 import 'fake_api.dart';
 
 /// Puts the app in a signed-in state without a server.
@@ -17,6 +18,8 @@ void signInForTest({
   String? name,
   String id = 'user-1',
 }) {
+  ensureApiStub();
+
   final api = FakeApi()..on('POST', '/logout', status: 204);
   AuthStore.instance.repositoryForTest = AuthRepository(
     sessions: SessionStore.instance,

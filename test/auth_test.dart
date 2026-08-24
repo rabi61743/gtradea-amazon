@@ -298,7 +298,7 @@ void main() {
   group('bottom nav', () {
     testWidgets('reads "Sign in" when signed out', (tester) async {
       await tester.pumpWidget(const GtradeaAmazonApp());
-      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
 
       expect(find.text('Sign in'), findsOneWidget);
       expect(find.text('Account'), findsNothing);
@@ -311,7 +311,7 @@ void main() {
       // The dynamic requirement: no navigation, no rebuild trigger other than
       // the store itself.
       await tester.pumpWidget(const GtradeaAmazonApp());
-      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
       expect(find.text('Sign in'), findsOneWidget);
 
       signInForTest(email: 'rabi@example.com', name: 'Rabi');
@@ -325,13 +325,14 @@ void main() {
       await tester.pump();
       expect(find.text('Sign in'), findsOneWidget);
 
+      await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
     testWidgets('opens the account page without stealing the nav selection',
         (tester) async {
       await tester.pumpWidget(const GtradeaAmazonApp());
-      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('Sign in'));
       await tester.pumpAndSettle();

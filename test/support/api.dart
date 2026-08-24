@@ -47,6 +47,11 @@ FakeApi stubCatalog({
     ]);
   });
 
+  // Signing in makes the app fetch the account's cart, so every stub needs a
+  // cart even when the test is about something else.
+  api.on('GET', '/cart', body: const {'items': [], 'subtotal': 0});
+  api.on('DELETE', '/cart', status: 204);
+
   api.on('GET', '/feed/discover', body: feedRows(products));
   api.on('GET', '/feed/trending-products', body: feedRows(products));
   api.on('GET', '/search/products', body: feedRows(products));
@@ -58,8 +63,22 @@ FakeApi stubCatalog({
 
 /// Points the shared client at a fake and clears anything already loaded.
 void useStubbedApi(FakeApi api) {
+  _installed = api;
   ApiClient.overrideDio = api.dio();
   CatalogStore.instance.resetForTest();
+}
+
+FakeApi? _installed;
+
+/// The stub currently behind the app, installing a default if there is none.
+///
+/// Signing in now reaches the gateway, so a test that only meant to check a
+/// label would otherwise fire a real request.
+FakeApi ensureApiStub() => _installed ?? stubCatalog();
+
+void clearApiStub() {
+  _installed = null;
+  ApiClient.overrideDio = null;
 }
 
 const _departmentNames = [
