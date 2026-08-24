@@ -9,6 +9,7 @@ import 'package:gtradea_amazon/features/wishlist/presentation/wishlist_screen.da
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/api.dart';
+import 'support/fake_api.dart';
 
 const _jacket = SavedProduct(
   id: 'jacket',
@@ -21,12 +22,14 @@ const _dress = SavedProduct(id: 'dress', title: 'Suspender dress', price: 1808);
 
 Widget _wrap(Widget child) => MaterialApp(theme: AppTheme.light, home: child);
 
+late FakeApi api;
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     WishlistStore.instance.resetForTest();
     CartStore.instance.resetForTest();
-    stubCatalog();
+    api = stubCatalog();
   });
 
   group('WishlistStore', () {
@@ -204,51 +207,122 @@ void main() {
       expect(find.textContaining('In Stock'), findsNothing);
     });
 
-    testWidgets('adding one puts it in the cart at the seller minimum',
+    testWidgets('moving one puts it in the cart at the seller minimum',
         (tester) async {
       // One of a listing that sells in tens is a refusal waiting to happen.
       WishlistStore.instance.toggle(wholesale);
       await pump(tester);
 
       await tester.tap(find.text('Add to cart'));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       final line = CartStore.instance.lines.single;
       expect(line.productId, 'polo');
       expect(line.quantity, 10);
       expect(line.minOrder, 10);
       expect(line.category, 'Men', reason: 'so a category coupon still knows');
-      // It stays saved: adding to the cart is not the same as unsaving.
+    });
+
+    testWidgets('a moved product leaves the saved list', (tester) async {
+      WishlistStore.instance
+        ..toggle(wholesale)
+        ..toggle(_dress);
+      await pump(tester);
+
+      await tester.tap(find.text('Add to cart').first);
+      await tester.pumpAndSettle();
+
+      expect(WishlistStore.instance.contains(_dress.id), isFalse);
+      expect(WishlistStore.instance.contains('polo'), isTrue,
+          reason: 'the other one is untouched');
+      expect(find.text('1 item saved'), findsOneWidget);
+    });
+
+    testWidgets('undo puts it back on both sides', (tester) async {
+      // Moving empties a shortlist someone built, so there is a way back.
+      WishlistStore.instance.toggle(wholesale);
+      await pump(tester);
+
+      await tester.tap(find.text('Add to cart'));
+      await tester.pumpAndSettle();
+      expect(CartStore.instance.lineCount, 1);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+
+      expect(CartStore.instance.isEmpty, isTrue);
       expect(WishlistStore.instance.contains('polo'), isTrue);
     });
 
-    testWidgets('a product with no price cannot be added', (tester) async {
-      // The pricing engine has not worked one out. Adding it would put Rs. 0
-      // in the cart for something real.
+    testWidgets('a saved row with no price gets one from the catalogue',
+        (tester) async {
+      // A row can be saved before the pricing engine has worked one out. Asking
+      // for the price is what lets every item move rather than most of them.
+      api.on('GET', 'https://gtradea.com/api/1688/product', body: {
+        'item': {'num_iid': 'mystery', 'title': 'Display rack'},
+        'pricing': {'displayPrice': 4200},
+      });
       WishlistStore.instance.toggle(unpriced);
       await pump(tester);
 
-      expect(find.text('Price on request'), findsOneWidget);
-      final button = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Add to cart'),
-      );
-      expect(button.onPressed, isNull);
+      await tester.tap(find.text('Add to cart'));
+      await tester.pumpAndSettle();
+
+      expect(CartStore.instance.lines.single.unitPrice, 4200);
+      expect(WishlistStore.instance.contains('mystery'), isFalse);
     });
 
-    testWidgets('Add all adds every priced item and says what it skipped',
+    testWidgets('a product the catalogue cannot price stays saved',
         (tester) async {
+      // Adding it at nothing would put Rs. 0 in the cart for something real.
+      api.on('GET', 'https://gtradea.com/api/1688/product',
+          status: 404, body: const {'error': 'gone'});
+      WishlistStore.instance.toggle(unpriced);
+      await pump(tester);
+
+      await tester.tap(find.text('Add to cart'));
+      await tester.pumpAndSettle();
+
+      expect(CartStore.instance.isEmpty, isTrue);
+      expect(WishlistStore.instance.contains('mystery'), isTrue);
+      expect(find.textContaining('no price yet'), findsOneWidget);
+    });
+
+    testWidgets('Move all empties the list into the cart', (tester) async {
+      api.on('GET', 'https://gtradea.com/api/1688/product', body: {
+        'item': {'num_iid': 'mystery', 'title': 'Display rack'},
+        'pricing': {'displayPrice': 4200},
+      });
+      WishlistStore.instance
+        ..toggle(wholesale)
+        ..toggle(unpriced)
+        ..toggle(_dress);
+      await pump(tester);
+
+      await tester.tap(find.text('Move all'));
+      await tester.pumpAndSettle();
+
+      expect(CartStore.instance.lineCount, 3);
+      expect(WishlistStore.instance.count, 0);
+      expect(find.text('Nothing saved yet'), findsOneWidget);
+    });
+
+    testWidgets('Move all leaves behind only what it could not price',
+        (tester) async {
+      api.on('GET', 'https://gtradea.com/api/1688/product',
+          status: 404, body: const {'error': 'gone'});
       WishlistStore.instance
         ..toggle(wholesale)
         ..toggle(unpriced);
       await pump(tester);
 
-      await tester.tap(find.text('Add all'));
-      await tester.pump();
+      await tester.tap(find.text('Move all'));
+      await tester.pumpAndSettle();
 
       expect(CartStore.instance.lineCount, 1);
+      expect(WishlistStore.instance.count, 1);
+      expect(WishlistStore.instance.contains('mystery'), isTrue);
       expect(find.textContaining('1 had no price'), findsOneWidget);
-      // Still saved, all of them.
-      expect(WishlistStore.instance.count, 2);
     });
 
     testWidgets('the heart on a card unsaves it', (tester) async {
@@ -283,7 +357,7 @@ void main() {
       await pump(tester);
 
       expect(find.text('2 items saved'), findsOneWidget);
-      expect(find.text('Add all'), findsOneWidget);
+      expect(find.text('Move all'), findsOneWidget);
     });
 
     testWidgets('an empty list explains itself and offers no bulk action',
@@ -291,7 +365,7 @@ void main() {
       await pump(tester);
 
       expect(find.text('Nothing saved yet'), findsOneWidget);
-      expect(find.text('Add all'), findsNothing);
+      expect(find.text('Move all'), findsNothing);
       expect(find.byTooltip('Clear all'), findsNothing);
     });
 

@@ -5,9 +5,12 @@ import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/presentation/cart_screen.dart';
+import '../../../core/network/api_error.dart';
 import '../../catalog/data/product.dart';
 import '../../catalog/presentation/browse_screen.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
+import '../../product/data/product_detail_content.dart';
+import '../../product/data/product_repository.dart';
 import '../../product/presentation/product_detail_screen.dart';
 import '../data/wishlist_store.dart';
 
@@ -32,6 +35,12 @@ class _WishlistScreenState extends State<WishlistScreen> {
     WishlistStore.instance.load();
     CartStore.instance.load();
   }
+
+  /// Ids currently being moved, so their buttons can show it and a double tap
+  /// cannot add the same thing twice.
+  final _moving = <String>{};
+
+  bool _movingAll = false;
 
   void _say(String message, {SnackBarAction? action}) {
     ScaffoldMessenger.of(context)
@@ -62,10 +71,10 @@ class _WishlistScreenState extends State<WishlistScreen> {
     );
   }
 
-  CartLine _lineFor(SavedProduct product) => CartLine(
+  CartLine _lineFor(SavedProduct product, num price) => CartLine(
         productId: product.id,
         title: product.title,
-        unitPrice: product.price,
+        unitPrice: price,
         listPrice: product.listPrice,
         imageUrl: product.imageUrl,
         // The seller's floor, not one. Adding a single unit of a listing that
@@ -76,35 +85,107 @@ class _WishlistScreenState extends State<WishlistScreen> {
         source: '1688',
       );
 
-  void _addToCart(SavedProduct product) {
-    final inCart = CartStore.instance.add(_lineFor(product));
+  /// What this product costs, asking the catalogue if the saved copy does not
+  /// know.
+  ///
+  /// A row can be saved before the pricing engine has worked one out, and its
+  /// snapshot then carries zero. Putting that in the cart would show Rs. 0 for
+  /// something real, so the price is fetched rather than assumed -- which is
+  /// also what lets every saved item move rather than most of them.
+  Future<num?> _resolvePrice(SavedProduct product) async {
+    if (product.price > 0) return product.price;
+    try {
+      final body = await ProductRepository.instance.detail(product.id);
+      final price = ProductDetail.fromApi(body).price;
+      return price > 0 ? price : null;
+    } on ApiError {
+      return null;
+    }
+  }
+
+  /// Moves one product into the cart and takes it off this list.
+  Future<void> _moveToCart(SavedProduct product) async {
+    if (_moving.contains(product.id)) return;
+    setState(() => _moving.add(product.id));
+
+    final price = await _resolvePrice(product);
+    if (!mounted) return;
+    setState(() => _moving.remove(product.id));
+
+    if (price == null) {
+      // Left where it is rather than added at nothing. The row stays saved so
+      // it can be tried again once the seller has priced it.
+      _say('${product.title} has no price yet, so it stays saved.');
+      return;
+    }
+
+    final index = WishlistStore.instance.items.indexOf(product);
+    final line = _lineFor(product, price);
+    CartStore.instance.add(line);
+    WishlistStore.instance.remove(product.id);
+
     _say(
-      'Added to your cart. $inCart in cart.',
-      action: SnackBarAction(label: 'View cart', onPressed: _openCart),
+      'Moved to your cart.',
+      action: SnackBarAction(
+        label: 'Undo',
+        // Undo puts it back on both sides. Moving is destructive to a
+        // shortlist someone built, and a one-tap way back costs nothing.
+        onPressed: () {
+          CartStore.instance.remove(line.key);
+          WishlistStore.instance.restore(product, index);
+        },
+      ),
     );
   }
 
-  /// Adds every saved item to the cart at once.
-  ///
-  /// They stay saved. "Move all" reads like a transfer, but emptying the list
-  /// on one tap would throw away a shortlist the shopper built, and that is not
-  /// undoable from the cart.
-  void _addAll(List<SavedProduct> products) {
-    final buyable = products.where((p) => p.price > 0).toList();
-    if (buyable.isEmpty) {
-      _say('None of these have a price yet.');
-      return;
-    }
-    for (final product in buyable) {
-      CartStore.instance.add(_lineFor(product));
+  /// Moves every saved product into the cart at once.
+  Future<void> _moveAll() async {
+    if (_movingAll) return;
+    // A copy: the list being iterated is the one this removes from.
+    final products = List<SavedProduct>.from(WishlistStore.instance.items);
+    if (products.isEmpty) return;
+
+    setState(() => _movingAll = true);
+
+    final moved = <({SavedProduct product, int index, String key})>[];
+    final unpriced = <SavedProduct>[];
+
+    for (final product in products) {
+      final price = await _resolvePrice(product);
+      if (!mounted) return;
+      if (price == null) {
+        unpriced.add(product);
+        continue;
+      }
+      final index = WishlistStore.instance.items.indexOf(product);
+      final line = _lineFor(product, price);
+      CartStore.instance.add(line);
+      WishlistStore.instance.remove(product.id);
+      moved.add((product: product, index: index, key: line.key));
     }
 
-    final skipped = products.length - buyable.length;
+    if (!mounted) return;
+    setState(() => _movingAll = false);
+
+    if (moved.isEmpty) {
+      _say('None of these have a price yet, so they stay saved.');
+      return;
+    }
+
     _say(
-      '${buyable.length} ${buyable.length == 1 ? 'item' : 'items'} added to '
-      'your cart.'
-      '${skipped > 0 ? ' $skipped had no price and was left here.' : ''}',
-      action: SnackBarAction(label: 'View cart', onPressed: _openCart),
+      '${moved.length} ${moved.length == 1 ? 'item' : 'items'} moved to your '
+      'cart.'
+      '${unpriced.isEmpty ? '' : ' ${unpriced.length} had no price and stayed '
+          'here.'}',
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () {
+          for (final entry in moved) {
+            CartStore.instance.remove(entry.key);
+            WishlistStore.instance.restore(entry.product, entry.index);
+          }
+        },
+      ),
     );
   }
 
@@ -197,15 +278,17 @@ class _WishlistScreenState extends State<WishlistScreen> {
                     ),
                     _SummaryCard(
                       count: items.length,
-                      onAddAll: () => _addAll(items),
+                      busy: _movingAll,
+                      onMoveAll: _moveAll,
                     ),
                     const SizedBox(height: 12),
                     for (final product in items) ...[
                       _SavedCard(
                         product: product,
+                        busy: _moving.contains(product.id) || _movingAll,
                         onOpen: () => _open(product),
                         onRemove: () => _remove(product),
-                        onAddToCart: () => _addToCart(product),
+                        onMoveToCart: () => _moveToCart(product),
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -224,10 +307,15 @@ class _WishlistScreenState extends State<WishlistScreen> {
 
 /// How many are saved, and the one action that applies to all of them.
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.count, required this.onAddAll});
+  const _SummaryCard({
+    required this.count,
+    required this.busy,
+    required this.onMoveAll,
+  });
 
   final int count;
-  final VoidCallback onAddAll;
+  final bool busy;
+  final VoidCallback onMoveAll;
 
   @override
   Widget build(BuildContext context) {
@@ -255,9 +343,8 @@ class _SummaryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  // Says what the button actually does. "Move" would imply the
-                  // list is emptied, and it is not.
-                  'Adding to the cart keeps them here',
+                  // Says what the button does, because it empties this list.
+                  'Moving them to the cart clears this list',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -267,9 +354,15 @@ class _SummaryCard extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           OutlinedButton.icon(
-            onPressed: onAddAll,
-            icon: const Icon(Icons.add_shopping_cart, size: 17),
-            label: const Text('Add all'),
+            onPressed: busy ? null : onMoveAll,
+            icon: busy
+                ? const SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.add_shopping_cart, size: 17),
+            label: const Text('Move all'),
           ),
         ],
       ),
@@ -282,15 +375,20 @@ class _SummaryCard extends StatelessWidget {
 class _SavedCard extends StatelessWidget {
   const _SavedCard({
     required this.product,
+    required this.busy,
     required this.onOpen,
     required this.onRemove,
-    required this.onAddToCart,
+    required this.onMoveToCart,
   });
 
   final SavedProduct product;
+
+  /// True while this row is being moved, or while everything is.
+  final bool busy;
+
   final VoidCallback onOpen;
   final VoidCallback onRemove;
-  final VoidCallback onAddToCart;
+  final VoidCallback onMoveToCart;
 
   @override
   Widget build(BuildContext context) {
@@ -310,7 +408,11 @@ class _SavedCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            // Centred, not top-aligned. The text column is the tall child --
+            // two lines of title, the facts under it and a row of buttons --
+            // so a top-aligned photograph sat against the top edge with a
+            // block of empty space beneath it.
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               SizedBox(
                 width: 84,
@@ -427,7 +529,7 @@ class _SavedCard extends StatelessWidget {
                     Row(
                       children: [
                         OutlinedButton(
-                          onPressed: onRemove,
+                          onPressed: busy ? null : onRemove,
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size(44, 40),
                             padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -438,11 +540,16 @@ class _SavedCard extends StatelessWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: FilledButton.icon(
-                            // A row with no price cannot be bought: the pricing
-                            // engine has not worked one out, and the cart would
-                            // show Rs. 0 for something real.
-                            onPressed: product.price > 0 ? onAddToCart : null,
-                            icon: const Icon(Icons.add_shopping_cart, size: 18),
+                            onPressed: busy ? null : onMoveToCart,
+                            icon: busy
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.add_shopping_cart, size: 18),
                             label: const Text('Add to cart'),
                             style: FilledButton.styleFrom(
                               minimumSize: const Size.fromHeight(40),
