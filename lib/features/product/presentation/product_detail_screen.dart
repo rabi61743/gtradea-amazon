@@ -1,13 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../account/data/recently_viewed_store.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/presentation/cart_screen.dart';
 import '../../home/widgets/product_rail.dart';
+import '../../catalog/data/catalog_repository.dart';
+import '../../catalog/data/product.dart';
+import '../../catalog/presentation/catalog_visuals.dart';
+import '../../search/presentation/search_results_screen.dart';
+import '../../../shared/widgets/loadable_view.dart';
 import '../data/product_detail_content.dart';
+import '../data/product_repository.dart';
 import '../../wishlist/data/wishlist_store.dart';
 import '../widgets/assurance_row.dart';
 import '../widgets/product_gallery.dart';
@@ -22,9 +31,14 @@ import '../widgets/variant_picker.dart';
 /// chose to look at. There is none here: the top of this page belongs to the
 /// thing being sold.
 class ProductDetailScreen extends StatefulWidget {
-  const ProductDetailScreen({super.key, this.product = ProductDetail.sample});
+  const ProductDetailScreen({super.key, required this.product, this.detail});
 
-  final ProductDetail product;
+  /// The catalogue row that was tapped. Enough to paint the page immediately.
+  final Product product;
+
+  /// A ready-made record, for tests and for the rare caller that already has
+  /// one. When null the page fetches it.
+  final ProductDetail? detail;
 
   @override
   State<ProductDetailScreen> createState() => _ProductDetailScreenState();
@@ -32,8 +46,19 @@ class ProductDetailScreen extends StatefulWidget {
 
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int _variant = 0;
-  int _quantity = 1;
+  late int _quantity = _detail.minOrder > 0 ? _detail.minOrder : 1;
   bool _descriptionExpanded = false;
+
+  late ProductDetail _detail =
+      widget.detail ?? ProductDetail.fromProduct(widget.product);
+
+  /// Set when the full record could not be fetched. The page keeps rendering
+  /// the card's own data underneath it -- a title and a price the shopper just
+  /// saw are worth more than an error page.
+  ApiError? _detailError;
+
+  /// The rest of this department, for the rail at the bottom.
+  List<Product> _similar = const [];
 
   @override
   void initState() {
@@ -45,9 +70,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     // Open on something buyable. The picker refuses to select a sold-out
     // swatch, so defaulting to index 0 when index 0 is sold out would strand
     // the page on an option the shopper cannot change away from by tapping it.
-    final firstInStock =
-        widget.product.variants.indexWhere((variant) => variant.inStock);
+    final firstInStock = _detail.variants.indexWhere((variant) => variant.inStock);
     if (firstInStock > 0) _variant = firstInStock;
+
+    if (widget.detail == null) unawaited(_loadDetail());
 
     // Opening the page is the visit. Recorded after the first frame so it
     // never competes with building it.
@@ -55,10 +81,60 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       RecentlyViewedStore.instance.load().then((_) {
         if (mounted) RecentlyViewedStore.instance.record(_savedProduct);
       });
+      // The server keeps its own recently-viewed list for signed-in shoppers,
+      // so the same visit counts on the web storefront too.
+      unawaited(ProductRepository.instance.recordView(
+        numIid: widget.product.numIid,
+        name: widget.product.title,
+        imageUrl: widget.product.imageUrl,
+        priceLabel:
+            widget.product.hasPrice ? formatRupees(widget.product.displayPrice!) : null,
+      ));
     });
   }
 
-  ProductDetail get _product => widget.product;
+  ProductDetail get _product => _detail;
+
+  /// Fetches the full record and, once it lands, the rest of its department.
+  Future<void> _loadDetail() async {
+    try {
+      final body = await ProductRepository.instance.detail(widget.product.numIid);
+      if (!mounted) return;
+      final detail = ProductDetail.fromApi(body, fallback: widget.product);
+      setState(() {
+        _detail = detail;
+        _detailError = null;
+        // The preview had no options; the record may. Start on one that can
+        // actually be bought.
+        final firstInStock = detail.variants.indexWhere((v) => v.inStock);
+        _variant = firstInStock < 0 ? 0 : firstInStock;
+        _quantity = detail.minOrder > 0 ? detail.minOrder : 1;
+      });
+      unawaited(_loadSimilar(detail));
+    } on ApiError catch (e) {
+      if (mounted) setState(() => _detailError = e);
+    }
+  }
+
+  /// More from the same department. Real products rather than a hand-picked
+  /// list, so it stays right as the catalogue changes.
+  Future<void> _loadSimilar(ProductDetail detail) async {
+    final cid = detail.categoryCid ?? widget.product.categoryCid;
+    if (cid == null) return;
+    try {
+      final products =
+          await CatalogRepository.instance.categoryProducts(cid, pageSize: 12);
+      if (!mounted) return;
+      final others = products
+          .where((p) => p.numIid != detail.numIid)
+          .take(8)
+          .toList(growable: false);
+      if (others.isEmpty) return;
+      setState(() => _similar = others);
+    } on ApiError {
+      // A rail that did not load is a rail that is not shown.
+    }
+  }
 
   void _snack(String message) {
     ScaffoldMessenger.of(context)
@@ -66,9 +142,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  /// Stable id for the sample product. A real build keys on the catalogue
-  /// id; the title is unique enough for placeholder data.
-  String get _productId => _product.title;
+  /// The catalogue key. Everything that refers to this product later -- the
+  /// cart line, the wishlist entry, the order item -- uses it.
+  String get _productId => widget.product.numIid;
 
   ProductVariant? get _selectedVariant =>
       _product.variants.isEmpty ? null : _product.variants[_variant];
@@ -80,7 +156,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     productId: _productId,
     variantLabel: _selectedVariant?.label,
     title: _product.title,
-    unitPrice: _product.price,
+    unitPrice: _unitPrice,
     listPrice: _product.listPrice,
     // The chosen colourway's own photo, so two variants of one product are
     // told apart at a glance in the cart instead of showing the same picture
@@ -98,6 +174,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       context,
     ).push(MaterialPageRoute(builder: (_) => const CartScreen()));
   }
+
+  /// What one of these costs right now.
+  ///
+  /// Three things can move it: the option chosen, the quantity -- wholesale
+  /// listings price in bands -- and neither, in which case it is the headline
+  /// price. Worked out in one place so the buy bar and the cart line cannot
+  /// disagree about it.
+  num get _unitPrice =>
+      _selectedVariant?.price ?? _product.priceAt(_quantity);
 
   /// True when the page is sitting on an option that cannot be bought -- every
   /// variant sold out, so there is nothing to default to.
@@ -234,6 +319,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           SliverList.list(
             children: [
               ProductGallery(images: product.images, onImageTap: _openViewer),
+              if (_detailError != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: LoadFailed(
+                    compact: true,
+                    // The card's own title, price and photograph are still on
+                    // screen underneath. Saying what is missing beats replacing
+                    // a usable page with an error.
+                    message: _detailError!.isNetwork
+                        ? 'No connection, so options and specifications could '
+                            'not be loaded.'
+                        : _detailError!.message,
+                    onRetry: _loadDetail,
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                 child: Column(
@@ -247,32 +347,52 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    // Rating and sales belong beside the name, where they read
-                    // as facts about the product rather than a badge stuck on
-                    // the photograph.
+                    // What is known about this product, beside the name where
+                    // it reads as fact rather than as a badge stuck on the
+                    // photograph.
+                    //
+                    // The rating appears only when there is one. A catalogue
+                    // with no reviews would otherwise show every product as
+                    // zero stars, and "0.0 (0)" reads as rated badly rather
+                    // than as not rated.
                     Row(
                       children: [
-                        const Icon(Icons.star, size: 16, color: AppColors.star),
-                        const SizedBox(width: 4),
-                        Text(
-                          product.rating.toStringAsFixed(1),
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
+                        if (product.reviewCount > 0) ...[
+                          const Icon(Icons.star,
+                              size: 16, color: AppColors.star),
+                          const SizedBox(width: 4),
+                          Text(
+                            product.rating.toStringAsFixed(1),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '(${product.reviewCount})',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                          const SizedBox(width: 6),
+                          Text(
+                            '(${product.reviewCount})',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
-                        ),
-                        if (sold != null) ...[
                           const SizedBox(width: 10),
+                        ],
+                        if (sold != null)
                           Text(
                             '${_compact(sold)} sold',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        if (product.sellerName != null) ...[
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Text(
+                              product.sellerName!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
                           ),
                         ],
@@ -394,12 +514,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ),
                 ),
               ],
-              if (product.similar.isNotEmpty)
+              if (_similar.isNotEmpty)
                 ProductRail(
-                  title: 'Similar products',
+                  title: 'More in ${product.category ?? 'this department'}',
                   leadingIcon: Icons.compare_arrows,
-                  items: product.similar,
-                  onSeeAll: () {},
+                  items: toProductItems(context, _similar),
+                  onSeeAll: product.categoryCid == null
+                      ? null
+                      : () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => SearchResultsScreen(
+                              query: '',
+                              categoryCid: product.categoryCid,
+                            ),
+                          )),
                 ),
               const SizedBox(height: 24),
             ],
@@ -407,7 +534,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ],
       ),
       bottomNavigationBar: _BuyBar(
-        total: product.price * _quantity,
+        total: _unitPrice * _quantity,
         onAddToCart: _addToCart,
         onBuyNow: _buyNow,
       ),

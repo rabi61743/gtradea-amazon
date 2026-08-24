@@ -1,16 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
-import 'package:gtradea_amazon/features/search/data/search_content.dart';
+import 'package:gtradea_amazon/features/search/data/recent_search_store.dart';
+import 'package:gtradea_amazon/features/search/data/search_models.dart';
 import 'package:gtradea_amazon/features/search/presentation/search_entry_screen.dart';
 import 'package:gtradea_amazon/features/search/presentation/search_results_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-Widget _wrap(Widget child) => MaterialApp(
-      theme: AppTheme.light,
-      home: child,
-    );
+import 'support/api.dart';
+import 'support/catalog.dart';
+import 'support/fake_api.dart';
+
+Widget _wrap(Widget child) => MaterialApp(theme: AppTheme.light, home: child);
+
+late FakeApi api;
+
+/// A window tall enough that the results list is actually built.
+void _tall(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1100, 2400);
+  tester.view.devicePixelRatio = 2.0;
+  addTearDown(tester.view.reset);
+}
+
+/// The query parameters of the most recent search request.
+Map<String, dynamic> lastSearch() =>
+    api.calls.lastWhere((c) => c.path == '/search/products').query;
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    RecentSearchStore.instance.resetForTest();
+    api = stubCatalog();
+  });
+
   group('SearchResult.discountPercent', () {
     test('is null without a list price', () {
       const r = SearchResult(
@@ -62,112 +84,196 @@ void main() {
     });
   });
 
-  testWidgets('the entry screen leads with recent searches', (tester) async {
-    await tester.pumpWidget(_wrap(const SearchEntryScreen()));
-    await tester.pump(const Duration(milliseconds: 200));
+  group('the entry screen', () {
+    testWidgets('leads with recent searches, once there are any',
+        (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchEntryScreen()));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Recent searches'), findsOneWidget);
-    expect(find.text('Trending searches'), findsOneWidget);
-    expect(find.text('Search by image'), findsOneWidget);
-    expect(find.text('Water geysers'), findsOneWidget);
+      // Nothing invented: a shopper who has never searched has no history, and
+      // showing a made-up one would be a lie about what they had done.
+      expect(find.text('Recent searches'), findsNothing);
+
+      RecentSearchStore.instance.record('water geyser');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Recent searches'), findsOneWidget);
+      expect(find.text('water geyser'), findsOneWidget);
+    });
+
+    testWidgets('offers the real departments rather than invented queries',
+        (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchEntryScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Browse departments'), findsOneWidget);
+      expect(find.text('Women'), findsOneWidget);
+      // The subtitle names what is inside, which is what makes the row worth
+      // its height.
+      expect(find.textContaining('Women item 0'), findsWidgets);
+    });
+
+    testWidgets('a department opens results for that category, not its name',
+        (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchEntryScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Men'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SearchResultsScreen), findsOneWidget);
+      expect(lastSearch()['category'], 'dept-1');
+      expect(lastSearch().containsKey('q'), isFalse);
+    });
+
+    testWidgets('searching records the query for next time', (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchEntryScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, 'kettle');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+
+      expect(RecentSearchStore.instance.queries, ['kettle']);
+    });
   });
 
-  testWidgets('tapping a trending query opens results for it', (tester) async {
-    await tester.pumpWidget(_wrap(const SearchEntryScreen()));
-    await tester.pump(const Duration(milliseconds: 200));
+  group('results', () {
+    testWidgets('come from the server, with the query attached',
+        (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'geyser')));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Running shoes'));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
+      expect(lastSearch()['q'], 'geyser');
+      expect(find.text('Catalogue product 0'), findsOneWidget);
+      expect(find.text('Rs. 300'), findsOneWidget);
+    });
 
-    expect(find.byType(SearchResultsScreen), findsOneWidget);
-    expect(find.textContaining('Running shoes'), findsWidgets);
-  });
+    testWidgets('a price filter is sent to the server, not applied locally',
+        (tester) async {
+      // The catalogue is millions of rows and the response is one page of
+      // them. Filtering that page would narrow twenty-four products and claim
+      // there was nothing else.
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'geyser')));
+      await tester.pumpAndSettle();
 
-  testWidgets('results show the count and every row', (tester) async {
-    await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'geyser')));
-    await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.text('Filters'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('4 results'), findsOneWidget);
-    expect(find.textContaining('Atlantis Pro'), findsOneWidget);
-    // The saving is derived, not stored.
-    expect(find.text('-64%'), findsOneWidget);
-    expect(find.text('Sponsored'), findsOneWidget);
-  });
+      await tester.tap(find.widgetWithText(FilterChip, 'Rs. 500 - 2,000'));
+      await tester.pump();
+      await tester.tap(find.text('Show results'));
+      await tester.pumpAndSettle();
 
-  testWidgets('a filter narrows the list and can be cleared', (tester) async {
-    await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'geyser')));
-    await tester.pump(const Duration(milliseconds: 200));
+      expect(lastSearch()['min_price'], 500);
+      expect(lastSearch()['max_price'], 2000);
+      expect(find.text('Filters (1)'), findsOneWidget);
+    });
 
-    await tester.tap(find.text('Filters'));
-    await tester.pumpAndSettle();
+    testWidgets('clearing the filter asks again without it', (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'geyser')));
+      await tester.pumpAndSettle();
 
-    // Applying is explicit: the sheet edits a copy, so tapping an option
-    // alone must not change the results behind it.
-    await tester.tap(find.widgetWithText(FilterChip, '4★ and above'));
-    await tester.pump();
-    expect(find.textContaining('Show 3 results'), findsOneWidget);
+      await tester.tap(find.text('Filters'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilterChip, 'Under Rs. 500'));
+      await tester.pump();
+      await tester.tap(find.text('Show results'));
+      await tester.pumpAndSettle();
+      expect(lastSearch()['max_price'], 500);
 
-    await tester.tap(find.textContaining('Show 3 results'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Clear filters'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('3 results'), findsOneWidget);
-    expect(find.text('Filters (1)'), findsOneWidget);
+      expect(lastSearch().containsKey('max_price'), isFalse);
+      expect(find.text('Filters'), findsOneWidget);
+    });
 
-    await tester.tap(find.byTooltip('Clear filters'));
-    await tester.pump();
-    expect(find.text('4 results'), findsOneWidget);
-  });
+    testWidgets('dismissing the sheet keeps the previous selection',
+        (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'geyser')));
+      await tester.pumpAndSettle();
+      final before = api.calls.length;
 
-  testWidgets('dismissing the sheet keeps the previous selection',
-      (tester) async {
-    await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'geyser')));
-    await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.text('Filters'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilterChip, 'Under Rs. 500'));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Filters'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilterChip, '4★ and above'));
-    await tester.pump();
+      expect(api.calls.length, before, reason: 'nothing was re-fetched');
+      expect(find.text('Filters'), findsOneWidget);
+    });
 
-    // Close without applying.
-    await tester.tap(find.byTooltip('Close'));
-    await tester.pumpAndSettle();
+    testWidgets('sorting re-asks the server rather than reordering a page',
+        (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'geyser')));
+      await tester.pumpAndSettle();
 
-    expect(find.text('4 results'), findsOneWidget);
-    expect(find.text('Filters'), findsOneWidget);
-  });
+      await tester.tap(find.text('Relevance'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Price: low to high'));
+      await tester.pumpAndSettle();
 
-  testWidgets('sorting by price reorders the rows', (tester) async {
-    await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'geyser')));
-    await tester.pump(const Duration(milliseconds: 200));
+      expect(lastSearch()['sort'], 'price_asc');
+      expect(find.text('Price: low to high'), findsOneWidget);
+    });
 
-    await tester.tap(find.text('Relevance'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Price: low to high'));
-    await tester.pumpAndSettle();
+    testWidgets('no results names the query that found nothing',
+        (tester) async {
+      api.on('GET', '/search/products', body: const []);
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'zzzz')));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Price: low to high'), findsOneWidget);
-    // Cheapest row first: Rs. 2,450 before Rs. 3,559.
-    final prices = tester
-        .widgetList<Text>(find.textContaining('Rs. '))
-        .map((t) => t.data)
-        .whereType<String>()
-        .toList();
-    expect(prices.first, 'Rs. 2,450');
-  });
+      expect(find.text('No results for "zzzz"'), findsOneWidget);
+    });
 
-  testWidgets('an impossible filter set shows the empty state', (tester) async {
-    await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'geyser')));
-    await tester.pump(const Duration(milliseconds: 200));
+    testWidgets('a failed search says so and offers a retry', (tester) async {
+      api.on('GET', '/search/products',
+          status: 500, body: {'error': 'search is down'});
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'x')));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Filters'));
-    await tester.pumpAndSettle();
-    // No placeholder row is unrated, so this group alone empties the list.
-    await tester.tap(find.widgetWithText(FilterChip, 'Unrated'));
-    await tester.pump();
-    await tester.tap(find.text('No matches'));
-    await tester.pumpAndSettle();
+      expect(find.text('search is down'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+    });
 
-    expect(find.text('Nothing matches these filters'), findsOneWidget);
+    testWidgets('scrolling to the end asks for the next page', (tester) async {
+      // A full page back means there is probably more. Stopping at 24 rows
+      // would quietly cap the catalogue at 24 rows.
+      api.on('GET', '/search/products', body: feedRows(24));
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'x')));
+      await tester.pumpAndSettle();
+
+      await tester.drag(find.byType(ListView), const Offset(0, -4000));
+      await tester.pumpAndSettle();
+
+      expect(lastSearch()['page_offset'], 24);
+    });
+
+    testWidgets('a short page means there is no next one', (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'x')));
+      await tester.pumpAndSettle();
+      final before = api.calls.length;
+
+      await tester.drag(find.byType(ListView), const Offset(0, -4000));
+      await tester.pumpAndSettle();
+
+      expect(api.calls.length, before, reason: 'six rows is the whole answer');
+    });
   });
 }

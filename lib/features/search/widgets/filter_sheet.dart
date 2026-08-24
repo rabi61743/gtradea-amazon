@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../data/search_content.dart';
+import '../data/search_models.dart';
 
 /// Selected options, keyed by filter-group label.
 typedef FilterSelection = Map<String, Set<String>>;
@@ -20,14 +20,17 @@ class FilterSheet extends StatefulWidget {
     super.key,
     required this.groups,
     required this.initial,
-    required this.matchCount,
+    this.matchCount,
   });
 
   final List<FilterGroup> groups;
   final FilterSelection initial;
 
   /// How many results a given selection would leave, so Apply can say so.
-  final int Function(FilterSelection selection) matchCount;
+  ///
+  /// Null when only the server can answer that. Apply then says what it does
+  /// rather than promising a count nobody on this device knows.
+  final int Function(FilterSelection selection)? matchCount;
 
   @override
   State<FilterSheet> createState() => _FilterSheetState();
@@ -52,7 +55,7 @@ class _FilterSheetState extends State<FilterSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final matches = widget.matchCount(_draft);
+    final matches = widget.matchCount?.call(_draft);
 
     return SafeArea(
       child: Column(
@@ -135,11 +138,15 @@ class _FilterSheetState extends State<FilterSheet> {
                   flex: 2,
                   child: ElevatedButton(
                     onPressed: () => Navigator.of(context).pop(_draft),
-                    child: Text(
-                      matches == 0
-                          ? 'No matches'
-                          : 'Show $matches result${matches == 1 ? '' : 's'}',
-                    ),
+                    // Null when only the server can count. Promising a number
+                    // the device worked out from one page would be a guess
+                    // dressed as a fact.
+                    child: Text(switch (matches) {
+                      null => 'Show results',
+                      0 => 'No matches',
+                      1 => 'Show 1 result',
+                      final n => 'Show $n results',
+                    }),
                   ),
                 ),
               ],

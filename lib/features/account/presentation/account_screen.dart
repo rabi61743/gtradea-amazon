@@ -13,6 +13,7 @@ import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../notifications/presentation/notification_settings_screen.dart';
 import '../../orders/data/order_store.dart';
 import '../../orders/presentation/orders_screen.dart';
+import '../../catalog/data/product.dart';
 import '../../product/presentation/product_detail_screen.dart';
 import '../../settings/presentation/language_screen.dart';
 import '../../wishlist/data/wishlist_store.dart';
@@ -119,7 +120,14 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
                 _RecentlyViewedRail(
                   items: viewed,
-                  onTap: (_) => _push(const ProductDetailScreen()),
+                  onTap: (product) => _push(ProductDetailScreen(
+                    product: productStub(
+                      numIid: product.id,
+                      title: product.title,
+                      imageUrl: product.imageUrl,
+                      displayPrice: product.price,
+                    ),
+                  )),
                 ),
               ],
 

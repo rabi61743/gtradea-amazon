@@ -12,6 +12,7 @@ class BannerItem {
     required this.cta,
     required this.tint,
     this.imageUrl,
+    this.onTap,
   });
 
   final String headline;
@@ -19,6 +20,11 @@ class BannerItem {
   final String cta;
   final Color tint;
   final String? imageUrl;
+
+  /// Where the banner goes. Null when the campaign points somewhere this app
+  /// has no screen for -- the banner still shows, it just stops pretending to
+  /// be a button.
+  final VoidCallback? onTap;
 }
 
 /// Full-width hero carousel that advances on its own, with dot indicators.
@@ -146,7 +152,9 @@ class _BannerCard extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: ClipRRect(
+      child: GestureDetector(
+        onTap: item.onTap,
+        child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
         child: Stack(
           fit: StackFit.expand,
@@ -234,6 +242,7 @@ class _BannerCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
         ),
       ),
     );

@@ -3,23 +3,66 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/colors.dart';
 import 'package:gtradea_amazon/features/home/widgets/product_rail.dart';
 import 'package:gtradea_amazon/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/api.dart';
+import 'support/fake_api.dart';
+
+/// The home feed is a set of network reads now, so every test here needs a
+/// catalogue behind it. Stubbed at the HTTP layer rather than at the
+/// repository, so the decoding and the error handling are exercised too.
+late FakeApi api;
 
 void main() {
-  testWidgets('home renders search, promos, sections and the nav',
-      (tester) async {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    api = stubCatalog();
+  });
+
+  testWidgets('home renders search, the feed and the nav', (tester) async {
     await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pumpAndSettle();
 
     expect(find.text('Search products'), findsOneWidget);
-    expect(find.text('Electronics'), findsOneWidget);
-    expect(find.text('Headphones'), findsOneWidget);
-    expect(find.text('See All'), findsWidgets);
+    expect(find.text('Recommended for you'), findsOneWidget);
     expect(find.text('Cart'), findsOneWidget);
+  });
+
+  testWidgets('a catalogue that will not load says so and offers a retry',
+      (tester) async {
+    // The important half of "the feed comes from a server": when the server
+    // is down the page has to say so rather than showing an empty storefront
+    // that looks like a catalogue with nothing in it.
+    final broken = FakeApi()
+      ..on('GET', '/feed/discover', status: 500, body: {'error': 'boom'})
+      ..on('GET', '/alibaba-categories', body: const [])
+      ..on('GET', '/hero-banners', body: const []);
+    useStubbedApi(broken);
+
+    await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('boom'), findsOneWidget);
+    expect(find.text('Try again'), findsWidgets);
+  });
+
+  testWidgets('one failing rail does not take the rest of the page with it',
+      (tester) async {
+    final partly = stubCatalog();
+    partly.on('GET', '/feed/trending-products',
+        status: 500, body: {'error': 'rail is down'});
+
+    await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pumpAndSettle();
+
+    // The recommendation rail still loaded from a different endpoint.
+    expect(find.text('Recommended for you'), findsOneWidget);
   });
 
   testWidgets('the bottom bar is shortcuts, and Home stays the shell',
       (tester) async {
     await tester.pumpWidget(const GtradeaAmazonApp());
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
 
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
@@ -47,12 +90,13 @@ void main() {
     await tester.pumpWidget(const GtradeaAmazonApp());
     final theme = Theme.of(tester.element(find.byType(Scaffold)));
     expect(theme.colorScheme.primary, AppColors.primaryLight);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('stays on the white version even when the device is dark',
       (tester) async {
     // themeMode is pinned to light, so a dark platform brightness must not
-    // flip the app — that is what "white version" means here.
+    // flip the app -- that is what "white version" means here.
     tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
 
@@ -60,56 +104,78 @@ void main() {
     final theme = Theme.of(tester.element(find.byType(Scaffold)));
     expect(theme.brightness, Brightness.light);
     expect(theme.scaffoldBackgroundColor, AppColors.backgroundLight);
-  });
-
-  testWidgets('product rail shows title, rating and price', (tester) async {
-    await tester.pumpWidget(const GtradeaAmazonApp());
-
-    // The rail is below the fold in the default test viewport, so it is not
-    // built until scrolled to.
-    await tester.scrollUntilVisible(find.text('Recommended for you'), 400,
-        scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
-
-    expect(find.text('Recommended for you'), findsOneWidget);
-    expect(find.text('Ice Silk Sun Protection Clothing for Women'),
-        findsOneWidget);
-    expect(find.text('Rs. 1,130'), findsOneWidget);
   });
 
-  testWidgets('a list price is struck through only when it is a saving',
+  testWidgets('product cards show what the catalogue actually returned',
       (tester) async {
     await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pumpAndSettle();
 
-    // The rail is below the fold in the default test viewport, so it is not
-    // built until scrolled to.
     await tester.scrollUntilVisible(find.text('Recommended for you'), 400,
         scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
 
-    final struck = tester.widget<Text>(
-      find.text('Rs. 1,568'),
-    );
-    expect(struck.style?.decoration, TextDecoration.lineThrough);
+    expect(find.text('Catalogue product 0'), findsWidgets);
+    expect(find.text('Rs. 300'), findsWidgets);
+  });
 
-    // Two catalogue rows share this price, so it is not unique. What
-    // matters is that neither is struck through: neither has a listPrice.
-    for (final text in tester.widgetList<Text>(find.text('Rs. 1,808'))) {
+  testWidgets('no strike-through price is invented', (tester) async {
+    // The feed publishes one price per product. A crossed-out "was" figure
+    // would have to come from a markup nobody publishes, which makes it a
+    // false saving rather than a missing feature.
+    await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('Recommended for you'), 400,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    for (final text in tester.widgetList<Text>(find.byType(Text))) {
       expect(text.style?.decoration, isNot(TextDecoration.lineThrough));
     }
   });
 
-  testWidgets('departments render as a grid with an all-departments link',
-      (tester) async {
+  testWidgets('departments render as a grid', (tester) async {
     await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pumpAndSettle();
 
-    // Below the fold, so scroll it into view first.
     await tester.scrollUntilVisible(find.text('Shop by category'), 400,
         scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
 
     expect(find.text('Shop by category'), findsOneWidget);
-    expect(find.text('Beauty'), findsOneWidget);
+    expect(find.text('Women'), findsWidgets);
+  });
+
+  testWidgets('each department gets a rail of its own best sellers',
+      (tester) async {
+    await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('Browse Women'), 500,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Browse Women'), findsOneWidget);
+    expect(find.text('Women item 0'), findsWidgets);
+
+    // The rail asked for that department specifically rather than fetching one
+    // generic list and slicing it.
+    final railCalls =
+        api.calls.where((c) => c.path == '/feed/trending-products');
+    expect(railCalls.map((c) => c.query['category_cid']), contains('dept-0'));
+  });
+
+  testWidgets('the catalogue is fetched without a credential', (tester) async {
+    // Browsing is public. A guest session should not be carrying a bearer
+    // token it has no use for.
+    await tester.pumpWidget(const GtradeaAmazonApp());
+    await tester.pumpAndSettle();
+
+    for (final call in api.calls) {
+      expect(call.authorization, isNull, reason: call.path);
+    }
   });
 
   group('formatRupees', () {
@@ -126,97 +192,10 @@ void main() {
     });
   });
 
-  testWidgets('the shoes block carries its price cap in the header',
-      (tester) async {
-    await tester.pumpWidget(const GtradeaAmazonApp());
-
-    await tester.scrollUntilVisible(find.text('Shoes'), 500,
-        scrollable: find.byType(Scrollable).first);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Shoes'), findsOneWidget);
-    expect(find.text('Under Rs. 5,000'), findsOneWidget);
-  });
-
-  testWidgets('later blocks render as the feed is scrolled', (tester) async {
-    await tester.pumpWidget(const GtradeaAmazonApp());
-
-    for (final title in ['Gaming gear', 'Home and living', 'For your pets']) {
-      await tester.scrollUntilVisible(find.text(title), 500,
-          scrollable: find.byType(Scrollable).first);
-      await tester.pumpAndSettle();
-      expect(find.text(title), findsOneWidget, reason: title);
-    }
-  });
-
-  testWidgets('spotlight cards carry an offer ribbon and a caption',
-      (tester) async {
-    await tester.pumpWidget(const GtradeaAmazonApp());
-
-    await tester.scrollUntilVisible(find.text('Featured brands'), 400,
-        scrollable: find.byType(Scrollable).first);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Min. 65% off'), findsOneWidget);
-    expect(find.text('Running shoes'), findsOneWidget);
-  });
-
-  testWidgets('deal groups show price bands under each tile', (tester) async {
-    await tester.pumpWidget(const GtradeaAmazonApp());
-
-    await tester.scrollUntilVisible(find.text('Also popular'), 500,
-        scrollable: find.byType(Scrollable).first);
-    await tester.pumpAndSettle();
-
-    expect(find.text('What other shoppers are browsing'), findsOneWidget);
-    expect(find.text('From Rs. 350'), findsOneWidget);
-    expect(find.text('Under Rs. 2,000'), findsOneWidget);
-  });
-
-  testWidgets('the seasonal block renders its own group', (tester) async {
-    await tester.pumpWidget(const GtradeaAmazonApp());
-
-    await tester.scrollUntilVisible(find.text('Dashain specials'), 500,
-        scrollable: find.byType(Scrollable).first);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Gifting picks for the season'), findsOneWidget);
-    expect(find.text('Sweets and hampers'), findsOneWidget);
-  });
-
-  testWidgets('the hero banner advances on its own', (tester) async {
-    await tester.pumpWidget(const GtradeaAmazonApp());
-
-    expect(find.text('Dashain deals are live'), findsOneWidget);
-
-    // Let the interval elapse, then the page animation run.
-    await tester.pump(const Duration(seconds: 5));
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(find.text('Free delivery on picks'), findsOneWidget);
-
-    // Unmount so the periodic timer is cancelled; a pending timer fails the
-    // test even when the assertions passed.
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  testWidgets('banner artwork falls back to the tinted panel offline',
-      (tester) async {
-    // Widget tests answer every network image with a 400, which is exactly
-    // the failure a shopper hits on a dead connection: the card must still
-    // render its headline rather than a broken-image box.
-    await tester.pumpWidget(const GtradeaAmazonApp());
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(find.text('Shop the sale'), findsOneWidget);
-    expect(find.text('Headphones'), findsOneWidget);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
   testWidgets('Saved opens the wishlist without stealing the nav selection',
       (tester) async {
     await tester.pumpWidget(const GtradeaAmazonApp());
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Saved'));
     await tester.pumpAndSettle();

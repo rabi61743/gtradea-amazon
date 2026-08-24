@@ -10,6 +10,7 @@ class DepartmentEntry {
     required this.icon,
     required this.tint,
     this.imageUrl,
+    this.onTap,
   });
 
   final String label;
@@ -18,6 +19,9 @@ class DepartmentEntry {
 
   /// Photograph for the tile; falls back to the tinted panel when absent.
   final String? imageUrl;
+
+  /// Where the tile goes.
+  final VoidCallback? onTap;
 }
 
 /// Two-up department tiles with a trailing "All departments".
@@ -65,7 +69,7 @@ class DepartmentGrid extends StatelessWidget {
               final entry = entries[i];
               return InkWell(
                 borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-                onTap: () {},
+                onTap: entry.onTap,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

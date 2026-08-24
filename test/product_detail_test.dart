@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'support/catalog.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/product/data/product_detail_content.dart';
 import 'package:gtradea_amazon/features/product/presentation/product_detail_screen.dart';
@@ -16,13 +17,14 @@ Future<void> _pumpDetail(WidgetTester tester, {ProductDetail? product}) async {
   addTearDown(tester.view.reset);
   await tester.pumpWidget(_wrap(
     product == null
-        ? const ProductDetailScreen()
-        : ProductDetailScreen(product: product),
+        ? ProductDetailScreen(product: sampleProduct, detail: sampleDetail)
+        : ProductDetailScreen(product: sampleProduct, detail: product),
   ));
   await tester.pump(const Duration(milliseconds: 300));
 }
 
 const _base = ProductDetail(
+  numIid: 'test-product',
   title: 'Test product',
   price: 1000,
   rating: 4,
@@ -46,6 +48,7 @@ void main() {
       expect(_base.discountPercent, isNull);
 
       const higher = ProductDetail(
+        numIid: 'test-product',
         title: 't',
         price: 1000,
         listPrice: 1250,
@@ -59,6 +62,7 @@ void main() {
       expect(higher.discountPercent, 20);
 
       const notASaving = ProductDetail(
+        numIid: 'test-product',
         title: 't',
         price: 1000,
         listPrice: 900,
@@ -80,6 +84,7 @@ void main() {
     test('drops a VAT note that would round to nothing', () {
       // 13/113 of 3 is 0.35, which rounds to nothing.
       const cheap = ProductDetail(
+        numIid: 'test-product',
         title: 't',
         price: 3,
         rating: 4,
@@ -93,20 +98,27 @@ void main() {
     });
   });
 
-  testWidgets('shows price, saving and the tax it includes', (tester) async {
+  testWidgets('shows the price and the tax already inside it', (tester) async {
     await _pumpDetail(tester);
 
-    expect(find.text('Rs. 1,130'), findsOneWidget);
-    expect(find.text('Rs. 1,568'), findsOneWidget);
-    expect(find.text('-28%'), findsOneWidget);
-    expect(find.text('Includes Rs. 130 VAT'), findsOneWidget);
+    expect(find.text('Rs. 388'), findsWidgets);
+    // 13 percent backed out of the price, not added to it.
+    expect(find.text('Includes Rs. 45 VAT'), findsOneWidget);
   });
 
-  testWidgets('names the selected colour rather than only highlighting it',
+  testWidgets('no strike-through price is invented', (tester) async {
+    // The catalogue publishes one price. A crossed-out figure derived from a
+    // markup nobody publishes would be a false saving.
+    await _pumpDetail(tester);
+
+    expect(find.textContaining('%'), findsNothing);
+  });
+
+  testWidgets('names the selected option rather than only highlighting it',
       (tester) async {
     await _pumpDetail(tester);
 
-    expect(find.text('Blush pink'), findsOneWidget);
+    expect(find.text('Red'), findsWidgets);
   });
 
   testWidgets('an out-of-stock variant stays visible but is not selectable',
@@ -126,7 +138,9 @@ void main() {
       (tester) async {
     await _pumpDetail(tester);
 
-    expect(find.text('Buy · Rs. 1,130'), findsOneWidget);
+    // Two, because the listing has a minimum order of two -- opening below it
+    // would make the first tap on Add to cart a refusal.
+    expect(find.text('Buy · Rs. 776'), findsOneWidget);
 
     // The stepper sits low enough to fall under the pinned buy bar, where
     // a tap lands on the bar instead.
@@ -137,7 +151,8 @@ void main() {
     await tester.tap(find.byTooltip('More'));
     await tester.pump();
 
-    expect(find.text('Buy · Rs. 2,260'), findsOneWidget);
+    // Three at 388.
+    expect(find.text('Buy · Rs. 1,164'), findsOneWidget);
   });
 
   testWidgets('quantity cannot go below the minimum order', (tester) async {
@@ -205,11 +220,21 @@ void main() {
     expect(find.byTooltip('Share'), findsOneWidget);
   });
 
-  testWidgets('rating and sales read beside the title', (tester) async {
+  testWidgets('sales and seller read beside the title', (tester) async {
     await _pumpDetail(tester);
 
-    expect(find.text('4.3'), findsOneWidget);
-    expect(find.text('(128)'), findsOneWidget);
-    expect(find.text('2.0k sold'), findsOneWidget);
+    expect(find.text('111.3k sold'), findsOneWidget);
+    expect(find.text('Yiwu Match Factory'), findsOneWidget);
+  });
+
+  testWidgets('an unrated product shows no stars rather than zero stars',
+      (tester) async {
+    // Nothing in this catalogue carries a rating. "0.0 (0)" beside a title
+    // reads as rated badly, which is the opposite of the truth.
+    await _pumpDetail(tester);
+
+    expect(find.text('0.0'), findsNothing);
+    expect(find.text('(0)'), findsNothing);
+    expect(find.byIcon(Icons.star), findsNothing);
   });
 }

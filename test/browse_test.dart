@@ -3,13 +3,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/l10n/app_strings.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
-import 'package:gtradea_amazon/features/catalog/data/catalog_content.dart';
+import 'package:gtradea_amazon/features/catalog/data/catalog_repository.dart';
+import 'package:gtradea_amazon/features/catalog/data/catalog_store.dart';
+import 'package:gtradea_amazon/features/catalog/data/department.dart';
 import 'package:gtradea_amazon/features/catalog/presentation/browse_screen.dart';
 import 'package:gtradea_amazon/features/catalog/widgets/category_nav.dart';
 import 'package:gtradea_amazon/features/search/presentation/search_results_screen.dart';
 import 'package:gtradea_amazon/features/settings/presentation/language_screen.dart';
 import 'package:gtradea_amazon/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/api.dart';
 
 Widget _wrap(Widget child) => MaterialApp(theme: AppTheme.light, home: child);
 
@@ -31,47 +35,89 @@ void _desktop(WidgetTester tester) {
 int _activeIndex(WidgetTester tester) =>
     tester.widget<CategoryNav>(find.byType(CategoryNav)).active;
 
+/// How many departments the stub serves. Seven, so the index-based assertions
+/// below have somewhere to scroll to.
+const _departmentCount = 7;
+
+final _names = stubDepartmentNames(_departmentCount);
+
+/// The departments as the screen builds them, for asserting against.
+List<Department> _departments() => departmentsFrom(
+      CatalogStore.instance.categories.value ?? const <Category>[],
+      onOpen: (_) {},
+    );
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     CartStore.instance.resetForTest();
     LanguageStore.instance.resetForTest();
+    stubCatalog(departments: _departmentCount);
   });
 
-  group('CatalogContent', () {
-    test('every department has something in it', () {
-      expect(CatalogContent.departments, isNotEmpty);
-      for (final department in CatalogContent.departments) {
+  group('the browse tree', () {
+    test('every department the server sends becomes a section', () async {
+      await CatalogStore.instance.categories.load();
+      final departments = _departments();
+
+      expect(departments, hasLength(_departmentCount));
+      for (final department in departments) {
         expect(department.groups, isNotEmpty, reason: department.label);
         expect(department.entryCount, greaterThan(0), reason: department.label);
-        for (final group in department.groups) {
-          expect(group.entries, isNotEmpty,
-              reason: '${department.label} / ${group.title}');
-        }
       }
     });
 
-    test('department names are unique', () {
-      final labels = CatalogContent.departments.map((d) => d.label).toList();
-      expect(labels.toSet().length, labels.length);
+    test('a department with no subcategories still appears', () async {
+      // The server has leaf departments, and dropping them would hide part of
+      // the catalogue from browse entirely.
+      final departments = departmentsFrom(
+        const [Category(cid: 'x', name: 'Odds and ends')],
+        onOpen: (_) {},
+      );
+
+      expect(departments.single.label, 'Odds and ends');
+      expect(departments.single.groups, isEmpty);
+      expect(departments.single.tagline, contains('Odds and ends'));
+    });
+
+    test('the tagline names what is actually inside', () async {
+      final departments = departmentsFrom(
+        [
+          Category(cid: 'p', name: 'Home').withChildren(const [
+            Category(cid: 'a', name: 'Kitchen'),
+            Category(cid: 'b', name: 'Bedding'),
+            Category(cid: 'c', name: 'Lighting'),
+            Category(cid: 'd', name: 'Storage'),
+          ]),
+        ],
+        onOpen: (_) {},
+      );
+
+      expect(departments.single.tagline, 'Kitchen, Bedding, Lighting and 1 more');
+    });
+
+    test('a subcategory tile opens that category, not a text search', () {
+      // Searching the words "Kitchen" and browsing the Kitchen category are
+      // different queries, and only one of them is what was tapped.
+      Category? opened;
+      final departments = departmentsFrom(
+        [
+          Category(cid: 'p', name: 'Home')
+              .withChildren(const [Category(cid: 'kitchen', name: 'Kitchen')]),
+        ],
+        onOpen: (category) => opened = category,
+      );
+
+      departments.single.groups.single.entries.single.onTap!();
+      expect(opened?.cid, 'kitchen');
     });
   });
 
   group('translations', () {
-    test('every department and group name has a Nepali translation', () {
-      // A missing one falls back to English, which is safe but silent. This
-      // makes adding a category without translating it a visible failure.
-      final ne = AppStrings.ne;
-      for (final department in CatalogContent.departments) {
-        expect(ne.departmentNames, contains(department.label),
-            reason: department.label);
-        for (final group in department.groups) {
-          expect(ne.groupNames, contains(group.title), reason: group.title);
-        }
-      }
-    });
-
     test('an untranslated name falls back to English rather than blank', () {
+      // Department names come from the server now, so most of them will never
+      // have a translation. Falling back to the server's own wording is the
+      // only workable answer -- a blank tile is not.
       expect(AppStrings.ne.department('Brand new department'),
           'Brand new department');
       expect(AppStrings.en.department('Electronics'), 'Electronics');
@@ -126,9 +172,8 @@ void main() {
       await tester.pumpWidget(_wrap(const BrowseScreen()));
       await tester.pumpAndSettle();
 
-      for (final department in CatalogContent.departments) {
-        expect(find.text(department.label), findsWidgets,
-            reason: department.label);
+      for (final name in _names) {
+        expect(find.text(name), findsWidgets, reason: name);
       }
     });
   });
@@ -186,7 +231,7 @@ void main() {
       await tester.pumpWidget(_wrap(const BrowseScreen()));
       await tester.pumpAndSettle();
 
-      final target = CatalogContent.departments[3];
+      final target = _departments()[3];
       await tester.tap(find.descendant(
         of: find.byType(CategoryNav),
         matching: find.text(target.label),
@@ -208,7 +253,7 @@ void main() {
       final seen = <int>{};
       await tester.tap(find.descendant(
         of: find.byType(CategoryNav),
-        matching: find.text(CatalogContent.departments[5].label),
+        matching: find.text(_names[5]),
       ));
 
       // Sample the active index across the animation. It must go straight to
@@ -237,13 +282,12 @@ void main() {
 
       await tester.tap(find.descendant(
         of: find.byType(CategoryNav),
-        matching: find.text(CatalogContent.departments.first.label),
+        matching: find.text(_names.first),
       ));
       await tester.pumpAndSettle();
 
       expect(_activeIndex(tester), 0);
-      expect(find.text(CatalogContent.departments.first.tagline),
-          findsOneWidget);
+      expect(find.text(_departments().first.tagline), findsOneWidget);
     });
 
     testWidgets('opening at a department starts there', (tester) async {
@@ -252,7 +296,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(_activeIndex(tester), 2);
-      expect(find.text(CatalogContent.departments[2].tagline), findsOneWidget);
+      expect(find.text(_departments()[2].tagline), findsOneWidget);
     });
 
     testWidgets('an out-of-range index falls back rather than crashing',
@@ -261,7 +305,7 @@ void main() {
       await tester.pumpWidget(_wrap(const BrowseScreen(initialDepartment: 99)));
       await tester.pumpAndSettle();
 
-      expect(_activeIndex(tester), CatalogContent.departments.length - 1);
+      expect(_activeIndex(tester), _departmentCount - 1);
     });
   });
 
@@ -271,7 +315,7 @@ void main() {
       await tester.pumpWidget(_wrap(const BrowseScreen()));
       await tester.pumpAndSettle();
 
-      final entry = CatalogContent.departments.first.groups.first.entries.first;
+      final entry = _departments().first.groups.first.entries.first;
       await tester.tap(find.text(entry.label).first);
       await tester.pumpAndSettle();
 
@@ -323,7 +367,10 @@ void main() {
       LanguageStore.instance.setLanguage(AppLanguage.nepali);
 
       await tester.pumpWidget(const GtradeaAmazonApp());
-      await tester.pump(const Duration(milliseconds: 300));
+      // Settled rather than pumped once: the home feed fires a request per
+      // department rail, and a half-finished one is a pending timer at
+      // teardown.
+      await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
       expect(find.text('श्रेणीहरू'), findsWidgets,

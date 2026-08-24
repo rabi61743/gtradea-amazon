@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'support/catalog.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/address/data/address_store.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
@@ -13,7 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _jacketPink = CartLine(
   productId: 'jacket',
-  variantLabel: 'Blush pink',
+  variantLabel: 'Red',
   title: 'Ice silk jacket',
   unitPrice: 1130,
   listPrice: 1568,
@@ -40,6 +41,7 @@ const _dress = CartLine(
 /// A product whose first colourway is gone, to prove the page does not open on
 /// an option the picker refuses to select.
 const _firstVariantSoldOut = ProductDetail(
+  numIid: 'test-product',
   title: 'Test jacket',
   price: 1000,
   rating: 4,
@@ -47,7 +49,7 @@ const _firstVariantSoldOut = ProductDetail(
   images: ['https://example.invalid/1.jpg'],
   variants: [
     ProductVariant(
-      label: 'Blush pink',
+      label: 'Red',
       imageUrl: 'https://example.invalid/p.jpg',
       inStock: false,
     ),
@@ -59,6 +61,7 @@ const _firstVariantSoldOut = ProductDetail(
 
 /// Nothing left at all, so there is no in-stock option to fall back to.
 const _allSoldOut = ProductDetail(
+  numIid: 'test-product',
   title: 'Test jacket',
   price: 1000,
   rating: 4,
@@ -66,7 +69,7 @@ const _allSoldOut = ProductDetail(
   images: ['https://example.invalid/1.jpg'],
   variants: [
     ProductVariant(
-      label: 'Blush pink',
+      label: 'Red',
       imageUrl: 'https://example.invalid/p.jpg',
       inStock: false,
     ),
@@ -176,11 +179,11 @@ void main() {
       final key = _jacketPink.key;
 
       store.decrement(key);
-      expect(store.lineFor('jacket', 'Blush pink')?.quantity, 1,
+      expect(store.lineFor('jacket', 'Red')?.quantity, 1,
           reason: 'decrementing at the floor does not remove the line');
 
       store.setQuantity(key, 500);
-      expect(store.lineFor('jacket', 'Blush pink')?.quantity,
+      expect(store.lineFor('jacket', 'Red')?.quantity,
           CartStore.maxPerLine);
     });
 
@@ -290,7 +293,7 @@ void main() {
       await CartStore.instance.load();
 
       expect(CartStore.instance.count, 3);
-      expect(CartStore.instance.lineFor('jacket', 'Blush pink')?.title,
+      expect(CartStore.instance.lineFor('jacket', 'Red')?.title,
           'Ice silk jacket');
     });
 
@@ -357,7 +360,7 @@ void main() {
       await CartStore.instance.switchIdentity('rabi@example.com');
 
       expect(CartStore.instance.count, 1);
-      expect(CartStore.instance.lineFor('jacket', 'Blush pink'), isNotNull);
+      expect(CartStore.instance.lineFor('jacket', 'Red'), isNotNull);
     });
 
     test('merging adds quantities for a line the account already had',
@@ -365,7 +368,7 @@ void main() {
       // Seed an account cart on disk with 2, then sign in holding 1 as a guest.
       SharedPreferences.setMockInitialValues({
         'gtradea_cart_rabi@example.com':
-            '[{"productId":"jacket","variantLabel":"Blush pink",'
+            '[{"productId":"jacket","variantLabel":"Red",'
                 '"title":"Ice silk jacket","unitPrice":1130,"quantity":2}]',
       });
       CartStore.instance.resetForTest();
@@ -443,7 +446,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Ice silk jacket'), findsOneWidget);
-      expect(find.text('Blush pink'), findsOneWidget);
+      expect(find.text('Red'), findsOneWidget);
       expect(find.text('Rs. 1,130'), findsOneWidget, reason: 'unit price');
       expect(find.text('Rs. 2,260'), findsWidgets, reason: 'line total');
       expect(find.text('Cart (2 items)'), findsOneWidget);
@@ -500,7 +503,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 750));
       await tester.tap(find.text('Undo'));
       await tester.pump();
-      expect(CartStore.instance.contains('jacket', 'Blush pink'), isTrue);
+      expect(CartStore.instance.contains('jacket', 'Red'), isTrue);
     });
 
     testWidgets('emptying the whole cart asks first', (tester) async {
@@ -558,7 +561,7 @@ void main() {
 
       expect(find.byType(CheckoutScreen), findsOneWidget);
       expect(find.text('Order summary'), findsOneWidget);
-      expect(find.text('Blush pink · Qty 2'), findsOneWidget);
+      expect(find.text('Red · Qty 2'), findsOneWidget);
       expect(find.text('Place order · Rs. 2,260'), findsOneWidget);
     });
 
@@ -606,7 +609,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(CartStore.instance.lineFor('dress'), isNotNull);
-      expect(CartStore.instance.contains('jacket', 'Blush pink'), isFalse);
+      expect(CartStore.instance.contains('jacket', 'Red'), isFalse);
     });
   });
 
@@ -614,23 +617,22 @@ void main() {
     testWidgets('Add to cart puts the selected variant in the cart',
         (tester) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(const ProductDetailScreen()));
+      await tester.pumpWidget(_wrap(ProductDetailScreen(product: sampleProduct, detail: sampleDetail)));
       await tester.pump(const Duration(milliseconds: 200));
 
       await tester.tap(find.text('Add to cart'));
       await tester.pump();
 
       final line = CartStore.instance.lines.single;
-      expect(line.variantLabel, 'Blush pink', reason: 'the default variant');
-      expect(line.quantity, 1);
-      expect(line.freeDelivery, isTrue);
-      expect(find.textContaining('Added Blush pink to your cart'),
-          findsOneWidget);
+      expect(line.variantLabel, 'Red', reason: 'the default variant');
+      // The listing has a minimum order of two, and the page opens there.
+      expect(line.quantity, 2);
+      expect(find.textContaining('Added Red to your cart'), findsOneWidget);
     });
 
     testWidgets('the app-bar badge counts what was added', (tester) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(const ProductDetailScreen()));
+      await tester.pumpWidget(_wrap(ProductDetailScreen(product: sampleProduct, detail: sampleDetail)));
       await tester.pump(const Duration(milliseconds: 200));
 
       await tester.tap(find.text('Add to cart'));
@@ -638,7 +640,7 @@ void main() {
       await tester.pump();
 
       expect(
-        find.descendant(of: find.byType(Badge), matching: find.text('1')),
+        find.descendant(of: find.byType(Badge), matching: find.text('2')),
         findsWidgets,
       );
     });
@@ -646,7 +648,7 @@ void main() {
     testWidgets('the quantity chosen on the page is the quantity added',
         (tester) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(const ProductDetailScreen()));
+      await tester.pumpWidget(_wrap(ProductDetailScreen(product: sampleProduct, detail: sampleDetail)));
       await tester.pump(const Duration(milliseconds: 200));
 
       await tester.tap(find.byTooltip('More'));
@@ -654,14 +656,14 @@ void main() {
       await tester.tap(find.text('Add to cart'));
       await tester.pump();
 
-      expect(CartStore.instance.count, 2);
+      expect(CartStore.instance.count, 3);
     });
 
     testWidgets('the page opens on a buyable colour, not a sold-out one',
         (tester) async {
       _useTallWindow(tester);
       await tester.pumpWidget(_wrap(
-        const ProductDetailScreen(product: _firstVariantSoldOut),
+        ProductDetailScreen(product: sampleProduct, detail: _firstVariantSoldOut),
       ));
       await tester.pump(const Duration(milliseconds: 200));
 
@@ -677,7 +679,7 @@ void main() {
         (tester) async {
       _useTallWindow(tester);
       await tester.pumpWidget(_wrap(
-        const ProductDetailScreen(product: _allSoldOut),
+        ProductDetailScreen(product: sampleProduct, detail: _allSoldOut),
       ));
       await tester.pump(const Duration(milliseconds: 200));
 
@@ -691,14 +693,15 @@ void main() {
     testWidgets('Buy now adds the line and goes straight to the cart',
         (tester) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(const ProductDetailScreen()));
+      await tester.pumpWidget(_wrap(ProductDetailScreen(product: sampleProduct, detail: sampleDetail)));
       await tester.pump(const Duration(milliseconds: 200));
 
       await tester.tap(find.textContaining('Buy · '));
       await tester.pumpAndSettle();
 
       expect(find.byType(CartScreen), findsOneWidget);
-      expect(CartStore.instance.count, 1);
+      // The listing's minimum order, which is what the buy bar was showing.
+      expect(CartStore.instance.count, 2);
     });
   });
 }

@@ -9,7 +9,10 @@ import '../../cart/presentation/cart_screen.dart';
 import '../../home/widgets/category_section.dart' show CategoryEntry;
 import '../../search/presentation/search_entry_screen.dart';
 import '../../search/presentation/search_results_screen.dart';
-import '../data/catalog_content.dart';
+import '../../../shared/widgets/loadable_view.dart';
+import '../data/catalog_repository.dart';
+import '../data/catalog_store.dart';
+import '../data/department.dart';
 import '../widgets/category_nav.dart';
 
 /// The whole catalogue in one scroll, with a navigator that follows along.
@@ -23,17 +26,65 @@ import '../widgets/category_nav.dart';
 /// glyph tiles is cheap, and it is what makes the scroll tracking exact --
 /// a lazy list disposes the sections above the viewport, and a tracker that
 /// cannot see them has to guess.
-class BrowseScreen extends StatefulWidget {
+class BrowseScreen extends StatelessWidget {
   const BrowseScreen({super.key, this.initialDepartment = 0});
 
   final int initialDepartment;
 
   @override
-  State<BrowseScreen> createState() => _BrowseScreenState();
+  Widget build(BuildContext context) {
+    CatalogStore.instance.categories.load();
+    return Scaffold(
+      body: SafeArea(
+        child: LoadableView<List<Category>>(
+          loadable: CatalogStore.instance.categories,
+          emptyCheck: (categories) => categories.isEmpty,
+          empty: const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Text('The catalogue is empty just now.'),
+            ),
+          ),
+          builder: (context, categories) => _BrowseBody(
+            initialDepartment: initialDepartment,
+            departments: departmentsFrom(
+              categories,
+              onOpen: (category) => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SearchResultsScreen(
+                    query: '',
+                    categoryCid: category.cid,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _BrowseScreenState extends State<BrowseScreen> {
-  static const _departments = CatalogContent.departments;
+/// The catalogue itself, once there is one to draw.
+///
+/// Split from the loading above it because the scroll tracking keys on the
+/// department list: a widget that had to cope with that list arriving later
+/// would need every key and index to be nullable.
+class _BrowseBody extends StatefulWidget {
+  const _BrowseBody({
+    required this.departments,
+    required this.initialDepartment,
+  });
+
+  final List<Department> departments;
+  final int initialDepartment;
+
+  @override
+  State<_BrowseBody> createState() => _BrowseScreenState();
+}
+
+class _BrowseScreenState extends State<_BrowseBody> {
+  List<Department> get _departments => widget.departments;
 
   /// A wide window gets the navigator down the side; a phone gets it across
   /// the top. Measured rather than guessed from the platform, so a split-screen
@@ -41,7 +92,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
   static const _wideBreakpoint = 760.0;
 
   final _scrollController = ScrollController();
-  final List<GlobalKey> _sectionKeys =
+  late final List<GlobalKey> _sectionKeys =
       List.generate(_departments.length, (_) => GlobalKey());
 
   late int _active = widget.initialDepartment.clamp(0, _departments.length - 1);
@@ -160,7 +211,13 @@ class _BrowseScreenState extends State<BrowseScreen> {
     Scrollable.ensureVisible(sectionContext, alignment: 0);
   }
 
+  /// Opens the subcategory itself rather than searching for its name.
+  ///
+  /// Searching the words "Flange" and browsing the Flange category are not the
+  /// same query, and the second is the one the shopper asked for.
   void _openEntry(CategoryEntry entry) {
+    final open = entry.onTap;
+    if (open != null) return open();
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SearchResultsScreen(query: entry.label),

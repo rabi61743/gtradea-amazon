@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
+import '../../catalog/data/product.dart';
 import '../../product/presentation/product_detail_screen.dart';
 import '../data/wishlist_store.dart';
 
@@ -121,7 +122,16 @@ class _SavedTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const ProductDetailScreen()),
+          MaterialPageRoute(
+            builder: (_) => ProductDetailScreen(
+              product: productStub(
+                numIid: product.id,
+                title: product.title,
+                imageUrl: product.imageUrl,
+                displayPrice: product.price,
+              ),
+            ),
+          ),
         ),
         child: Padding(
           padding: const EdgeInsets.all(10),

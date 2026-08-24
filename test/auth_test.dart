@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'support/catalog.dart';
 import 'package:gtradea_amazon/core/network/api_error.dart';
 import 'package:gtradea_amazon/core/network/session_store.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_repository.dart';
@@ -502,11 +503,11 @@ void main() {
 
     testWidgets('opening a product records the visit', (tester) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(const ProductDetailScreen()));
+      await tester.pumpWidget(_wrap(ProductDetailScreen(product: sampleProduct, detail: sampleDetail)));
       await tester.pumpAndSettle();
 
       expect(RecentlyViewedStore.instance.items.single.title,
-          'Ice Silk Sun Protection Clothing for Women, summer 2026');
+          'Phosphorus Paper for Matches, Large Sheets, Wholesale');
     });
   });
 

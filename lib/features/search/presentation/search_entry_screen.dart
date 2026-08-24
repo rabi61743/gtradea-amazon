@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/artwork_panel.dart';
-import '../data/search_content.dart';
+import '../../catalog/data/catalog_repository.dart';
+import '../../catalog/data/catalog_store.dart';
+import '../../catalog/presentation/catalog_visuals.dart';
+import '../../../shared/widgets/loadable_view.dart';
+import '../data/recent_search_store.dart';
 import '../widgets/search_field.dart';
 import 'search_results_screen.dart';
 
@@ -23,6 +27,15 @@ class _SearchEntryScreenState extends State<SearchEntryScreen> {
   final _controller = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    RecentSearchStore.instance.load();
+    // The departments double as the suggestions below, so this is the same
+    // read the browse tab does rather than a second one.
+    CatalogStore.instance.categories.load();
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -31,9 +44,19 @@ class _SearchEntryScreenState extends State<SearchEntryScreen> {
   void _search(String query) {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return;
+    RecentSearchStore.instance.record(trimmed);
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => SearchResultsScreen(query: trimmed)),
     );
+  }
+
+  void _browse(Category category) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => SearchResultsScreen(
+        query: '',
+        categoryCid: category.cid,
+      ),
+    ));
   }
 
   @override
@@ -53,45 +76,63 @@ class _SearchEntryScreenState extends State<SearchEntryScreen> {
             child: ListView(
               padding: const EdgeInsets.only(bottom: 24),
               children: [
-                if (SearchContent.recent.isNotEmpty) ...[
-                  _Heading(
-                    label: 'Recent searches',
-                    action: 'Clear',
-                    onAction: () {},
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                ListenableBuilder(
+                  listenable: RecentSearchStore.instance,
+                  builder: (context, _) {
+                    final recent = RecentSearchStore.instance.queries;
+                    if (recent.isEmpty) return const SizedBox.shrink();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        for (final query in SearchContent.recent)
-                          ActionChip(
-                            avatar: Icon(
-                              Icons.history,
-                              size: 16,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            label: Text(query),
-                            onPressed: () {
-                              _controller.text = query;
-                              _search(query);
-                            },
+                        _Heading(
+                          label: 'Recent searches',
+                          action: 'Clear',
+                          onAction: RecentSearchStore.instance.clear,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final query in recent)
+                                ActionChip(
+                                  avatar: Icon(
+                                    Icons.history,
+                                    size: 16,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  label: Text(query),
+                                  onPressed: () {
+                                    _controller.text = query;
+                                    _search(query);
+                                  },
+                                ),
+                            ],
                           ),
+                        ),
                       ],
-                    ),
-                  ),
-                ],
+                    );
+                  },
+                ),
                 _ImageSearchCard(onTap: () => _showImageSearchSheet(context)),
-                const _Heading(label: 'Trending searches'),
-                for (final item in SearchContent.trending)
-                  _TrendingRow(
-                    item: item,
-                    onTap: () {
-                      _controller.text = item.query;
-                      _search(item.query);
-                    },
+                const _Heading(label: 'Browse departments'),
+                // The real department list rather than a hand-written list of
+                // popular queries. Nobody maintains the second kind, and it
+                // goes stale pointing at things the catalogue no longer sells.
+                LoadableView<List<Category>>(
+                  loadable: CatalogStore.instance.categories,
+                  emptyCheck: (categories) => categories.isEmpty,
+                  builder: (context, categories) => Column(
+                    children: [
+                      for (final category in categories.take(12))
+                        _DepartmentRow(
+                          category: category,
+                          onTap: () => _browse(category),
+                        ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),
@@ -215,10 +256,11 @@ class _ImageSearchCard extends StatelessWidget {
   }
 }
 
-class _TrendingRow extends StatelessWidget {
-  const _TrendingRow({required this.item, required this.onTap});
+/// One department, opening its results.
+class _DepartmentRow extends StatelessWidget {
+  const _DepartmentRow({required this.category, required this.onTap});
 
-  final TrendingSearch item;
+  final Category category;
   final VoidCallback onTap;
 
   @override
@@ -231,16 +273,23 @@ class _TrendingRow extends StatelessWidget {
         width: 44,
         height: 44,
         child: ArtworkPanel(
-          icon: item.icon,
-          tint: item.tint,
-          imageUrl: item.imageUrl,
+          icon: iconForCategory(category.name),
+          tint: tintForCategory(category.cid),
+          imageUrl: category.imageUrl,
           iconScale: 0.5,
         ),
       ),
-      title: Text(item.query),
+      title: Text(category.name),
+      subtitle: category.children.isEmpty
+          ? null
+          : Text(
+              category.children.take(3).map((c) => c.name).join(' - '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
       trailing: Icon(
-        Icons.north_west,
-        size: 18,
+        Icons.chevron_right,
+        size: 20,
         color: theme.colorScheme.onSurfaceVariant,
       ),
     );

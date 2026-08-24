@@ -4,7 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
-import '../data/search_content.dart';
+import '../data/search_models.dart';
 
 /// One search result: image on the left, the facts a shopper compares on to
 /// the right.

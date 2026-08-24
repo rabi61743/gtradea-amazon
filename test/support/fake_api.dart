@@ -12,7 +12,7 @@ import 'package:dio/dio.dart';
 class FakeApi implements HttpClientAdapter {
   FakeApi();
 
-  final _routes = <String, _Handler>{};
+  final _routes = <String, FakeHandler>{};
 
   /// Every request that reached this adapter, in order. The point of recording
   /// them is that most of what is worth asserting about a repository is what it
@@ -27,12 +27,12 @@ class FakeApi implements HttpClientAdapter {
     Map<String, List<String>>? headers,
   }) {
     _routes['${method.toUpperCase()} $path'] =
-        (_) => _Reply(status: status, body: body, headers: headers);
+        (_) => FakeReply(status: status, body: body, headers: headers);
   }
 
   /// For answers that depend on the request, or that change between calls (a
   /// 401 first and a 200 after a refresh, say).
-  void onCall(String method, String path, _Handler handler) {
+  void onCall(String method, String path, FakeHandler handler) {
     _routes['${method.toUpperCase()} $path'] = handler;
   }
 
@@ -82,10 +82,10 @@ class FakeApi implements HttpClientAdapter {
   };
 }
 
-typedef _Handler = _Reply Function(RecordedCall call);
+typedef FakeHandler = FakeReply Function(RecordedCall call);
 
-class _Reply {
-  const _Reply({required this.status, this.body, this.headers});
+class FakeReply {
+  const FakeReply({required this.status, this.body, this.headers});
 
   final int status;
   final Object? body;
@@ -93,8 +93,8 @@ class _Reply {
 }
 
 /// A reply built inside an [FakeApi.onCall] handler.
-_Reply reply(Object? body, {int status = 200}) =>
-    _Reply(status: status, body: body);
+FakeReply reply(Object? body, {int status = 200}) =>
+    FakeReply(status: status, body: body);
 
 class RecordedCall {
   RecordedCall({

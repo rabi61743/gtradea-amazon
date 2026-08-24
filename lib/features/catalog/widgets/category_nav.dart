@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/l10n/app_strings.dart';
-import '../data/catalog_content.dart';
+import '../data/department.dart';
 
 /// The category navigator, in the shape the width can carry.
 ///

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/artwork_panel.dart';
-import '../../product/presentation/product_detail_screen.dart';
 import '../../../shared/widgets/section_header.dart';
 
 /// A product as the home rails render it.
@@ -16,6 +15,7 @@ class ProductItem {
     required this.tint,
     this.imageUrl,
     this.listPrice,
+    this.onTap,
   });
 
   final String title;
@@ -32,6 +32,10 @@ class ProductItem {
 
   /// Photograph for the tile; falls back to the tinted panel when absent.
   final String? imageUrl;
+
+  /// What tapping the card does. Supplied by whoever built the list, because
+  /// only they know which catalogue row this card stands for.
+  final VoidCallback? onTap;
 }
 
 /// Horizontally scrolling product cards under a section heading.
@@ -92,9 +96,7 @@ class _ProductCard extends StatelessWidget {
     return SizedBox(
       width: 156,
       child: InkWell(
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const ProductDetailScreen())),
+        onTap: item.onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
