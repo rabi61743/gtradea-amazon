@@ -28,7 +28,15 @@ class VariantPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final selected = variants[selectedIndex];
+
+    // Plenty of listings sell one thing in one form, and the page shows a
+    // preview with no options at all while the full record loads. A picker
+    // with nothing to pick renders nothing rather than indexing an empty list.
+    if (variants.isEmpty) return const SizedBox.shrink();
+
+    // Clamped rather than trusted: the selection is held by the page across a
+    // reload, and the new record can have fewer options than the old one.
+    final selected = variants[selectedIndex.clamp(0, variants.length - 1)];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -227,6 +227,24 @@ void main() {
     expect(find.text('Yiwu Match Factory'), findsOneWidget);
   });
 
+  testWidgets('a product with no options renders without a picker',
+      (tester) async {
+    // The page opens on the tapped card's data, which has no SKUs yet, and
+    // plenty of listings sell one thing in one form. Indexing the empty option
+    // list crashed the whole screen.
+    await _pumpDetail(tester, product: sampleDetail.copyWith(similar: const []));
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(_wrap(ProductDetailScreen(
+      product: sampleProduct,
+      detail: ProductDetail.fromProduct(sampleProduct),
+    )));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Add to cart'), findsOneWidget);
+  });
+
   testWidgets('an unrated product shows no stars rather than zero stars',
       (tester) async {
     // Nothing in this catalogue carries a rating. "0.0 (0)" beside a title

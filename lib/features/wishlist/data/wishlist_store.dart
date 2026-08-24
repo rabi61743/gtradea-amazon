@@ -16,6 +16,10 @@ class SavedProduct {
     required this.price,
     this.imageUrl,
     this.listPrice,
+    this.sellerBadge,
+    this.salesLabel,
+    this.category,
+    this.minOrder = 1,
   });
 
   final String id;
@@ -24,12 +28,34 @@ class SavedProduct {
   final num? listPrice;
   final String? imageUrl;
 
+  /// What the seller is vouched for, in the catalogue's own words. Null when
+  /// the listing carries no badge -- most do not.
+  final String? sellerBadge;
+
+  /// Units sold, already rounded to an order of magnitude.
+  ///
+  /// This catalogue publishes no ratings, so this is the only popularity
+  /// signal there is. Showing stars here would mean inventing them.
+  final String? salesLabel;
+
+  /// Carried so a category-restricted coupon still knows what this is when it
+  /// goes into the cart.
+  final String? category;
+
+  /// The seller's minimum order. Adding one of a listing that sells in tens
+  /// would be refused, so the wishlist adds the minimum.
+  final int minOrder;
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
         'price': price,
         'listPrice': listPrice,
         'imageUrl': imageUrl,
+        'sellerBadge': sellerBadge,
+        'salesLabel': salesLabel,
+        'category': category,
+        'minOrder': minOrder,
       };
 
   /// Tolerant: a blob written by an older build may be missing fields, and a
@@ -44,6 +70,14 @@ class SavedProduct {
       price: json['price'] is num ? json['price'] as num : 0,
       listPrice: json['listPrice'] is num ? json['listPrice'] as num : null,
       imageUrl: json['imageUrl'] is String ? json['imageUrl'] as String : null,
+      sellerBadge:
+          json['sellerBadge'] is String ? json['sellerBadge'] as String : null,
+      salesLabel:
+          json['salesLabel'] is String ? json['salesLabel'] as String : null,
+      category: json['category'] is String ? json['category'] as String : null,
+      minOrder: json['minOrder'] is int && (json['minOrder'] as int) >= 1
+          ? json['minOrder'] as int
+          : 1,
     );
   }
 
@@ -121,6 +155,17 @@ class WishlistStore extends ChangeNotifier {
 
   void remove(String id) {
     _items.removeWhere((item) => item.id == id);
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  /// Puts a removed product back where it was, for undo.
+  ///
+  /// Position matters: dropping it back at the top would reorder a shortlist
+  /// the shopper built, which is not what undoing a removal means.
+  void restore(SavedProduct product, int index) {
+    if (contains(product.id)) return;
+    _items.insert(index.clamp(0, _items.length), product);
     notifyListeners();
     unawaited(_persist());
   }

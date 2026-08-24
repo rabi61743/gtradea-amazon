@@ -233,6 +233,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     price: _product.price,
     listPrice: _product.listPrice,
     imageUrl: _product.images.isEmpty ? null : _product.images.first,
+    // Snapshotted with the rest, so the saved list renders on a dead
+    // connection and still shows what was saved after the listing moves on.
+    sellerBadge: widget.product.sellerBadge,
+    salesLabel: widget.product.salesLabel,
+    category: _product.category,
+    minOrder: _product.minOrder,
   );
 
   Future<void> _share() async {
