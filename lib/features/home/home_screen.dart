@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/l10n/app_strings.dart';
+import '../../core/realtime/realtime_service.dart';
 import '../../shared/widgets/app_bottom_nav.dart';
 import '../account/presentation/account_screen.dart';
 import '../address/data/address_store.dart';
@@ -20,11 +21,11 @@ import '../wishlist/presentation/wishlist_screen.dart';
 import 'home_feed.dart';
 import 'widgets/search_header.dart';
 
-/// Storefront home: pinned search, a promo strip, then alternating category
-/// blocks, a recommendation rail and the full department grid.
+/// The app shell: a pinned search bar over the feed, with the bottom bar.
 ///
-/// Content comes from [HomeContent]; this widget only decides the order and
-/// the furniture around it.
+/// This widget owns the things that outlive any one screen -- which stores are
+/// bound to the signed-in account, the live socket, and the notification
+/// catch-up at startup. The feed itself is [HomeFeed].
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -52,19 +53,52 @@ class _HomeScreenState extends State<HomeScreen> {
     OrderStore.instance.load();
     CartStore.instance.load();
 
-    // The feed catches up at startup: orders progress on a clock, so anything
-    // that happened while the app was closed still has to be announced.
+    // The feed catches up at startup: an order can move while the app is
+    // closed, and those steps still have to be announced when it reopens.
     unawaited(_catchUpNotifications());
 
     // Sign-in and sign-out are the account events worth telling someone about,
     // and this is the one place that watches identity for the whole app.
     AuthStore.instance.addListener(_onAuthChanged);
+
+    // The live channel. It carries "something changed" rather than the change
+    // itself, so every payload still has exactly one source.
+    RealtimeService.instance.bind(
+      AuthStore.instance,
+      userId: () => AuthStore.instance.account?.id,
+    );
+    _realtime = RealtimeService.instance.events.listen(_onRealtimeEvent);
   }
+
+  StreamSubscription<RealtimeEvent>? _realtime;
 
   @override
   void dispose() {
     AuthStore.instance.removeListener(_onAuthChanged);
+    _realtime?.cancel();
     super.dispose();
+  }
+
+  /// Routes a live event to whatever it invalidates.
+  ///
+  /// The sibling app refreshes only the orders *list* on an order event, so a
+  /// shopper staring at a tracking screen watches it sit still while the list
+  /// behind it updates. When the frame names an order, that order's tracking is
+  /// refetched as well.
+  ///
+  /// An event matching neither prefix refreshes both, because an unrecognised
+  /// name is more likely to be a new kind of change than nothing at all.
+  void _onRealtimeEvent(RealtimeEvent event) {
+    if (event.isOrder || !event.isNotification) {
+      unawaited(OrderStore.instance.refreshFromServer());
+      final orderId = event.orderId;
+      if (orderId != null) {
+        unawaited(OrderStore.instance.loadTracking(orderId));
+      }
+    }
+    if (event.isNotification || !event.isOrder) {
+      unawaited(NotificationStore.instance.load());
+    }
   }
 
   void _onAuthChanged() {
@@ -97,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
         id: banner.id,
         title: banner.title,
         body: banner.subtitle ??
-            'Use code  at checkout.',
+            'Use code ${banner.promoCode} at checkout.',
       );
     }
   }

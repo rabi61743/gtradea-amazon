@@ -1,4 +1,5 @@
 import 'package:gtradea_amazon/core/network/api_client.dart';
+import 'package:gtradea_amazon/core/realtime/realtime_service.dart';
 import 'package:gtradea_amazon/features/catalog/data/catalog_store.dart';
 
 import 'catalog.dart';
@@ -63,6 +64,8 @@ FakeApi stubCatalog({
 
 /// Points the shared client at a fake and clears anything already loaded.
 void useStubbedApi(FakeApi api) {
+  // No gateway to open a socket to in a test.
+  RealtimeService.enabled = false;
   _installed = api;
   ApiClient.overrideDio = api.dio();
   CatalogStore.instance.resetForTest();
