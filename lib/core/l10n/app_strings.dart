@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'payment_strings.dart';
+
 /// The languages the storefront speaks.
 ///
 /// Nepali as well as English because this shop sells in Nepal, and the
@@ -50,6 +52,7 @@ class AppStrings {
     required this.jumpTo,
     required this.departmentNames,
     required this.groupNames,
+    required this.payment,
   });
 
   final String categories;
@@ -78,6 +81,9 @@ class AppStrings {
   final Map<String, String> departmentNames;
   final Map<String, String> groupNames;
 
+  /// Everything the payment flow says.
+  final PaymentStrings payment;
+
   String department(String key) => departmentNames[key] ?? key;
   String group(String key) => groupNames[key] ?? key;
 
@@ -100,6 +106,7 @@ class AppStrings {
     jumpTo: 'Jump to a category',
     departmentNames: const {},
     groupNames: const {},
+    payment: PaymentStrings.en,
   );
 
   /// A first pass, and worth a native speaker's eye before it ships. Where a
@@ -143,6 +150,7 @@ class AppStrings {
       'Toys and family': 'खेलौना र परिवार',
       'For your pets': 'तपाईंको पाल्तुका लागि',
     },
+    payment: PaymentStrings.ne,
   );
 }
 

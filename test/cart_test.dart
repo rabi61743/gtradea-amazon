@@ -94,10 +94,25 @@ void _useTallWindow(WidgetTester tester) {
 /// Placing an order is a real POST now, and the server owns the cart it is
 /// built from -- so there is no such thing as a guest order.
 void _stubCheckout() {
-  stubCatalog().on('POST', '/checkout', body: const {
-    'orderId': 'order-1',
-    'orderNumber': 'GT-1001',
-  });
+  stubCatalog()
+    ..on('POST', '/checkout', body: const {
+      'orderId': 'order-1',
+      'orderNumber': 'GT-1001',
+    })
+    // Which methods the shop takes comes from the server now, so a checkout
+    // test has to say what this shop takes.
+    ..on('GET', '/site-settings/active_payment_methods', body: const {
+      'setting_value': {
+        'cod': {
+          'label': 'Cash on Delivery',
+          'description': 'Pay when you receive your order',
+          'order': 1,
+          'enabled': true,
+          'isDefault': true,
+        },
+      },
+    })
+    ..on('GET', '/orders', body: const []);
   signInForTest();
 }
 
@@ -592,7 +607,10 @@ void main() {
       await tester.tap(find.textContaining('Place order'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Order GT-1001 placed'), findsOneWidget);
+      // The result screen, not a dialog: someone who has just committed money
+      // is owed a full screen that says what happened.
+      expect(find.text('Order placed'), findsOneWidget);
+      expect(find.text('GT-1001'), findsOneWidget);
       expect(CartStore.instance.isEmpty, isTrue);
 
       await tester.tap(find.text('Done'));

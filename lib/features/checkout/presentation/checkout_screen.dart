@@ -2,8 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/l10n/app_strings.dart';
+import '../../../core/l10n/payment_strings.dart';
 import '../../../core/network/api_error.dart';
-import '../../../core/theme/colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../address/data/address_store.dart';
 import '../../address/presentation/address_picker_sheet.dart';
@@ -12,12 +13,20 @@ import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
+import '../../notifications/data/notification_store.dart';
 import '../../orders/data/order_store.dart';
 import '../../promo/data/coupon_store.dart';
-import '../../orders/presentation/order_detail_screen.dart';
 import '../../../shared/widgets/loadable_view.dart';
 import '../data/checkout_models.dart';
+import '../data/card_details.dart';
 import '../data/checkout_repository.dart';
+import '../data/payment_method.dart';
+import '../data/payment_outcome.dart';
+import '../data/payment_settings_repository.dart';
+import '../data/saved_payment_store.dart';
+import 'card_form_sheet.dart';
+import 'payment_methods_section.dart';
+import 'payment_result_screen.dart';
 
 /// Review and place the order.
 ///
@@ -44,7 +53,15 @@ class CheckoutScreen extends StatefulWidget {
 }
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
-  _Payment _payment = _Payment.cashOnDelivery;
+  /// The ways this shop currently accepts money. Empty until the server says.
+  List<PaymentMethod> _methods = const [];
+  PaymentMethod? _selected;
+  bool _loadingMethods = true;
+  ApiError? _methodsError;
+
+  /// The saved card chosen, if any. Null means a card will be typed in.
+  String? _selectedCardId;
+
   bool _placing = false;
 
   /// Why the last attempt did not become an order. Shown on the screen rather
@@ -58,8 +75,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   void initState() {
     super.initState();
     AddressStore.instance.load().then((_) {
-      if (mounted) setState(() => _address ??= AddressStore.instance.defaultAddress);
+      if (mounted) {
+        setState(() => _address ??= AddressStore.instance.defaultAddress);
+      }
     });
+    SavedPaymentStore.instance.load();
+    unawaited(_loadMethods());
+  }
+
+  /// Asks the shop which methods it takes.
+  ///
+  /// Not a fixed list in the app. Whether this storefront accepts cash on
+  /// delivery this week is an operational decision, and offering a method the
+  /// server has switched off means a shopper picks it, commits, and is refused
+  /// by a gateway that was never going to accept them.
+  Future<void> _loadMethods() async {
+    try {
+      final methods = await PaymentSettingsRepository.instance.methods();
+      if (!mounted) return;
+
+      final userId = AuthStore.instance.account?.id;
+      final visible =
+          methods.where((m) => m.isVisibleTo(userId)).toList(growable: false);
+
+      setState(() {
+        _methods = visible;
+        _methodsError = null;
+        _loadingMethods = false;
+        _selected = visible.where((m) => m.isDefault).firstOrNull ??
+            visible.firstOrNull;
+      });
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _methodsError = e;
+        _loadingMethods = false;
+      });
+    }
   }
 
   Future<void> _chooseAddress() async {
@@ -70,20 +122,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (chosen != null && mounted) setState(() => _address = chosen);
   }
 
-  Future<void> _placeOrder() async {
+  PaymentStrings get _strings => LanguageStore.instance.strings.payment;
+
+  /// Runs the payment, whatever kind it is.
+  Future<void> _pay() async {
     if (_placing) return;
 
     // An order with nowhere to go is not an order. Asked for rather than
-    // guessed at, and the sheet opens straight away so the shopper is one
-    // step from finishing rather than being told off.
+    // guessed at, and the sheet opens straight away so the shopper is one step
+    // from finishing rather than being told off.
     if (_address == null) {
       await _chooseAddress();
       if (!mounted || _address == null) return;
     }
 
     // The server holds the cart the order is built from, and it only holds one
-    // for a signed-in shopper. Sending them to sign in beats a refusal from
-    // the gateway that says nothing about what to do next.
+    // for a signed-in shopper.
     if (!AuthStore.instance.isSignedIn) {
       await Navigator.of(context).push<void>(
         MaterialPageRoute(builder: (_) => const AuthScreen()),
@@ -95,11 +149,66 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     }
 
+    final method = _selected;
+    if (method == null) return;
+
+    // A card is collected before anything is sent, so a mistyped number costs
+    // a correction rather than a declined order.
+    CardDetails? card;
+    if (method.kind == PaymentKind.card && _selectedCardId == null) {
+      final entry = await CardFormSheet.show(context, strings: _strings);
+      if (!mounted || entry == null) return;
+      card = entry.card;
+      if (entry.remember) {
+        // Only the brand, last four and expiry. Never the number, never the
+        // security code -- see SavedPaymentMethod.
+        SavedPaymentStore.instance.save(SavedPaymentMethod.fromCard(card));
+      }
+    }
+
     setState(() {
       _placing = true;
       _failure = null;
     });
 
+    final outcome = ValueNotifier<PaymentOutcome>(
+      PaymentInProgress(_strings.creatingOrder),
+    );
+    // Pushed before the work starts, so the loading state is a screen rather
+    // than a spinner on a button the shopper is still looking past.
+    final resultRoute = MaterialPageRoute<void>(
+      builder: (_) => PaymentResultScreen(
+        outcome: outcome,
+        onRetry: () {
+          Navigator.of(context).pop();
+          unawaited(_pay());
+        },
+        onChooseAnother: () => Navigator.of(context).pop(),
+        onDone: () {
+          // Twice: off the result screen, then off the checkout behind it.
+          // The order is placed, so there is nothing left to check out.
+          Navigator.of(context).pop();
+          Navigator.of(context).pop();
+        },
+      ),
+    );
+    unawaited(Navigator.of(context).push(resultRoute));
+
+    try {
+      await _submit(method, outcome, card);
+    } finally {
+      // The card leaves memory here whatever happened. Nothing writes it
+      // anywhere, and holding it after the request is pointless risk.
+      card = null;
+      if (mounted) setState(() => _placing = false);
+    }
+  }
+
+  Future<void> _submit(
+    PaymentMethod method,
+    ValueNotifier<PaymentOutcome> outcome,
+    CardDetails? card,
+  ) async {
     final input = CheckoutOrderInput(
       shippingAddress: CheckoutAddress.fromAddress(_address!),
       // Only the lines this screen was handed. An empty list would mean
@@ -113,110 +222,95 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
 
     try {
-      final placed = _payment == _Payment.cashOnDelivery
-          ? await CheckoutRepository.instance.placeCashOnDelivery(input)
-          : await CheckoutRepository.instance
-              .initiatePayment(_gatewayFor(_payment), input);
+      final isCod = method.kind == PaymentKind.cashOnDelivery;
+      if (!isCod) {
+        outcome.value = PaymentInProgress(_strings.contactingGateway);
+      }
 
-      if (!mounted) return;
+      final placed = isCod
+          ? await CheckoutRepository.instance.placeCashOnDelivery(input)
+          : await CheckoutRepository.instance.initiatePayment(method.id, input);
+
+      await _afterOrder(placed);
 
       // Store credit can cover the whole thing, in which case there is no
       // gateway payload at all whichever method was chosen -- so this is
       // checked before reaching for one.
-      if (_payment != _Payment.cashOnDelivery && !placed.paidByWallet) {
-        // The gateway handshake needs an in-app browser, which this build does
-        // not carry yet. The order exists either way; saying so beats leaving
-        // the shopper on a spinner.
-        _finish(
-          placed,
-          message: 'Order ${placed.orderNumber} created. Finish paying from '
-              'your order page.',
+      if (isCod || placed.paidByWallet) {
+        outcome.value = PaymentSucceeded(
+          order: placed,
+          methodLabel: method.label,
+          payableNow: placed.advanceAmount ?? widget.totals.total,
+          paidNow: !isCod,
         );
         return;
       }
 
-      _finish(
-        placed,
-        message: _payment == _Payment.cashOnDelivery
-            ? 'Pay the courier when it arrives.'
-            : 'Paid in full with store credit.',
+      // The gateway handshake needs an in-app browser, which this build does
+      // not carry yet. The order exists; saying so beats a spinner that never
+      // resolves, and beats claiming a payment that has not happened.
+      outcome.value = PaymentFailed(
+        message: 'This payment method needs a step this app cannot finish yet.',
+        orderNumber: placed.orderNumber.isEmpty ? null : placed.orderNumber,
+        canRetry: false,
       );
     } on ApiError catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _placing = false;
-        _failure = e.isNetwork
+      outcome.value = PaymentFailed(
+        message: e.isNetwork
             ? 'No connection, so the order was not placed. Nothing has been '
                 'charged.'
-            : e.message;
-      });
+            : e.message,
+      );
+      if (mounted) setState(() => _failure = e.message);
     }
   }
 
-  /// Which gateway path a chosen method maps to.
-  String _gatewayFor(_Payment payment) => switch (payment) {
-        _Payment.khalti => 'khalti',
-        _Payment.esewa => 'esewa',
-        _Payment.cashOnDelivery => 'cod',
-      };
-
-  /// Everything that happens once the server has an order.
-  Future<void> _finish(PlacedOrder placed, {required String message}) async {
-    // The code is spent. Done here rather than on apply, so a coupon tried and
-    // abandoned is still available next time.
+  /// Everything that follows an order existing.
+  ///
+  /// The notification comes from the order itself rather than being written
+  /// here: payment notifications are derived from what the server says about
+  /// an order, and a second path would announce a payment the server had not
+  /// recorded.
+  Future<void> _afterOrder(PlacedOrder placed) async {
     final code = widget.totals.couponCode;
     if (code != null) CouponStore.instance.redeem(code);
 
-    // The server consumed the ordered rows, so this device's copy of them is
-    // stale. Only the ordered lines are dropped: anything added from another
-    // screen after checkout opened is not part of this order and must survive
-    // it -- which is exactly what clearing the whole cart would destroy.
+    // The server consumed the ordered rows, so this device's copy is stale.
+    // Only the ordered lines are dropped: anything added from another screen
+    // after checkout opened is not part of this order and must survive it.
     for (final line in widget.lines) {
       CartStore.instance.remove(line.key);
     }
-    unawaited(OrderStore.instance.refreshFromServer());
 
-    if (!mounted) return;
-    setState(() => _placing = false);
+    await OrderStore.instance.refreshFromServer();
+    NotificationStore.instance.syncFromOrders(OrderStore.instance.orders);
+  }
 
-    final track = await showDialog<bool>(
+  /// Removing a saved card is confirmed. Putting it back means having the card
+  /// to hand, which a shopper on a bus does not.
+  Future<void> _confirmRemoveCard(SavedPaymentMethod card) async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.check_circle, color: AppColors.success, size: 40),
-        title: Text(placed.orderNumber.isEmpty
-            ? 'Order placed'
-            : 'Order ${placed.orderNumber} placed'),
-        content: Text(
-          '${widget.totals.itemCount} '
-          '${widget.totals.itemCount == 1 ? 'item' : 'items'} for '
-          '${formatRupees(widget.totals.total)}. $message',
-        ),
+        title: Text(_strings.removeCardConfirm),
+        content: Text('${card.brand.label} ${card.maskedNumber}'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Done'),
+            child: Text(_strings.done),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Track order'),
+            child: Text(_strings.removeCard),
           ),
         ],
       ),
     );
+    if (!(confirmed ?? false)) return;
 
-    if (!mounted) return;
-    // Back to wherever the shopper was before the cart: the order is done and
-    // the cart behind this screen is now empty.
-    Navigator.of(context).pop();
-
-    if ((track ?? false) && mounted && placed.orderId.isNotEmpty) {
-      // Pushed after the pop so Back from tracking lands on the storefront
-      // rather than on a checkout screen for an order already placed.
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => OrderDetailScreen(orderId: placed.orderId),
-        ),
-      );
+    SavedPaymentStore.instance.remove(card.id);
+    if (mounted && _selectedCardId == card.id) {
+      setState(() => _selectedCardId = null);
     }
   }
 
@@ -322,23 +416,49 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ),
           _Section(
-            title: 'Payment',
-            child: RadioGroup<_Payment>(
-              groupValue: _payment,
-              onChanged: (value) =>
-                  setState(() => _payment = value ?? _payment),
-              child: Column(
-                children: [
-                  for (final option in _Payment.values)
-                    RadioListTile<_Payment>(
-                      value: option,
-                      title: Text(option.label),
-                      subtitle: Text(option.detail),
-                      contentPadding: EdgeInsets.zero,
+            title: _strings.title,
+            child: _loadingMethods
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
+                      ),
                     ),
-                ],
-              ),
-            ),
+                  )
+                : _methodsError != null
+                    ? LoadFailed(
+                        compact: true,
+                        message: _methodsError!.isNetwork
+                            ? 'No connection, so we could not check which '
+                                'payment methods are available.'
+                            : _methodsError!.message,
+                        onRetry: _loadMethods,
+                      )
+                    : ListenableBuilder(
+                        listenable: SavedPaymentStore.instance,
+                        builder: (context, _) => PaymentMethodsSection(
+                          strings: _strings,
+                          methods: _methods,
+                          selected: _selected,
+                          enabled: !_placing,
+                          onSelected: (method) => setState(() {
+                            _selected = method;
+                            // A card chosen for one method means nothing for
+                            // another.
+                            _selectedCardId = null;
+                          }),
+                          savedCards: SavedPaymentStore.instance.cards,
+                          selectedCardId: _selectedCardId,
+                          onCardSelected: (card) =>
+                              setState(() => _selectedCardId = card.id),
+                          onUseNewCard: () =>
+                              setState(() => _selectedCardId = null),
+                          onRemoveCard: _confirmRemoveCard,
+                        ),
+                      ),
           ),
           _Section(
             title: 'Order summary',
@@ -397,7 +517,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               child: LoadFailed(
                 compact: true,
                 message: _failure!,
-                onRetry: _placeOrder,
+                onRetry: _pay,
               ),
             ),
         ],
@@ -411,31 +531,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
             child: ElevatedButton(
-              onPressed: _placing ? null : _placeOrder,
+              onPressed: _placing ? null : _pay,
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size.fromHeight(48),
               ),
-              child: Text('Place order · ${formatRupees(totals.total)}'),
+              // "Pay" when money is about to move, "Place order" when it is
+              // not. A wallet button labelled "Place order" understates what
+              // the next tap does.
+              child: Text(
+                '${_selected == null ||
+                        _selected!.kind == PaymentKind.cashOnDelivery
+                    ? _strings.placeOrder
+                    : _strings.payNow}'
+                ' · ${formatRupees(totals.total)}',
+              ),
             ),
           ),
         ),
       ),
     );
   }
-}
-
-enum _Payment {
-  cashOnDelivery(
-    'Cash on delivery',
-    'Pay the courier when it arrives',
-  ),
-  esewa('eSewa', 'Pay now from your eSewa wallet'),
-  khalti('Khalti', 'Pay now from your Khalti wallet');
-
-  const _Payment(this.label, this.detail);
-
-  final String label;
-  final String detail;
 }
 
 class _Section extends StatelessWidget {
