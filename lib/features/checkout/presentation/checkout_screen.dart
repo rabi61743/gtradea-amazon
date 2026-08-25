@@ -20,13 +20,16 @@ import '../../../shared/widgets/loadable_view.dart';
 import '../data/checkout_models.dart';
 import '../data/card_details.dart';
 import '../data/checkout_repository.dart';
+import '../data/payment_gateway.dart';
 import '../data/payment_method.dart';
 import '../data/payment_outcome.dart';
 import '../data/payment_settings_repository.dart';
 import '../data/saved_payment_store.dart';
 import 'card_form_sheet.dart';
 import 'payment_methods_section.dart';
+import 'payment_pending_screen.dart';
 import 'payment_result_screen.dart';
+import 'payment_webview_screen.dart';
 
 /// Review and place the order.
 ///
@@ -246,14 +249,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         return;
       }
 
-      // The gateway handshake needs an in-app browser, which this build does
-      // not carry yet. The order exists; saying so beats a spinner that never
-      // resolves, and beats claiming a payment that has not happened.
-      outcome.value = PaymentFailed(
-        message: 'This payment method needs a step this app cannot finish yet.',
-        orderNumber: placed.orderNumber.isEmpty ? null : placed.orderNumber,
-        canRetry: false,
-      );
+      await _runGateway(method, placed, outcome);
     } on ApiError catch (e) {
       outcome.value = PaymentFailed(
         message: e.isNetwork
@@ -263,6 +259,119 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
       if (mounted) setState(() => _failure = e.message);
     }
+  }
+
+  /// Sends the shopper to the provider and reports what came back.
+  ///
+  /// The order already exists at this point, which is why every failure below
+  /// carries its number: a shopper who is told only that the payment failed
+  /// cannot tell whether to order again, and ordering again is how people pay
+  /// twice.
+  Future<void> _runGateway(
+    PaymentMethod method,
+    PlacedOrder placed,
+    ValueNotifier<PaymentOutcome> outcome,
+  ) async {
+    final orderNumber =
+        placed.orderNumber.isEmpty ? null : placed.orderNumber;
+
+    final gateway = PaymentGateway.forId(method.id);
+    if (gateway == null) {
+      // A method the shop enabled that this app has no handshake for. The
+      // order stands and can be paid from the order page.
+      outcome.value = PaymentFailed(
+        message: '${method.label} cannot be completed in the app yet.',
+        orderNumber: orderNumber,
+        canRetry: false,
+      );
+      return;
+    }
+
+    final GatewayLaunch launch;
+    try {
+      launch = gateway.launch(placed);
+    } on ApiError catch (e) {
+      outcome.value = PaymentFailed(
+        message: e.message,
+        orderNumber: orderNumber,
+        canRetry: false,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final returned = await PaymentWebViewScreen.show(
+      context,
+      title: method.label,
+      redirectUrl: launch.url,
+      actionUrl: launch.actionUrl,
+      formFields: launch.formFields,
+    );
+    if (!mounted) return;
+
+    GatewayVerdict? verdict;
+    try {
+      if (returned != null) {
+        outcome.value = PaymentInProgress(_strings.creatingOrder);
+        verdict = await gateway.confirm(placed, returned);
+      } else {
+        // Closed the page without coming back. That is not a refusal -- the
+        // payment may have gone through in a banking app -- so the server is
+        // asked rather than assumed.
+        final probe = gateway.poll(placed) ??
+            () => pollOrderPayment(placed.orderId);
+        verdict = await PaymentPendingScreen.show(
+          context,
+          gatewayLabel: method.label,
+          orderNumber: placed.orderNumber,
+          poll: probe,
+        );
+      }
+    } on ApiError catch (e) {
+      outcome.value = PaymentFailed(
+        message: e.message,
+        orderNumber: orderNumber,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    if (verdict == null) {
+      // Gave up waiting. Nothing is known either way, so nothing is claimed.
+      outcome.value = PaymentCancelled(orderNumber: orderNumber);
+      return;
+    }
+
+    // Refresh before reporting: the order's own payment status is what the
+    // rest of the app will show, and it should agree with this screen.
+    await OrderStore.instance.refreshFromServer();
+    NotificationStore.instance.syncFromOrders(OrderStore.instance.orders);
+
+    if (verdict.paid) {
+      outcome.value = PaymentSucceeded(
+        order: placed,
+        methodLabel: method.label,
+        payableNow: placed.advanceAmount ?? widget.totals.total,
+      );
+      return;
+    }
+
+    if (verdict.abandoned) {
+      outcome.value = PaymentCancelled(orderNumber: orderNumber);
+      return;
+    }
+
+    outcome.value = PaymentFailed(
+      message: verdict.underReview
+          ? 'Your payment was received and is being checked. You will be '
+              'notified once it clears -- do not pay again.'
+          : (verdict.message ?? 'The payment did not go through.'),
+      orderNumber: orderNumber,
+      // Money has already been taken when a payment is under review. Offering
+      // a retry would take it twice.
+      canRetry: !verdict.underReview,
+    );
   }
 
   /// Everything that follows an order existing.
