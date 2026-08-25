@@ -5,6 +5,8 @@ import '../../../shared/widgets/artwork_panel.dart';
 import '../../../core/l10n/app_strings.dart';
 import '../../address/data/address_store.dart';
 import '../../address/presentation/address_list_screen.dart';
+import '../../checkout/data/saved_payment_store.dart';
+import '../../checkout/presentation/payment_methods_screen.dart';
 import '../../auth/data/auth_store.dart';
 import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
@@ -45,6 +47,7 @@ class _AccountScreenState extends State<AccountScreen> {
     OrderStore.instance.load();
     LanguageStore.instance.load();
     AddressStore.instance.load();
+    SavedPaymentStore.instance.load();
   }
 
   void _push(Widget page) {
@@ -72,6 +75,7 @@ class _AccountScreenState extends State<AccountScreen> {
         OrderStore.instance,
         LanguageStore.instance,
         AddressStore.instance,
+        SavedPaymentStore.instance,
       ]),
       builder: (context, _) {
         final account = AuthStore.instance.account;
@@ -158,7 +162,12 @@ class _AccountScreenState extends State<AccountScreen> {
                   _RowSpec(
                     icon: Icons.payments_outlined,
                     label: 'Payment methods',
-                    onTap: () => _todo('Payment methods'),
+                    // The count, like the address row above it, so the page
+                    // says what is there without being opened.
+                    trailing: SavedPaymentStore.instance.count == 0
+                        ? null
+                        : '${SavedPaymentStore.instance.count}',
+                    onTap: () => _push(const PaymentMethodsScreen()),
                   ),
                 ],
               ),

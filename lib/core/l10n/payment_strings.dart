@@ -5,6 +5,7 @@
 class PaymentStrings {
   const PaymentStrings({
     required this.title,
+    required this.manageTitle,
     required this.chooseMethod,
     required this.noMethods,
     required this.savedCards,
@@ -46,6 +47,11 @@ class PaymentStrings {
   });
 
   final String title;
+
+  /// The account-settings screen, where saved cards are managed. A different
+  /// heading from the checkout step, because it is a different job.
+  final String manageTitle;
+
   final String chooseMethod;
   final String noMethods;
 
@@ -99,6 +105,7 @@ class PaymentStrings {
 
   static final en = PaymentStrings(
     title: 'Payment',
+    manageTitle: 'Payment methods',
     chooseMethod: 'How would you like to pay?',
     noMethods: 'No payment method is available just now. Please try later.',
     savedCards: 'Saved cards',
@@ -150,6 +157,7 @@ class PaymentStrings {
   /// the loanword is kept rather than a coinage nobody uses.
   static final ne = PaymentStrings(
     title: 'भुक्तानी',
+    manageTitle: 'भुक्तानी विधिहरू',
     chooseMethod: 'कसरी भुक्तानी गर्न चाहनुहुन्छ?',
     noMethods: 'अहिले कुनै भुक्तानी विधि उपलब्ध छैन। पछि प्रयास गर्नुहोस्।',
     savedCards: 'सुरक्षित कार्डहरू',

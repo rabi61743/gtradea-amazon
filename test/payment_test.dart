@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/l10n/app_strings.dart';
 import 'package:gtradea_amazon/core/l10n/payment_strings.dart';
@@ -8,6 +9,7 @@ import 'package:gtradea_amazon/features/checkout/data/card_details.dart';
 import 'package:gtradea_amazon/features/checkout/data/payment_method.dart';
 import 'package:gtradea_amazon/features/checkout/data/payment_settings_repository.dart';
 import 'package:gtradea_amazon/features/checkout/data/saved_payment_store.dart';
+import 'package:gtradea_amazon/features/checkout/presentation/payment_methods_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_api.dart';
@@ -389,6 +391,117 @@ void main() {
         PaymentStrings.ne.orderStillExists('GT-1001'),
         contains('GT-1001'),
       );
+    });
+  });
+
+  group('the payment methods screen', () {
+    late FakeApi api;
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      SavedPaymentStore.instance.resetForTest();
+      api = FakeApi();
+      ApiClient.overrideDio = api.dio();
+      api.on('GET', '/site-settings/active_payment_methods', body: const {
+        'setting_value': {
+          'khalti': {
+            'label': 'Khalti',
+            'description': 'Pay with Khalti wallet',
+            'badge': 'Recommended',
+            'order': 1,
+            'enabled': true,
+          },
+          'cod': {'label': 'Cash on Delivery', 'order': 4, 'enabled': false},
+        },
+      });
+    });
+
+    tearDown(() => ApiClient.overrideDio = null);
+
+    Future<void> pump(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const MaterialApp(home: PaymentMethodsScreen()));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('lists a saved card by its last four digits', (tester) async {
+      SavedPaymentStore.instance.save(SavedPaymentMethod.fromCard(card()));
+      await pump(tester);
+
+      expect(find.text('Visa •••• •••• •••• 1111'), findsOneWidget);
+      expect(find.textContaining('RABI YADAV'), findsOneWidget);
+      // And never anything more of the number than that.
+      expect(find.textContaining(_visa), findsNothing);
+    });
+
+    testWidgets('removing a card asks first, and backing out keeps it',
+        (tester) async {
+      SavedPaymentStore.instance.save(SavedPaymentMethod.fromCard(card()));
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('Remove'));
+      await tester.pumpAndSettle();
+      expect(find.text('Remove this card?'), findsOneWidget);
+
+      await tester.tap(find.text('Keep it'));
+      await tester.pumpAndSettle();
+      expect(SavedPaymentStore.instance.count, 1);
+
+      await tester.tap(find.byTooltip('Remove'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+      await tester.pumpAndSettle();
+
+      expect(SavedPaymentStore.instance.isEmpty, isTrue);
+      expect(find.text('No saved cards'), findsOneWidget);
+    });
+
+    testWidgets('an expired card is shown and marked, not hidden',
+        (tester) async {
+      SavedPaymentStore.instance
+          .save(SavedPaymentMethod.fromCard(card(month: 1, year: 2020)));
+      await pump(tester);
+
+      expect(find.text('Visa •••• •••• •••• 1111'), findsOneWidget);
+      expect(find.text('Expired'), findsOneWidget);
+    });
+
+    testWidgets('says where a card comes from when there are none',
+        (tester) async {
+      // There is deliberately no Add button: a card is saved at the moment it
+      // is used, so an empty list has to explain itself.
+      await pump(tester);
+
+      expect(find.text('No saved cards'), findsOneWidget);
+      expect(find.textContaining('ask us to remember it'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Add card'), findsNothing);
+    });
+
+    testWidgets('shows what the shop accepts, and not what it does not',
+        (tester) async {
+      await pump(tester);
+
+      expect(find.text('Khalti'), findsOneWidget);
+      expect(find.text('Recommended'), findsOneWidget);
+      expect(find.text('Cash on Delivery'), findsNothing);
+    });
+
+    testWidgets('a failure to check offers a retry rather than an empty list',
+        (tester) async {
+      api.on('GET', '/site-settings/active_payment_methods',
+          status: 500, body: const {'error': 'settings are down'});
+      await pump(tester);
+
+      expect(find.text('settings are down'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+    });
+
+    testWidgets('says plainly what is never stored', (tester) async {
+      await pump(tester);
+      expect(find.textContaining('never stores your card number'),
+          findsOneWidget);
     });
   });
 }

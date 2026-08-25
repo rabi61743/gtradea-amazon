@@ -11,6 +11,7 @@ import '../auth/data/auth_store.dart';
 import '../cart/data/cart_store.dart';
 import '../cart/presentation/cart_screen.dart';
 import '../catalog/data/catalog_store.dart';
+import '../checkout/data/saved_payment_store.dart';
 import '../catalog/presentation/browse_screen.dart';
 import '../notifications/data/notification_store.dart';
 import '../orders/data/order_store.dart';
@@ -49,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
     OrderStore.instance.bindToAuth();
     NotificationStore.instance.bindToAuth();
     AddressStore.instance.bindToAuth();
+    SavedPaymentStore.instance.bindToAuth();
     AddressStore.instance.load();
     OrderStore.instance.load();
     CartStore.instance.load();
