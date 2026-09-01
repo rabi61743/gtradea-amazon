@@ -33,13 +33,15 @@ class ApiClient {
     dio.interceptors.add(AuthInterceptor(SessionStore.instance));
 
     assert(() {
-      dio.interceptors.add(LogInterceptor(
-        requestHeader: false,
-        responseHeader: false,
-        responseBody: false,
-        requestBody: false,
-        logPrint: (o) => debugPrint('[api] $o'),
-      ));
+      dio.interceptors.add(
+        LogInterceptor(
+          requestHeader: false,
+          responseHeader: false,
+          responseBody: false,
+          requestBody: false,
+          logPrint: (o) => debugPrint('[api] $o'),
+        ),
+      );
       return true;
     }());
 

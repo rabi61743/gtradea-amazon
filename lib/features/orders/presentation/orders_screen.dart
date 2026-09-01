@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -23,6 +25,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void initState() {
     super.initState();
     OrderStore.instance.load();
+    // Without this the rows show a status read off the bare order and no
+    // arrival date at all -- the card has always been able to draw both, and
+    // never had the data to.
+    unawaited(OrderStore.instance.loadTrackingForVisible());
   }
 
   @override
@@ -35,22 +41,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return Scaffold(
           appBar: AppBar(title: const Text('Your orders')),
           body: RefreshIndicator(
-            onRefresh: OrderStore.instance.refreshFromServer,
+            // The carrier's view is refreshed with the orders, or a pull would
+            // update the list and leave every arrival date as it was.
+            onRefresh: () async {
+              await OrderStore.instance.refreshFromServer();
+              await OrderStore.instance.loadTrackingForVisible();
+            },
             child: orders.isEmpty
-              ? ListView(children: const [SizedBox(height: 120), _NoOrders()])
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  itemCount: orders.length,
-                  itemBuilder: (context, i) => _OrderCard(
-                    order: orders[i],
-                    now: _now,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => OrderDetailScreen(orderId: orders[i].id),
+                ? ListView(children: const [SizedBox(height: 120), _NoOrders()])
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    itemCount: orders.length,
+                    itemBuilder: (context, i) => _OrderCard(
+                      order: orders[i],
+                      now: _now,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              OrderDetailScreen(orderId: orders[i].id),
+                        ),
                       ),
                     ),
                   ),
-                ),
           ),
         );
       },
@@ -208,15 +220,17 @@ class _NoOrders extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'No orders yet',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               'Anything you order will show up here, with tracking.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),

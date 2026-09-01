@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../flash_sale/presentation/product_deal_banner.dart';
 import '../../home/widgets/category_section.dart';
 import '../../search/data/search_models.dart';
 import '../../home/widgets/department_grid.dart';
@@ -30,13 +31,23 @@ IconData iconForCategory(String? name) {
 }
 
 const _iconKeywords = <(IconData, List<String>)>[
-  (Icons.checkroom, ['women', 'men', 'apparel', 'clothing', 'dress', 'shirt']),
+  // Order is significant, and these four are first for it. The catalogue's
+  // busiest departments are Women, Men, Kidswear and Toys, and they used to
+  // collapse onto two glyphs -- a hanger for the first two and a toy car for
+  // the second two -- so four adjacent tiles in the picker read as two.
+  //
+  // "women" has to be tested before "men", or every women's department matches
+  // the substring in its own name and comes back as the men's icon.
+  (Icons.woman, ['women', 'ladies', 'lingerie']),
+  (Icons.man, ['men', 'gentlemen']),
+  (Icons.child_care, ['kid', 'child', 'baby', 'infant', 'mother', 'maternal']),
+  (Icons.toys_outlined, ['toy']),
+  (Icons.checkroom, ['apparel', 'clothing', 'dress', 'shirt', 'wear']),
   (Icons.watch, ['watch', 'jewel', 'accessor']),
   (Icons.memory, ['electronic', 'digital', 'computer', 'phone', 'audio']),
   (Icons.chair_outlined, ['home', 'furniture', 'living', 'kitchen', 'garden']),
   (Icons.sports_soccer, ['sport', 'outdoor', 'fitness']),
   (Icons.face_retouching_natural, ['beauty', 'cosmetic', 'personal care']),
-  (Icons.toys_outlined, ['toy', 'baby', 'kid', 'child', 'mother']),
   (Icons.directions_car_outlined, ['auto', 'car', 'motor', 'vehicle']),
   (Icons.build_outlined, ['tool', 'hardware', 'industrial', 'machine']),
   (Icons.pets, ['pet', 'animal']),
@@ -71,7 +82,8 @@ const _palette = [
 ];
 
 /// A catalogue row as a rail card.
-ProductItem toProductItem(Product product, {VoidCallback? onTap}) => ProductItem(
+ProductItem toProductItem(Product product, {VoidCallback? onTap}) =>
+    ProductItem(
       onTap: onTap,
       // Units sold, which is the only popularity signal this catalogue has.
       footnote: product.salesLabel,
@@ -90,52 +102,60 @@ ProductItem toProductItem(Product product, {VoidCallback? onTap}) => ProductItem
     );
 
 CategoryEntry toCategoryEntry(Category category) => CategoryEntry(
-      label: category.name,
-      icon: iconForCategory(category.name),
-      tint: tintForCategory(category.cid),
-      imageUrl: category.imageUrl,
-    );
+  label: category.name,
+  icon: iconForCategory(category.name),
+  tint: tintForCategory(category.cid),
+  imageUrl: category.imageUrl,
+);
 
 DepartmentEntry toDepartmentEntry(Category category) => DepartmentEntry(
-      label: category.name,
-      icon: iconForCategory(category.name),
-      tint: tintForCategory(category.cid),
-      imageUrl: category.imageUrl,
-    );
+  label: category.name,
+  icon: iconForCategory(category.name),
+  tint: tintForCategory(category.cid),
+  imageUrl: category.imageUrl,
+);
 
 /// Opens the product page for a catalogue row.
 ///
 /// One helper rather than the same MaterialPageRoute in six files -- and it is
 /// the place that guarantees the page is always given the row it is about,
 /// instead of whatever product happened to be the default.
-void openProduct(BuildContext context, Product product) {
+/// [deal] is set only by the surfaces that opened it from an offer -- the flash
+/// sale block and the deals page -- so the page can carry the discount, the
+/// deadline and the "was" price through with it. Every other caller passes
+/// nothing and gets the page exactly as it has always been.
+void openProduct(BuildContext context, Product product, {ProductDeal? deal}) {
   Navigator.of(context).push(
-    MaterialPageRoute(builder: (_) => ProductDetailScreen(product: product)),
+    MaterialPageRoute(
+      builder: (_) => ProductDetailScreen(product: product, deal: deal),
+    ),
   );
 }
 
 /// A rail of catalogue rows, each card opening its own product.
-List<ProductItem> toProductItems(BuildContext context, List<Product> products) =>
-    products
-        .map((p) => toProductItem(p, onTap: () => openProduct(context, p)))
-        .toList(growable: false);
+List<ProductItem> toProductItems(
+  BuildContext context,
+  List<Product> products,
+) => products
+    .map((p) => toProductItem(p, onTap: () => openProduct(context, p)))
+    .toList(growable: false);
 
 /// A catalogue row as a search result row.
 SearchResult toSearchResult(Product product) => SearchResult(
-      title: product.title,
-      price: product.displayPrice ?? 0,
-      rating: product.rating ?? 0,
-      reviewCount: 0,
-      icon: iconForCategory(product.categoryName ?? product.parentCategoryName),
-      tint: tintForCategory(product.categoryCid ?? product.numIid),
-      imageUrl: product.imageUrl,
-      // Facts the row actually carries, rather than invented chips: which
-      // department it sits in, how many have sold, and the minimum order for
-      // the wholesale lines where that is the surprise.
-      specs: [
-        if (product.categoryName != null) product.categoryName!,
-        if (product.salesLabel != null) product.salesLabel!,
-        if (product.minOrder > 1) 'Min ${product.minOrder}',
-        if (product.sellerBadge != null) product.sellerBadge!,
-      ],
-    );
+  title: product.title,
+  price: product.displayPrice ?? 0,
+  rating: product.rating ?? 0,
+  reviewCount: 0,
+  icon: iconForCategory(product.categoryName ?? product.parentCategoryName),
+  tint: tintForCategory(product.categoryCid ?? product.numIid),
+  imageUrl: product.imageUrl,
+  // Facts the row actually carries, rather than invented chips: which
+  // department it sits in, how many have sold, and the minimum order for
+  // the wholesale lines where that is the surprise.
+  specs: [
+    if (product.categoryName != null) product.categoryName!,
+    if (product.salesLabel != null) product.salesLabel!,
+    if (product.minOrder > 1) 'Min ${product.minOrder}',
+    if (product.sellerBadge != null) product.sellerBadge!,
+  ],
+);

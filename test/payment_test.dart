@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/l10n/app_strings.dart';
 import 'package:gtradea_amazon/core/l10n/payment_strings.dart';
+import 'package:gtradea_amazon/core/theme/app_theme.dart';
+import 'package:gtradea_amazon/features/checkout/data/payment_outcome.dart';
+import 'package:gtradea_amazon/features/checkout/presentation/payment_result_screen.dart';
 import 'package:gtradea_amazon/core/network/api_client.dart';
 import 'package:gtradea_amazon/features/checkout/data/card_details.dart';
 import 'package:gtradea_amazon/features/checkout/data/payment_method.dart';
@@ -26,16 +29,16 @@ CardDetails card({
   int month = 12,
   int year = 2030,
   String cvv = '123',
-}) =>
-    CardDetails(
-      number: number,
-      holder: holder,
-      expiryMonth: month,
-      expiryYear: year,
-      cvv: cvv,
-    );
+}) => CardDetails(
+  number: number,
+  holder: holder,
+  expiryMonth: month,
+  expiryYear: year,
+  cvv: cvv,
+);
 
 void main() {
+  _resultTitles();
   group('what the shop accepts', () {
     late FakeApi api;
 
@@ -52,26 +55,34 @@ void main() {
       // one means a shopper picks it, enters an address, agrees a total,
       // commits -- and is then refused by a gateway that was never going to
       // accept them.
-      api.on('GET', '/site-settings/active_payment_methods', body: const {
-        'setting_value': {
-          'khalti': {'label': 'Khalti', 'order': 1, 'enabled': true},
-          'cod': {'label': 'Cash on Delivery', 'order': 4, 'enabled': false},
-          'card': {'label': 'Credit Card', 'order': 1, 'enabled': false},
+      api.on(
+        'GET',
+        '/site-settings/active_payment_methods',
+        body: const {
+          'setting_value': {
+            'khalti': {'label': 'Khalti', 'order': 1, 'enabled': true},
+            'cod': {'label': 'Cash on Delivery', 'order': 4, 'enabled': false},
+            'card': {'label': 'Credit Card', 'order': 1, 'enabled': false},
+          },
         },
-      });
+      );
 
       final methods = await PaymentSettingsRepository.instance.methods();
       expect(methods.map((m) => m.id), ['khalti']);
     });
 
     test('methods come back in the shop order, not the app', () async {
-      api.on('GET', '/site-settings/active_payment_methods', body: const {
-        'setting_value': {
-          'connectips': {'label': 'connectIPS', 'order': 2, 'enabled': true},
-          'khalti': {'label': 'Khalti', 'order': 1, 'enabled': true},
-          'esewa': {'label': 'eSewa', 'order': 2, 'enabled': true},
+      api.on(
+        'GET',
+        '/site-settings/active_payment_methods',
+        body: const {
+          'setting_value': {
+            'connectips': {'label': 'connectIPS', 'order': 2, 'enabled': true},
+            'khalti': {'label': 'Khalti', 'order': 1, 'enabled': true},
+            'esewa': {'label': 'eSewa', 'order': 2, 'enabled': true},
+          },
         },
-      });
+      );
 
       final methods = await PaymentSettingsRepository.instance.methods();
       // Khalti first by order; the two sharing order 2 break the tie the same
@@ -80,18 +91,22 @@ void main() {
     });
 
     test('the shop own label, description and badge are used', () async {
-      api.on('GET', '/site-settings/active_payment_methods', body: const {
-        'setting_value': {
-          'khalti': {
-            'label': 'Khalti',
-            'description': 'Pay with Khalti wallet, bank or mobile banking',
-            'badge': 'Recommended',
-            'order': 1,
-            'enabled': true,
-            'isDefault': true,
+      api.on(
+        'GET',
+        '/site-settings/active_payment_methods',
+        body: const {
+          'setting_value': {
+            'khalti': {
+              'label': 'Khalti',
+              'description': 'Pay with Khalti wallet, bank or mobile banking',
+              'badge': 'Recommended',
+              'order': 1,
+              'enabled': true,
+              'isDefault': true,
+            },
           },
         },
-      });
+      );
 
       final method =
           (await PaymentSettingsRepository.instance.methods()).single;
@@ -101,10 +116,30 @@ void main() {
       expect(method.kind, PaymentKind.wallet);
     });
 
-    test('a beta method is hidden from everyone not on the list', () {
-      // Fail-closed. A half-finished integration switched on for its testers
-      // must not appear for anyone else, and least of all for a guest.
+    test('a switched-off beta method is only for its testers', () {
+      // A half-finished integration, open to the people testing it and to
+      // nobody else -- least of all a guest.
       const beta = PaymentMethod(
+        id: 'esewa',
+        label: 'eSewa',
+        description: '',
+        order: 2,
+        enabled: false,
+        betaUserIds: ['user-a'],
+      );
+
+      expect(beta.isVisibleTo('user-a'), isTrue);
+      expect(beta.isVisibleTo('user-b'), isFalse);
+      expect(beta.isVisibleTo(null), isFalse);
+    });
+
+    test('a live method with a beta list is still for everyone', () {
+      // The exact production shape, and the bug this guards: the live config
+      // gives eSewa `enabled: true` *and* a beta list. Reading that list as a
+      // restriction hid a working gateway from every shopper while the website
+      // offered it to all of them. The list widens access, it does not narrow
+      // it -- which is the rule the storefront itself applies.
+      const live = PaymentMethod(
         id: 'esewa',
         label: 'eSewa',
         description: '',
@@ -112,9 +147,56 @@ void main() {
         betaUserIds: ['user-a'],
       );
 
-      expect(beta.isVisibleTo('user-a'), isTrue);
-      expect(beta.isVisibleTo('user-b'), isFalse);
-      expect(beta.isVisibleTo(null), isFalse);
+      expect(live.isVisibleTo('user-b'), isTrue);
+      expect(live.isVisibleTo(null), isTrue);
+    });
+
+    test('a switched-off beta method survives decoding', () async {
+      // It has to reach isVisibleTo for the gate to mean anything. Dropping it
+      // here is what made the beta list unreachable in the first place.
+      api.on(
+        'GET',
+        '/site-settings/active_payment_methods',
+        body: const {
+          'setting_value': {
+            'esewa': {
+              'label': 'eSewa',
+              'order': 2,
+              'enabled': false,
+              'betaUserIds': ['user-a'],
+            },
+          },
+        },
+      );
+
+      final method =
+          (await PaymentSettingsRepository.instance.methods()).single;
+      expect(method.enabled, isFalse);
+      expect(method.isVisibleTo('user-a'), isTrue);
+      expect(method.isVisibleTo('user-b'), isFalse);
+    });
+
+    test('a method this app cannot complete is not offered', () async {
+      // The shop switches methods on for the website, which has handshakes
+      // this app does not. Offering one means a shopper picks it, agrees a
+      // total, taps Pay and is only then told it does not work here.
+      api.on(
+        'GET',
+        '/site-settings/active_payment_methods',
+        body: const {
+          'setting_value': {
+            'khalti': {'label': 'Khalti', 'order': 1, 'enabled': true},
+            'fonepayintent': {
+              'label': 'Checkout by Fonepay',
+              'order': 7,
+              'enabled': true,
+            },
+          },
+        },
+      );
+
+      final methods = await PaymentSettingsRepository.instance.methods();
+      expect(methods.map((m) => m.id), ['khalti']);
     });
 
     test('a method with no beta list is for everyone', () {
@@ -128,16 +210,22 @@ void main() {
     });
 
     test('an unseeded setting is no methods, not a crash', () async {
-      api.on('GET', '/site-settings/active_payment_methods',
-          body: const {'setting_value': null});
+      api.on(
+        'GET',
+        '/site-settings/active_payment_methods',
+        body: const {'setting_value': null},
+      );
 
       expect(await PaymentSettingsRepository.instance.methods(), isEmpty);
     });
 
     test('the advance percentage parses even as a string', () async {
       // The live value is the string "80".
-      api.on('GET', '/site-settings/advance_payment_percent',
-          body: const {'setting_value': '80'});
+      api.on(
+        'GET',
+        '/site-settings/advance_payment_percent',
+        body: const {'setting_value': '80'},
+      );
 
       expect(await PaymentSettingsRepository.instance.advancePercent(), 80);
     });
@@ -145,8 +233,12 @@ void main() {
     test('a missing advance percentage charges the whole amount', () async {
       // The safe default: never ask for less than the order is worth and then
       // bill the difference.
-      api.on('GET', '/site-settings/advance_payment_percent',
-          status: 500, body: const {'error': 'down'});
+      api.on(
+        'GET',
+        '/site-settings/advance_payment_percent',
+        status: 500,
+        body: const {'error': 'down'},
+      );
 
       expect(await PaymentSettingsRepository.instance.advancePercent(), 100);
     });
@@ -354,19 +446,21 @@ void main() {
       expect(SavedPaymentStore.instance.isEmpty, isTrue);
     });
 
-    test('an entry with a full number where the last four belong is rejected',
-        () {
-      // Defence in depth: even if something wrote one, it does not come back.
-      expect(
-        SavedPaymentMethod.fromJson(const {
-          'id': 'x',
-          'last4': _visa,
-          'expiryMonth': 12,
-          'expiryYear': 2030,
-        }),
-        isNull,
-      );
-    });
+    test(
+      'an entry with a full number where the last four belong is rejected',
+      () {
+        // Defence in depth: even if something wrote one, it does not come back.
+        expect(
+          SavedPaymentMethod.fromJson(const {
+            'id': 'x',
+            'last4': _visa,
+            'expiryMonth': 12,
+            'expiryYear': 2030,
+          }),
+          isNull,
+        );
+      },
+    );
   });
 
   group('translations', () {
@@ -392,6 +486,19 @@ void main() {
         contains('GT-1001'),
       );
     });
+
+    test('an abandoned order is not advertised as being in Your orders', () {
+      // Measured against production: the gateway lists only orders that have
+      // been paid for, so an order left at the gateway is not on that screen.
+      // Pointing someone there sends them to an empty list looking for an
+      // order they were just told exists.
+      for (final strings in [PaymentStrings.en, PaymentStrings.ne]) {
+        expect(
+          strings.orderStillExists('GT-1001').toLowerCase(),
+          isNot(anyOf(contains('your orders'), contains('अर्डरहरूबाट'))),
+        );
+      }
+    });
   });
 
   group('the payment methods screen', () {
@@ -402,18 +509,22 @@ void main() {
       SavedPaymentStore.instance.resetForTest();
       api = FakeApi();
       ApiClient.overrideDio = api.dio();
-      api.on('GET', '/site-settings/active_payment_methods', body: const {
-        'setting_value': {
-          'khalti': {
-            'label': 'Khalti',
-            'description': 'Pay with Khalti wallet',
-            'badge': 'Recommended',
-            'order': 1,
-            'enabled': true,
+      api.on(
+        'GET',
+        '/site-settings/active_payment_methods',
+        body: const {
+          'setting_value': {
+            'khalti': {
+              'label': 'Khalti',
+              'description': 'Pay with Khalti wallet',
+              'badge': 'Recommended',
+              'order': 1,
+              'enabled': true,
+            },
+            'cod': {'label': 'Cash on Delivery', 'order': 4, 'enabled': false},
           },
-          'cod': {'label': 'Cash on Delivery', 'order': 4, 'enabled': false},
         },
-      });
+      );
     });
 
     tearDown(() => ApiClient.overrideDio = null);
@@ -436,8 +547,9 @@ void main() {
       expect(find.textContaining(_visa), findsNothing);
     });
 
-    testWidgets('removing a card asks first, and backing out keeps it',
-        (tester) async {
+    testWidgets('removing a card asks first, and backing out keeps it', (
+      tester,
+    ) async {
       SavedPaymentStore.instance.save(SavedPaymentMethod.fromCard(card()));
       await pump(tester);
 
@@ -458,18 +570,21 @@ void main() {
       expect(find.text('No saved cards'), findsOneWidget);
     });
 
-    testWidgets('an expired card is shown and marked, not hidden',
-        (tester) async {
-      SavedPaymentStore.instance
-          .save(SavedPaymentMethod.fromCard(card(month: 1, year: 2020)));
+    testWidgets('an expired card is shown and marked, not hidden', (
+      tester,
+    ) async {
+      SavedPaymentStore.instance.save(
+        SavedPaymentMethod.fromCard(card(month: 1, year: 2020)),
+      );
       await pump(tester);
 
       expect(find.text('Visa •••• •••• •••• 1111'), findsOneWidget);
       expect(find.text('Expired'), findsOneWidget);
     });
 
-    testWidgets('says where a card comes from when there are none',
-        (tester) async {
+    testWidgets('says where a card comes from when there are none', (
+      tester,
+    ) async {
       // There is deliberately no Add button: a card is saved at the moment it
       // is used, so an empty list has to explain itself.
       await pump(tester);
@@ -479,8 +594,9 @@ void main() {
       expect(find.widgetWithText(FilledButton, 'Add card'), findsNothing);
     });
 
-    testWidgets('shows what the shop accepts, and not what it does not',
-        (tester) async {
+    testWidgets('shows what the shop accepts, and not what it does not', (
+      tester,
+    ) async {
       await pump(tester);
 
       expect(find.text('Khalti'), findsOneWidget);
@@ -488,10 +604,15 @@ void main() {
       expect(find.text('Cash on Delivery'), findsNothing);
     });
 
-    testWidgets('a failure to check offers a retry rather than an empty list',
-        (tester) async {
-      api.on('GET', '/site-settings/active_payment_methods',
-          status: 500, body: const {'error': 'settings are down'});
+    testWidgets('a failure to check offers a retry rather than an empty list', (
+      tester,
+    ) async {
+      api.on(
+        'GET',
+        '/site-settings/active_payment_methods',
+        status: 500,
+        body: const {'error': 'settings are down'},
+      );
       await pump(tester);
 
       expect(find.text('settings are down'), findsOneWidget);
@@ -500,8 +621,64 @@ void main() {
 
     testWidgets('says plainly what is never stored', (tester) async {
       await pump(tester);
-      expect(find.textContaining('never stores your card number'),
-          findsOneWidget);
+      expect(
+        find.textContaining('never stores your card number'),
+        findsOneWidget,
+      );
+    });
+  });
+}
+
+/// The result screen calls a refusal what it actually is.
+///
+/// Found in end-to-end testing against production: a cart line with no variant
+/// chosen is refused by the server *before* any payment is attempted, and the
+/// screen announced "Payment failed". A shopper reading that goes looking for a
+/// charge that was never made -- or orders again to be sure, which is the one
+/// mistake this whole screen exists to prevent.
+void _resultTitles() {
+  group('the failure title', () {
+    Widget wrap(PaymentOutcome outcome) => MaterialApp(
+      theme: AppTheme.light,
+      home: PaymentResultScreen(
+        outcome: ValueNotifier<PaymentOutcome>(outcome),
+        onRetry: () {},
+        onChooseAnother: () {},
+        onDone: () {},
+      ),
+    );
+
+    testWidgets('says the order was not placed when none exists', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        wrap(const PaymentFailed(message: 'Pick a variant first.')),
+      );
+      await tester.pump();
+
+      expect(find.text('Order not placed'), findsOneWidget);
+      expect(find.text('Payment failed'), findsNothing);
+      // And the server's own words, which say what to do next.
+      expect(find.text('Pick a variant first.'), findsOneWidget);
+    });
+
+    testWidgets('and says the payment failed once an order exists', (
+      tester,
+    ) async {
+      // The other half: here the order is real and unpaid, which is a
+      // completely different thing to tell somebody.
+      await tester.pumpWidget(
+        wrap(
+          const PaymentFailed(
+            message: 'The bank declined it.',
+            orderNumber: 'GT-1001',
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Payment failed'), findsOneWidget);
+      expect(find.text('Order not placed'), findsNothing);
     });
   });
 }

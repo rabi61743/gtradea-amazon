@@ -102,8 +102,9 @@ class _LanguageOption extends StatelessWidget {
                 children: [
                   Text(
                     language.nativeName,
-                    style: theme.textTheme.bodyLarge
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   // The English name underneath, so the list is navigable by
                   // someone who does not read the script above it.

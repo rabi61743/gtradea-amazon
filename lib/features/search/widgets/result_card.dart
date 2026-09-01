@@ -60,14 +60,13 @@ class ResultCard extends StatelessWidget {
                       result.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(height: 1.25, fontWeight: FontWeight.w500),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        height: 1.25,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     const SizedBox(height: 6),
-                    _Rating(
-                      rating: result.rating,
-                      count: result.reviewCount,
-                    ),
+                    _Rating(rating: result.rating, count: result.reviewCount),
                     const SizedBox(height: 6),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -99,7 +98,7 @@ class ResultCard extends StatelessWidget {
                           Text(
                             '-$discount%',
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: AppColors.success,
+                              color: AppColors.successInk,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
@@ -111,7 +110,7 @@ class ResultCard extends StatelessWidget {
                       Text(
                         'Free delivery',
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: AppColors.success,
+                          color: AppColors.successInk,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -167,8 +166,9 @@ class _Rating extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           '($count)',
-          style: theme.textTheme.labelSmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );
@@ -193,8 +193,9 @@ class _SpecChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: theme.textTheme.labelSmall
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }

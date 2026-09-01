@@ -34,8 +34,10 @@ class CategoryNav extends StatefulWidget {
 
 class _CategoryNavState extends State<CategoryNav> {
   final _controller = ScrollController();
-  late final List<GlobalKey> _keys =
-      List.generate(widget.departments.length, (_) => GlobalKey());
+  late final List<GlobalKey> _keys = List.generate(
+    widget.departments.length,
+    (_) => GlobalKey(),
+  );
 
   @override
   void didUpdateWidget(CategoryNav oldWidget) {
@@ -165,7 +167,9 @@ class _NavItem extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
             color: isActive ? tint.withValues(alpha: 0.13) : Colors.transparent,
             border: Border.all(
-              color: isActive ? tint.withValues(alpha: 0.55) : theme.colorScheme.outlineVariant,
+              color: isActive
+                  ? tint.withValues(alpha: 0.55)
+                  : theme.colorScheme.outlineVariant,
             ),
           ),
           child: Row(
@@ -185,11 +189,13 @@ class _NavItem extends StatelessWidget {
                   curve: Curves.easeOut,
                   style: (theme.textTheme.labelLarge ?? const TextStyle())
                       .copyWith(
-                    fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
-                    color: isActive
-                        ? tint
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
+                        fontWeight: isActive
+                            ? FontWeight.w800
+                            : FontWeight.w500,
+                        color: isActive
+                            ? tint
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
                   child: Text(
                     label,
                     maxLines: 1,

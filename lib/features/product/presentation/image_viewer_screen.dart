@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/images/app_images.dart';
+
 /// Full-screen image viewer: swipe between shots, pinch or double-tap to zoom,
 /// drag down to dismiss.
 ///
@@ -21,8 +23,9 @@ class ImageViewerScreen extends StatefulWidget {
 }
 
 class _ImageViewerScreenState extends State<ImageViewerScreen> {
-  late final PageController _controller =
-      PageController(initialPage: widget.initialIndex);
+  late final PageController _controller = PageController(
+    initialPage: widget.initialIndex,
+  );
   late int _index = widget.initialIndex;
 
   /// One controller per page so zoom resets when the shopper moves on, and so
@@ -96,8 +99,12 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                   maxScale: 4,
                   onInteractionEnd: (_) => setState(() {}),
                   child: Center(
-                    child: Image.network(
-                      widget.images[i],
+                    // The original file, deliberately. This is the zoom view --
+                    // the one surface where someone is looking closely, so a
+                    // downscaled variant is the wrong answer however much
+                    // smaller it is.
+                    child: Image(
+                      image: AppImages.of(widget.images[i]),
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stack) => const Icon(
                         Icons.image_not_supported_outlined,
@@ -106,15 +113,15 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                       ),
                       loadingBuilder: (context, child, progress) =>
                           progress == null
-                              ? child
-                              : const SizedBox(
-                                  width: 28,
-                                  height: 28,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white70,
-                                  ),
-                                ),
+                          ? child
+                          : const SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white70,
+                              ),
+                            ),
                     ),
                   ),
                 ),

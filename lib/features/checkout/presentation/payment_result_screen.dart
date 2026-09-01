@@ -54,30 +54,32 @@ class PaymentResultScreen extends StatelessWidget {
             child: ValueListenableBuilder<PaymentOutcome>(
               valueListenable: outcome,
               builder: (context, outcome, _) => SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: switch (outcome) {
-                PaymentIdle() => const SizedBox.shrink(),
-                PaymentInProgress(:final message) => _Working(message: message),
-                final PaymentSucceeded success => _Success(
+                padding: const EdgeInsets.all(24),
+                child: switch (outcome) {
+                  PaymentIdle() => const SizedBox.shrink(),
+                  PaymentInProgress(:final message) => _Working(
+                    message: message,
+                  ),
+                  final PaymentSucceeded success => _Success(
                     outcome: success,
                     strings: strings,
                     theme: theme,
                     onDone: onDone,
                   ),
-                final PaymentFailed failed => _Failed(
+                  final PaymentFailed failed => _Failed(
                     outcome: failed,
                     strings: strings,
                     onRetry: onRetry,
                     onChooseAnother: onChooseAnother,
                   ),
-                final PaymentCancelled cancelled => _Cancelled(
+                  final PaymentCancelled cancelled => _Cancelled(
                     outcome: cancelled,
                     strings: strings,
                     onRetry: onRetry,
                     onChooseAnother: onChooseAnother,
                   ),
-              },
-            ),
+                },
+              ),
             ),
           ),
         ),
@@ -135,13 +137,14 @@ class _Success extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const _Emblem(icon: Icons.check_circle, colour: AppColors.success),
+        const _Emblem(icon: Icons.check_circle, colour: AppColors.successInk),
         const SizedBox(height: 16),
         Text(
           outcome.paidNow ? strings.paymentSuccessful : strings.orderPlaced,
           textAlign: TextAlign.center,
-          style: theme.textTheme.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
         ),
         const SizedBox(height: 6),
         Text(
@@ -207,10 +210,23 @@ class _Failed extends StatelessWidget {
         _Emblem(icon: Icons.error_outline, colour: theme.colorScheme.error),
         const SizedBox(height: 16),
         Text(
-          strings.paymentFailed,
+          // What actually happened. An order refused *before* payment is not a
+          // failed payment: nothing was attempted and nothing was charged, and
+          // "Payment failed" sends a shopper looking for a charge that was
+          // never made -- or worse, ordering again to be sure.
+          //
+          // The order number is what tells the two apart. It is set only once
+          // the order exists, which is only ever after the server accepted it.
+          // Found in end-to-end testing: a cart line with no variant chosen is
+          // refused by the server, and the screen called that a payment
+          // failure.
+          outcome.orderNumber == null
+              ? strings.orderNotPlaced
+              : strings.paymentFailed,
           textAlign: TextAlign.center,
-          style: theme.textTheme.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
         ),
         const SizedBox(height: 8),
         Text(
@@ -277,8 +293,9 @@ class _Cancelled extends StatelessWidget {
         Text(
           strings.paymentCancelled,
           textAlign: TextAlign.center,
-          style: theme.textTheme.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
         ),
         const SizedBox(height: 8),
         Text(
@@ -371,8 +388,9 @@ class _Line extends StatelessWidget {
     final theme = Theme.of(context);
     final style = bold
         ? theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w800)
-        : theme.textTheme.bodyMedium
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+        : theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          );
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

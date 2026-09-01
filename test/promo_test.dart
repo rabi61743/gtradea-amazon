@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+
 import 'support/auth.dart';
+
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/cart/presentation/cart_screen.dart';
 import 'package:gtradea_amazon/features/promo/data/coupon.dart';
@@ -107,8 +109,10 @@ void main() {
 
   group('applying a code', () {
     test('a good code goes on and reports what it saved', () {
-      final outcome =
-          CouponStore.instance.apply('DASHAIN20', [_jacket, _headphones]);
+      final outcome = CouponStore.instance.apply('DASHAIN20', [
+        _jacket,
+        _headphones,
+      ]);
 
       expect(outcome, isA<CouponApplied>());
       expect((outcome as CouponApplied).discount, 500);
@@ -116,10 +120,10 @@ void main() {
     });
 
     test('lower case and stray spaces still work', () {
-      final outcome = CouponStore.instance.apply(
-        '  dashain20 ',
-        [_jacket, _headphones],
-      );
+      final outcome = CouponStore.instance.apply('  dashain20 ', [
+        _jacket,
+        _headphones,
+      ]);
       expect(outcome, isA<CouponApplied>());
     });
 
@@ -137,8 +141,10 @@ void main() {
 
     test('a spent code is refused as already used', () {
       CouponStore.instance.redeem('DASHAIN20');
-      final outcome =
-          CouponStore.instance.apply('DASHAIN20', [_jacket, _headphones]);
+      final outcome = CouponStore.instance.apply('DASHAIN20', [
+        _jacket,
+        _headphones,
+      ]);
       expect(outcome, isA<CouponAlreadyUsed>());
     });
 
@@ -156,28 +162,34 @@ void main() {
       expect(outcome, isA<CouponNotApplicable>());
     });
 
-    test('the minimum is judged on the whole basket, not the eligible part',
-        () {
-      // FASHION15 needs an order of 1,000. The jacket alone is 1,130, so it
-      // qualifies -- and the discount still only touches the jacket.
-      final outcome = CouponStore.instance.apply('FASHION15', [_jacket]);
-      expect(outcome, isA<CouponApplied>());
-      expect((outcome as CouponApplied).discount, 170);
-    });
+    test(
+      'the minimum is judged on the whole basket, not the eligible part',
+      () {
+        // FASHION15 needs an order of 1,000. The jacket alone is 1,130, so it
+        // qualifies -- and the discount still only touches the jacket.
+        final outcome = CouponStore.instance.apply('FASHION15', [_jacket]);
+        expect(outcome, isA<CouponApplied>());
+        expect((outcome as CouponApplied).discount, 170);
+      },
+    );
 
     test('a second code is refused while one is on', () {
       CouponStore.instance.apply('DASHAIN20', [_jacket, _headphones]);
-      final outcome =
-          CouponStore.instance.apply('WELCOME200', [_jacket, _headphones]);
+      final outcome = CouponStore.instance.apply('WELCOME200', [
+        _jacket,
+        _headphones,
+      ]);
 
       expect(outcome, isA<CouponConflict>());
       expect((outcome as CouponConflict).existing.code, 'DASHAIN20');
-      expect(CouponStore.instance.applied?.code, 'DASHAIN20',
-          reason: 'the first one stays put');
+      expect(
+        CouponStore.instance.applied?.code,
+        'DASHAIN20',
+        reason: 'the first one stays put',
+      );
     });
 
-    test('the conflict is reported before anything else about the new code',
-        () {
+    test('the conflict is reported before anything else about the new code', () {
       CouponStore.instance.apply('DASHAIN20', [_jacket, _headphones]);
       // TIHAR50 is expired too. Saying so would send the shopper hunting for a
       // third code when the real problem is the one already applied.
@@ -187,8 +199,10 @@ void main() {
 
     test('reapplying the code already on is not a conflict', () {
       CouponStore.instance.apply('DASHAIN20', [_jacket, _headphones]);
-      final outcome =
-          CouponStore.instance.apply('DASHAIN20', [_jacket, _headphones]);
+      final outcome = CouponStore.instance.apply('DASHAIN20', [
+        _jacket,
+        _headphones,
+      ]);
       expect(outcome, isA<CouponApplied>());
     });
 
@@ -255,8 +269,11 @@ void main() {
 
     test('a zero discount does not claim a code', () {
       final totals = CartTotals.of([_jacket], discount: 0, couponCode: 'X');
-      expect(totals.couponCode, isNull,
-          reason: 'a named line taking off nothing reads as a bug');
+      expect(
+        totals.couponCode,
+        isNull,
+        reason: 'a named line taking off nothing reads as a bug',
+      );
     });
 
     test('savings and discount stay separate', () {
@@ -275,7 +292,9 @@ void main() {
       final totals = CartStore.instance.totals;
       expect(totals.discount, 500);
       expect(totals.couponCode, 'DASHAIN20');
-      expect(totals.total, 5130 - 500 + CartStore.deliveryFee);
+      // Goods less the discount. No delivery is added until the server has
+      // quoted one, which it has not here.
+      expect(totals.total, 5130 - 500);
     });
   });
 
@@ -317,16 +336,22 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
-      expect(CouponStore.instance.hasUsed('DASHAIN20'), isTrue,
-          reason: 'creating an account is not a way to claim it twice');
+      expect(
+        CouponStore.instance.hasUsed('DASHAIN20'),
+        isTrue,
+        reason: 'creating an account is not a way to claim it twice',
+      );
     });
 
     test('redeeming takes the code off the basket', () {
       CouponStore.instance.apply('DASHAIN20', [_jacket, _headphones]);
       CouponStore.instance.redeem('DASHAIN20');
 
-      expect(CouponStore.instance.hasApplied, isFalse,
-          reason: 'the next order must not silently reuse it');
+      expect(
+        CouponStore.instance.hasApplied,
+        isFalse,
+        reason: 'the next order must not silently reuse it',
+      );
     });
   });
 
@@ -347,8 +372,9 @@ void main() {
       expect(find.text('View offers'), findsOneWidget);
     });
 
-    testWidgets('Apply is dead until there is something to apply',
-        (tester) async {
+    testWidgets('Apply is dead until there is something to apply', (
+      tester,
+    ) async {
       CartStore.instance.add(_jacket);
       await pumpCart(tester);
 
@@ -371,7 +397,11 @@ void main() {
       CartStore.instance.add(_headphones);
       await pumpCart(tester);
 
-      expect(find.text('Rs. 5,230'), findsWidgets, reason: '5,130 plus 100');
+      expect(
+        find.text('Rs. 5,130'),
+        findsWidgets,
+        reason: 'goods only; freight is not quoted yet',
+      );
 
       await tester.enterText(find.byType(TextField).last, 'DASHAIN20');
       // Apply is disabled until the field has something in it, so the button
@@ -383,7 +413,7 @@ void main() {
       expect(find.textContaining('DASHAIN20 applied'), findsOneWidget);
       expect(find.text('Coupon DASHAIN20'), findsOneWidget);
       expect(find.text('-Rs. 500'), findsOneWidget);
-      expect(find.text('Rs. 4,730'), findsWidgets, reason: '5,230 less 500');
+      expect(find.text('Rs. 4,630'), findsWidgets, reason: '5,130 less 500');
     });
 
     testWidgets('a refused code says why, in words that help', (tester) async {
@@ -401,8 +431,9 @@ void main() {
       expect(find.text('Coupon WELCOME200'), findsNothing);
     });
 
-    testWidgets('an applied code can be removed and the total goes back',
-        (tester) async {
+    testWidgets('an applied code can be removed and the total goes back', (
+      tester,
+    ) async {
       CartStore.instance.add(_jacket);
       CartStore.instance.add(_headphones);
       await pumpCart(tester);
@@ -419,11 +450,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Coupon DASHAIN20'), findsNothing);
-      expect(find.text('Rs. 5,230'), findsWidgets);
+      expect(find.text('Rs. 5,130'), findsWidgets);
     });
 
-    testWidgets('emptying the cart under a coupon drops it and says so',
-        (tester) async {
+    testWidgets('emptying the cart under a coupon drops it and says so', (
+      tester,
+    ) async {
       CartStore.instance.add(_jacket);
       CartStore.instance.add(_headphones);
       await pumpCart(tester);
@@ -449,12 +481,13 @@ void main() {
   });
 
   group('the offers sheet', () {
-    testWidgets('shows the terms on the card, not behind a link',
-        (tester) async {
+    testWidgets('shows the terms on the card, not behind a link', (
+      tester,
+    ) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(
-        const Scaffold(body: CouponSheet(lines: [_jacket, _headphones])),
-      ));
+      await tester.pumpWidget(
+        _wrap(const Scaffold(body: CouponSheet(lines: [_jacket, _headphones]))),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('DASHAIN20'), findsOneWidget);
@@ -466,13 +499,14 @@ void main() {
       expect(find.text('One per shopper'), findsWidgets);
     });
 
-    testWidgets('an offer that cannot be used says why on its own card',
-        (tester) async {
+    testWidgets('an offer that cannot be used says why on its own card', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       // A jacket only: WELCOME200 needs 2,000 and ELECTRO10 needs electronics.
-      await tester.pumpWidget(_wrap(
-        const Scaffold(body: CouponSheet(lines: [_jacket])),
-      ));
+      await tester.pumpWidget(
+        _wrap(const Scaffold(body: CouponSheet(lines: [_jacket]))),
+      );
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Add Rs. 870 more'), findsOneWidget);
@@ -482,9 +516,9 @@ void main() {
 
     testWidgets('a usable offer shows what it would save', (tester) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(
-        const Scaffold(body: CouponSheet(lines: [_jacket, _headphones])),
-      ));
+      await tester.pumpWidget(
+        _wrap(const Scaffold(body: CouponSheet(lines: [_jacket, _headphones]))),
+      );
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Saves Rs. 500'), findsOneWidget);
@@ -494,21 +528,23 @@ void main() {
       _useTallWindow(tester);
       String? chosen;
 
-      await tester.pumpWidget(_wrap(
-        Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () async {
-                chosen = await CouponSheet.show(
-                  context,
-                  lines: const [_jacket, _headphones],
-                );
-              },
-              child: const Text('open'),
+      await tester.pumpWidget(
+        _wrap(
+          Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  chosen = await CouponSheet.show(
+                    context,
+                    lines: const [_jacket, _headphones],
+                  );
+                },
+                child: const Text('open'),
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 

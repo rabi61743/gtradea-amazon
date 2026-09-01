@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/network/api_error.dart';
+import '../../../shared/widgets/brand_wordmark.dart';
 import '../data/auth_store.dart';
 
 /// Which half of the screen opens first.
@@ -86,7 +87,8 @@ class _AuthScreenState extends State<AuthScreen> {
             _busy = false;
             _mode = AuthMode.signIn;
             _password.clear();
-            _notice = 'Account created. Check ${_email.text.trim()} for the '
+            _notice =
+                'Account created. Check ${_email.text.trim()} for the '
                 'confirmation link, then sign in.';
           });
           return;
@@ -169,9 +171,10 @@ class _AuthScreenState extends State<AuthScreen> {
             _ModeToggle(mode: _mode, onChanged: _busy ? null : _switchTo),
             const SizedBox(height: 24),
             Text(
-              _isSignUp ? 'Join GtradeA' : 'Welcome back',
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              _isSignUp ? 'Join ${AppBrand.name}' : 'Welcome back',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -267,12 +270,13 @@ class _AuthScreenState extends State<AuthScreen> {
               child: TextButton(
                 onPressed: _busy
                     ? null
-                    : () =>
-                        _switchTo(_isSignUp ? AuthMode.signIn : AuthMode.signUp),
+                    : () => _switchTo(
+                        _isSignUp ? AuthMode.signIn : AuthMode.signUp,
+                      ),
                 child: Text(
                   _isSignUp
                       ? 'Already have an account? Sign in'
-                      : 'New to GtradeA? Create an account',
+                      : 'New to ${AppBrand.name}? Create an account',
                 ),
               ),
             ),
@@ -327,8 +331,8 @@ class _Banner extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style:
-                  Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.35),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(height: 1.35),
             ),
           ),
         ],
@@ -411,8 +415,9 @@ class _ModeToggle extends StatelessWidget {
       ],
       selected: {mode},
       showSelectedIcon: false,
-      onSelectionChanged:
-          onChanged == null ? null : (selection) => onChanged!(selection.first),
+      onSelectionChanged: onChanged == null
+          ? null
+          : (selection) => onChanged!(selection.first),
     );
   }
 }

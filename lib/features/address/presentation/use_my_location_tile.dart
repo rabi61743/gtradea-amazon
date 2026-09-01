@@ -89,12 +89,12 @@ class _UseMyLocationTileState extends State<UseMyLocationTile>
 
     switch (result) {
       case DetectResolved(
-          :final city,
-          :final province,
-          :final addressLine,
-          :final postalCode,
-          :final isApproximate,
-        ):
+        :final city,
+        :final province,
+        :final addressLine,
+        :final postalCode,
+        :final isApproximate,
+      ):
         setState(() => _problem = null);
         // Nothing is said in a snack bar here: onDetected opens a sheet over
         // this one in the same frame, and the message would be drawn
@@ -178,8 +178,9 @@ class _Tile extends StatelessWidget {
                   : DecoratedBox(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color:
-                            theme.colorScheme.primary.withValues(alpha: 0.14),
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.14,
+                        ),
                       ),
                       child: Icon(
                         Icons.my_location,
@@ -280,10 +281,7 @@ class _Problem extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              FilledButton.tonal(
-                onPressed: action,
-                child: Text(actionLabel),
-              ),
+              FilledButton.tonal(onPressed: action, child: Text(actionLabel)),
               // Only when the primary action is something else. Four of these
               // states already retry, and two identical buttons side by side
               // reads as a rendering bug.
@@ -299,7 +297,7 @@ class _Problem extends StatelessWidget {
   }
 
   (String message, String actionLabel, VoidCallback action, bool blocking)
-      _describe() {
+  _describe() {
     switch (result) {
       case DetectServiceDisabled():
         return (

@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+
 import 'support/api.dart';
 import 'support/auth.dart';
+
 import 'package:gtradea_amazon/features/orders/data/orders_repository.dart';
+
 import 'support/orders.dart';
+
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/orders/data/order_store.dart';
 import 'package:gtradea_amazon/features/orders/presentation/order_detail_screen.dart';
@@ -114,7 +118,11 @@ void main() {
           {
             'timeline': [
               {'stage': 'TRANSIT', 'label': 'In transit', 'status': 'done'},
-              {'stage': 'CUSTOMS_HELD', 'label': 'At customs', 'status': 'done'},
+              {
+                'stage': 'CUSTOMS_HELD',
+                'label': 'At customs',
+                'status': 'done',
+              },
             ],
           },
         ],
@@ -126,9 +134,11 @@ void main() {
     test('an unfamiliar step status counts as not reached', () {
       // The only enum on the wire in this domain. Decoded strictly it would
       // throw and blank the whole tracking screen.
-      final step = TrackingStep.fromJson(
-        const {'stage': 'TRANSIT', 'label': 'x', 'status': 'quantum'},
-      );
+      final step = TrackingStep.fromJson(const {
+        'stage': 'TRANSIT',
+        'label': 'x',
+        'status': 'quantum',
+      });
       expect(step.state, TrackingStepState.upcoming);
     });
 
@@ -168,27 +178,29 @@ void main() {
       expect(first.id, isNot(second.id));
     });
 
-    test('two orders placed in the same millisecond still get distinct ids',
-        () {
-      final when = DateTime(2026, 8, 23, 12);
-      final a = OrderStore.instance.place(
-        lines: const [_jacket],
-        delivery: 0,
-        recipient: 'Rabi',
-        address: 'x',
-        paymentState: PaymentState.paid,
-        placedAt: when,
-      );
-      final b = OrderStore.instance.place(
-        lines: const [_dress],
-        delivery: 0,
-        recipient: 'Rabi',
-        address: 'x',
-        paymentState: PaymentState.paid,
-        placedAt: when,
-      );
-      expect(a.id, isNot(b.id));
-    });
+    test(
+      'two orders placed in the same millisecond still get distinct ids',
+      () {
+        final when = DateTime(2026, 8, 23, 12);
+        final a = OrderStore.instance.place(
+          lines: const [_jacket],
+          delivery: 0,
+          recipient: 'Rabi',
+          address: 'x',
+          paymentState: PaymentState.paid,
+          placedAt: when,
+        );
+        final b = OrderStore.instance.place(
+          lines: const [_dress],
+          delivery: 0,
+          recipient: 'Rabi',
+          address: 'x',
+          paymentState: PaymentState.paid,
+          placedAt: when,
+        );
+        expect(a.id, isNot(b.id));
+      },
+    );
 
     test('totals come from the frozen lines and the frozen delivery', () {
       final order = OrderStore.instance.place(
@@ -220,8 +232,10 @@ void main() {
       expect(reloaded.recipient, 'Rabi');
       // The stage survives a restart because the server's own status is cached
       // alongside the order, not re-derived from a clock.
-      expect(reloaded.stage().index,
-          greaterThanOrEqualTo(OrderStage.packed.index));
+      expect(
+        reloaded.stage().index,
+        greaterThanOrEqualTo(OrderStage.packed.index),
+      );
     });
 
     test('a corrupt history degrades to none rather than throwing', () async {
@@ -235,8 +249,8 @@ void main() {
       SharedPreferences.setMockInitialValues({
         'gtradea_orders':
             '[{"id":"GT1","placedAt":1,"lines":[]},'
-                '{"id":"GT2","placedAt":2,"lines":'
-                '[{"productId":"a","title":"A","unitPrice":5}]}]',
+            '{"id":"GT2","placedAt":2,"lines":'
+            '[{"productId":"a","title":"A","unitPrice":5}]}]',
       });
       OrderStore.instance.resetForTest();
       await OrderStore.instance.load();
@@ -254,8 +268,11 @@ void main() {
 
       expect(OrderStore.instance.count, 1);
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString('gtradea_orders'), isNull,
-          reason: 'the guest copy is cleared once carried over');
+      expect(
+        prefs.getString('gtradea_orders'),
+        isNull,
+        reason: 'the guest copy is cleared once carried over',
+      );
     });
   });
 
@@ -264,12 +281,18 @@ void main() {
       final early = _at(OrderStage.placed);
       expect(early.canCancel(), isTrue);
       expect(OrderStore.instance.cancel(early.id), isTrue);
-      expect(OrderStore.instance.byId(early.id)!.outcome, OrderOutcome.cancelled);
+      expect(
+        OrderStore.instance.byId(early.id)!.outcome,
+        OrderOutcome.cancelled,
+      );
 
       final shipped = _at(OrderStage.shipped, status: 'shipped');
       expect(shipped.canCancel(), isFalse);
-      expect(OrderStore.instance.cancel(shipped.id), isFalse,
-          reason: 'the parcel has already gone');
+      expect(
+        OrderStore.instance.cancel(shipped.id),
+        isFalse,
+        reason: 'the parcel has already gone',
+      );
       expect(OrderStore.instance.byId(shipped.id)!.outcome, isNull);
     });
 
@@ -279,8 +302,10 @@ void main() {
       final cancelled = OrderStore.instance.byId(order.id)!;
 
       // Time keeps passing, but a cancelled parcel does not go on to ship.
-      expect(cancelled.stage(DateTime.now().add(const Duration(days: 1))),
-          OrderStage.packed);
+      expect(
+        cancelled.stage(DateTime.now().add(const Duration(days: 1))),
+        OrderStage.packed,
+      );
       expect(cancelled.statusLabel(), 'Cancelled');
       expect(cancelled.isSettled(), isTrue);
     });
@@ -300,7 +325,10 @@ void main() {
       final order = _at(OrderStage.placed);
       OrderStore.instance.cancel(order.id);
       expect(OrderStore.instance.requestReturn(order.id), isFalse);
-      expect(OrderStore.instance.byId(order.id)!.outcome, OrderOutcome.cancelled);
+      expect(
+        OrderStore.instance.byId(order.id)!.outcome,
+        OrderOutcome.cancelled,
+      );
     });
 
     test('a failed order reports a failed payment too', () {
@@ -331,7 +359,10 @@ void main() {
 
       OrderStore.instance.resetForTest();
       await OrderStore.instance.load();
-      expect(OrderStore.instance.byId(order.id)!.outcome, OrderOutcome.cancelled);
+      expect(
+        OrderStore.instance.byId(order.id)!.outcome,
+        OrderOutcome.cancelled,
+      );
     });
   });
 
@@ -339,7 +370,10 @@ void main() {
     test('appears only once there is a parcel with a courier', () {
       expect(_at(OrderStage.placed).trackingNumber(), isNull);
       expect(_at(OrderStage.packed).trackingNumber(), isNull);
-      expect(_at(OrderStage.shipped, status: 'shipped').trackingNumber(), isNotNull);
+      expect(
+        _at(OrderStage.shipped, status: 'shipped').trackingNumber(),
+        isNotNull,
+      );
     });
   });
 
@@ -379,8 +413,9 @@ void main() {
   });
 
   group('OrderDetailScreen', () {
-    testWidgets('shows every stage, dates, items, address and payment',
-        (tester) async {
+    testWidgets('shows every stage, dates, items, address and payment', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       final order = _at(OrderStage.delivered, status: 'delivered');
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));
@@ -399,8 +434,9 @@ void main() {
       expect(find.text('SHIP-77'), findsOneWidget);
     });
 
-    testWidgets('hides tracking until something has been dispatched',
-        (tester) async {
+    testWidgets('hides tracking until something has been dispatched', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       final order = _at(OrderStage.placed);
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));
@@ -413,8 +449,9 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
-    testWidgets('offers Cancel early and Return once delivered',
-        (tester) async {
+    testWidgets('offers Cancel early and Return once delivered', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       final early = _at(OrderStage.placed);
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: early.id)));
@@ -430,16 +467,19 @@ void main() {
       expect(find.text('Cancel order'), findsNothing);
     });
 
-    testWidgets('cancelling asks first and then shows the cancelled state',
-        (tester) async {
+    testWidgets('cancelling asks first and then shows the cancelled state', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       // Cancelling asks the server, and the server's answer is what the screen
       // shows -- it does not mark the order cancelled on its own say-so.
       final api = stubCatalog()
         ..on('POST', '/order-cancellations', status: 201, body: const {})
-        ..on('GET', '/orders', body: [
-          orderJson(status: 'cancelled', paymentStatus: 'refunded'),
-        ]);
+        ..on(
+          'GET',
+          '/orders',
+          body: [orderJson(status: 'cancelled', paymentStatus: 'refunded')],
+        );
       signInForTest();
 
       final order = _at(OrderStage.placed);
@@ -456,15 +496,18 @@ void main() {
 
       expect(api.calls.any((c) => c.path == '/order-cancellations'), isTrue);
 
-      expect(OrderStore.instance.byId(order.id)!.outcome,
-          OrderOutcome.cancelled);
+      expect(
+        OrderStore.instance.byId(order.id)!.outcome,
+        OrderOutcome.cancelled,
+      );
       expect(find.textContaining('Nothing will be delivered'), findsOneWidget);
       // The action is gone: a cancelled order cannot be cancelled again.
       expect(find.text('Cancel order'), findsNothing);
     });
 
-    testWidgets('backing out of the cancel dialog keeps the order',
-        (tester) async {
+    testWidgets('backing out of the cancel dialog keeps the order', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       final order = _at(OrderStage.placed);
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));
@@ -498,8 +541,9 @@ void main() {
       expect(find.text('Out for delivery'), findsNothing);
     });
 
-    testWidgets('a returned order says so and offers no further action',
-        (tester) async {
+    testWidgets('a returned order says so and offers no further action', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       final order = _at(OrderStage.delivered, status: 'delivered');
       OrderStore.instance.requestReturn(order.id);
@@ -512,8 +556,9 @@ void main() {
       expect(find.text('Request a return'), findsNothing);
     });
 
-    testWidgets('an order that no longer exists says so rather than crashing',
-        (tester) async {
+    testWidgets('an order that no longer exists says so rather than crashing', (
+      tester,
+    ) async {
       await tester.pumpWidget(_wrap(const OrderDetailScreen(orderId: 'nope')));
       await tester.pumpAndSettle();
       expect(find.text('This order is no longer available'), findsOneWidget);

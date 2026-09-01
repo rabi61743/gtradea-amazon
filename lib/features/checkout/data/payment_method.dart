@@ -34,12 +34,12 @@ enum PaymentKind {
   }
 
   IconData get icon => switch (this) {
-        PaymentKind.wallet => Icons.account_balance_wallet_outlined,
-        PaymentKind.bank => Icons.account_balance_outlined,
-        PaymentKind.card => Icons.credit_card,
-        PaymentKind.cashOnDelivery => Icons.local_shipping_outlined,
-        PaymentKind.other => Icons.payments_outlined,
-      };
+    PaymentKind.wallet => Icons.account_balance_wallet_outlined,
+    PaymentKind.bank => Icons.account_balance_outlined,
+    PaymentKind.card => Icons.credit_card,
+    PaymentKind.cashOnDelivery => Icons.local_shipping_outlined,
+    PaymentKind.other => Icons.payments_outlined,
+  };
 }
 
 /// One way to pay, as the storefront has it configured.
@@ -58,6 +58,7 @@ class PaymentMethod {
     this.badge,
     this.isDefault = false,
     this.betaUserIds = const [],
+    this.enabled = true,
   });
 
   /// The gateway path segment: khalti, esewa, connectips, cod.
@@ -75,25 +76,33 @@ class PaymentMethod {
 
   final bool isDefault;
 
-  /// When non-empty, only these accounts see the method. A half-finished
-  /// integration is switched on for the people testing it and nobody else.
+  /// Accounts that see the method even while it is switched off. A
+  /// half-finished integration is opened to the people testing it, and to
+  /// nobody else, until it goes live for everyone.
+  ///
+  /// It **widens** access rather than restricting it -- see [isVisibleTo].
   final List<String> betaUserIds;
+
+  /// Whether the shop has this switched on for everyone.
+  final bool enabled;
 
   PaymentKind get kind => PaymentKind.of(id);
 
   /// Whether [userId] is allowed to see this.
   ///
-  /// Fail-closed: a beta method with no signed-in user is hidden. Showing one
-  /// that then refuses at the gateway is worse than not offering it.
-  bool isVisibleTo(String? userId) {
-    if (betaUserIds.isEmpty) return true;
-    return userId != null && betaUserIds.contains(userId);
-  }
+  /// Switched on, or a tester of something not switched on yet. This is the
+  /// storefront's own rule, and matching it is load-bearing: the live config
+  /// gives eSewa `enabled: true` *and* a beta list, and reading that list as a
+  /// restriction hid a working, fully implemented gateway from every shopper
+  /// while the website offered it to all of them.
+  bool isVisibleTo(String? userId) =>
+      enabled || (userId != null && betaUserIds.contains(userId));
 
   factory PaymentMethod.fromJson(String id, Map<String, dynamic> json) {
     final beta = json['betaUserIds'];
     return PaymentMethod(
       id: id,
+      enabled: asBool(json['enabled']),
       label: asString(json['label']) ?? id,
       description: asString(json['description']) ?? '',
       order: asInt(json['order']) ?? 99,
@@ -108,8 +117,11 @@ class PaymentMethod {
 
 /// Decodes the whole `active_payment_methods` map.
 ///
-/// Anything not `enabled` is dropped here rather than filtered later, so there
-/// is no path by which a switched-off method reaches a screen.
+/// A method that is switched off and has no testers is dropped here, so there
+/// is no path by which it reaches a screen. One with a beta list survives --
+/// it is not for everyone, but it is for someone, and only [PaymentMethod
+/// .isVisibleTo] knows who is signed in. Dropping it here is what made the
+/// beta gate unreachable.
 List<PaymentMethod> decodePaymentMethods(Object? raw) {
   final map = asMap(raw);
   final methods = <PaymentMethod>[];
@@ -117,7 +129,9 @@ List<PaymentMethod> decodePaymentMethods(Object? raw) {
   for (final entry in map.entries) {
     final config = asMap(entry.value);
     if (config.isEmpty) continue;
-    if (!asBool(config['enabled'])) continue;
+    final beta = config['betaUserIds'];
+    final hasTesters = beta is List && beta.isNotEmpty;
+    if (!asBool(config['enabled']) && !hasTesters) continue;
     methods.add(PaymentMethod.fromJson(entry.key, config));
   }
 

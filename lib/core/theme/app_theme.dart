@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'colors.dart';
 
@@ -16,6 +17,18 @@ class AppTheme {
   static const double radiusCard = 12;
   static const double radiusControl = 8;
 
+  /// Status bar styling for a screen whose top band is the brand teal.
+  ///
+  /// Nothing set this before, so the platform default applied: dark icons on a
+  /// dark band, all but invisible. Both brightness fields are set because they
+  /// mean opposite things -- on Android it names the icon colour, on iOS it
+  /// names the background the icons are drawn against.
+  static const SystemUiOverlayStyle brandBandOverlay = SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+  );
+
   static ThemeData get light => _build(Brightness.light);
   static ThemeData get dark => _build(Brightness.dark);
 
@@ -23,17 +36,20 @@ class AppTheme {
     final isLight = brightness == Brightness.light;
 
     final primary = isLight ? AppColors.primaryLight : AppColors.primaryDark;
-    final background =
-        isLight ? AppColors.backgroundLight : AppColors.backgroundDark;
-    final foreground =
-        isLight ? AppColors.foregroundLight : AppColors.foregroundDark;
+    final background = isLight
+        ? AppColors.backgroundLight
+        : AppColors.backgroundDark;
+    final foreground = isLight
+        ? AppColors.foregroundLight
+        : AppColors.foregroundDark;
     final muted = isLight ? AppColors.mutedLight : AppColors.mutedDark;
     final mutedFg = isLight
         ? AppColors.mutedForegroundLight
         : AppColors.mutedForegroundDark;
     final border = isLight ? AppColors.borderLight : AppColors.borderDark;
-    final destructive =
-        isLight ? AppColors.destructiveLight : AppColors.destructiveDark;
+    final destructive = isLight
+        ? AppColors.destructiveLight
+        : AppColors.destructiveDark;
     final card = isLight ? AppColors.cardLight : AppColors.cardDark;
 
     final colorScheme = ColorScheme(
@@ -108,8 +124,10 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: background,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
         hintStyle: TextStyle(color: mutedFg),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusControl),

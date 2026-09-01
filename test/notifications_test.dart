@@ -34,10 +34,10 @@ void _useTallWindow(WidgetTester tester) {
 /// Notifications are derived from the stages an order has actually passed
 /// through, which the server now decides rather than a clock.
 Order _at(OrderStage reached) => seedOrder(
-      reached: reached,
-      status: reached == OrderStage.delivered ? 'delivered' : 'processing',
-      lines: const [_jacket],
-    );
+  reached: reached,
+  status: reached == OrderStage.delivered ? 'delivered' : 'processing',
+  lines: const [_jacket],
+);
 
 int _sync() =>
     NotificationStore.instance.syncFromOrders(OrderStore.instance.orders);
@@ -57,8 +57,9 @@ void main() {
       _at(OrderStage.placed);
       _sync();
 
-      final categories =
-          NotificationStore.instance.items.map((n) => n.category).toSet();
+      final categories = NotificationStore.instance.items
+          .map((n) => n.category)
+          .toSet();
       expect(categories, {
         NotificationCategory.orderPlaced,
         NotificationCategory.payment,
@@ -69,8 +70,9 @@ void main() {
       _at(OrderStage.delivered);
       _sync();
 
-      final categories =
-          NotificationStore.instance.items.map((n) => n.category).toSet();
+      final categories = NotificationStore.instance.items
+          .map((n) => n.category)
+          .toSet();
       for (final expected in [
         NotificationCategory.orderPlaced,
         NotificationCategory.orderConfirmed,
@@ -97,8 +99,9 @@ void main() {
       _at(OrderStage.placed);
       _sync();
       expect(
-        NotificationStore.instance.items
-            .any((n) => n.category == NotificationCategory.orderConfirmed),
+        NotificationStore.instance.items.any(
+          (n) => n.category == NotificationCategory.orderConfirmed,
+        ),
         isFalse,
       );
 
@@ -106,8 +109,9 @@ void main() {
       _at(OrderStage.packed);
       NotificationStore.instance.syncFromOrders(OrderStore.instance.orders);
       expect(
-        NotificationStore.instance.items
-            .any((n) => n.category == NotificationCategory.orderConfirmed),
+        NotificationStore.instance.items.any(
+          (n) => n.category == NotificationCategory.orderConfirmed,
+        ),
         isTrue,
       );
     });
@@ -117,8 +121,9 @@ void main() {
       OrderStore.instance.cancel(order.id);
       _sync();
 
-      final categories =
-          NotificationStore.instance.items.map((n) => n.category).toList();
+      final categories = NotificationStore.instance.items
+          .map((n) => n.category)
+          .toList();
       expect(categories, contains(NotificationCategory.orderCancelled));
       expect(categories, isNot(contains(NotificationCategory.orderShipped)));
     });
@@ -128,8 +133,9 @@ void main() {
       OrderStore.instance.requestReturn(order.id);
       _sync();
 
-      final returned = NotificationStore.instance.items
-          .firstWhere((n) => n.category == NotificationCategory.orderReturned);
+      final returned = NotificationStore.instance.items.firstWhere(
+        (n) => n.category == NotificationCategory.orderReturned,
+      );
       expect(returned.body, contains('refund'));
     });
 
@@ -139,13 +145,17 @@ void main() {
       NotificationStore.instance.resetForTest();
       _sync();
 
-      final categories =
-          NotificationStore.instance.items.map((n) => n.category).toSet();
+      final categories = NotificationStore.instance.items
+          .map((n) => n.category)
+          .toSet();
       // It never became a parcel, so saying it shipped would be a lie.
       expect(categories, isNot(contains(NotificationCategory.orderShipped)));
       expect(categories, isNot(contains(NotificationCategory.orderDelivered)));
-      expect(categories, contains(NotificationCategory.orderCancelled),
-          reason: 'a failure is reported, just not as a journey');
+      expect(
+        categories,
+        contains(NotificationCategory.orderCancelled),
+        reason: 'a failure is reported, just not as a journey',
+      );
     });
 
     test('order notifications carry the order they are about', () {
@@ -162,8 +172,10 @@ void main() {
     test('everything arrives unread', () {
       _at(OrderStage.placed);
       _sync();
-      expect(NotificationStore.instance.unreadCount,
-          NotificationStore.instance.count);
+      expect(
+        NotificationStore.instance.unreadCount,
+        NotificationStore.instance.count,
+      );
       expect(NotificationStore.instance.hasUnread, isTrue);
     });
 
@@ -185,8 +197,11 @@ void main() {
 
       expect(NotificationStore.instance.unreadCount, 0);
       expect(NotificationStore.instance.hasUnread, isFalse);
-      expect(NotificationStore.instance.isEmpty, isFalse,
-          reason: 'read is not deleted');
+      expect(
+        NotificationStore.instance.isEmpty,
+        isFalse,
+        reason: 'read is not deleted',
+      );
     });
 
     test('a dismissed notification does not come back on the next sync', () {
@@ -236,32 +251,35 @@ void main() {
     });
 
     test('a muted group produces nothing', () {
-      NotificationSettings.instance
-          .setEnabled(NotificationGroup.orders, false);
+      NotificationSettings.instance.setEnabled(NotificationGroup.orders, false);
       _at(OrderStage.delivered);
       _sync();
 
-      final groups =
-          NotificationStore.instance.items.map((n) => n.category.group).toSet();
+      final groups = NotificationStore.instance.items
+          .map((n) => n.category.group)
+          .toSet();
       expect(groups, isNot(contains(NotificationGroup.orders)));
-      expect(groups, contains(NotificationGroup.payment),
-          reason: 'other groups are unaffected');
+      expect(
+        groups,
+        contains(NotificationGroup.payment),
+        reason: 'other groups are unaffected',
+      );
     });
 
     test('turning a group back on does not backfill what it missed', () {
-      NotificationSettings.instance
-          .setEnabled(NotificationGroup.orders, false);
+      NotificationSettings.instance.setEnabled(NotificationGroup.orders, false);
       _at(OrderStage.delivered);
       _sync();
 
       NotificationSettings.instance.setEnabled(NotificationGroup.orders, true);
-      expect(_sync(), 0,
-          reason: 'a muted push is gone, not queued');
+      expect(_sync(), 0, reason: 'a muted push is gone, not queued');
     });
 
     test('a muted setting survives a reload', () async {
-      NotificationSettings.instance
-          .setEnabled(NotificationGroup.promotions, false);
+      NotificationSettings.instance.setEnabled(
+        NotificationGroup.promotions,
+        false,
+      );
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
       NotificationSettings.instance.resetForTest();
@@ -301,8 +319,8 @@ void main() {
       SharedPreferences.setMockInitialValues({
         'gtradea_notifications':
             '{"items":[{"id":"a","category":"fromTheFuture","title":"X",'
-                '"createdAt":1},{"id":"b","category":"promotion","title":"Y",'
-                '"createdAt":2}],"delivered":["a","b"]}',
+            '"createdAt":1},{"id":"b","category":"promotion","title":"Y",'
+            '"createdAt":2}],"delivered":["a","b"]}',
       });
       NotificationStore.instance.resetForTest();
       await NotificationStore.instance.load();
@@ -348,20 +366,19 @@ void main() {
         'Yesterday',
         reason: 'calendar days, not 24-hour blocks',
       );
-      expect(
-        formatRelative(DateTime(2026, 8, 20, 12), now: now),
-        '3 days ago',
-      );
+      expect(formatRelative(DateTime(2026, 8, 20, 12), now: now), '3 days ago');
       expect(formatRelative(DateTime(2026, 7, 4, 12), now: now), '4 Jul');
     });
 
-    test('a timestamp in the future rounds to now rather than reading oddly',
-        () {
-      expect(
-        formatRelative(now.add(const Duration(minutes: 5)), now: now),
-        'Just now',
-      );
-    });
+    test(
+      'a timestamp in the future rounds to now rather than reading oddly',
+      () {
+        expect(
+          formatRelative(now.add(const Duration(minutes: 5)), now: now),
+          'Just now',
+        );
+      },
+    );
 
     test('day headings name today and yesterday', () {
       expect(formatDateHeading(now, now: now), 'Today');
@@ -428,8 +445,9 @@ void main() {
       expect(NotificationStore.instance.unreadCount, before - 1);
     });
 
-    testWidgets('tapping an order notification opens that order',
-        (tester) async {
+    testWidgets('tapping an order notification opens that order', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       final order = _at(OrderStage.delivered);
       _sync();
@@ -453,10 +471,7 @@ void main() {
       await tester.pumpWidget(_wrap(const NotificationsScreen()));
       await tester.pumpAndSettle();
 
-      await tester.drag(
-        find.byType(Dismissible).first,
-        const Offset(-500, 0),
-      );
+      await tester.drag(find.byType(Dismissible).first, const Offset(-500, 0));
       await tester.pumpAndSettle();
 
       expect(NotificationStore.instance.count, before - 1);
@@ -470,9 +485,9 @@ void main() {
       _sync();
       final unread = NotificationStore.instance.unreadCount;
 
-      await tester.pumpWidget(_wrap(
-        const Scaffold(body: Center(child: NotificationBell())),
-      ));
+      await tester.pumpWidget(
+        _wrap(const Scaffold(body: Center(child: NotificationBell()))),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('$unread'), findsOneWidget);
@@ -482,15 +497,16 @@ void main() {
       expect(find.byType(NotificationsScreen), findsOneWidget);
     });
 
-    testWidgets('carries no badge when everything has been read',
-        (tester) async {
+    testWidgets('carries no badge when everything has been read', (
+      tester,
+    ) async {
       _at(OrderStage.placed);
       _sync();
       NotificationStore.instance.markAllRead();
 
-      await tester.pumpWidget(_wrap(
-        const Scaffold(body: Center(child: NotificationBell())),
-      ));
+      await tester.pumpWidget(
+        _wrap(const Scaffold(body: Center(child: NotificationBell()))),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byTooltip('Notifications'), findsOneWidget);
@@ -507,7 +523,10 @@ void main() {
       for (final group in NotificationGroup.values) {
         expect(find.text(group.label), findsOneWidget, reason: group.label);
       }
-      expect(find.byType(Switch), findsNWidgets(NotificationGroup.values.length));
+      expect(
+        find.byType(Switch),
+        findsNWidgets(NotificationGroup.values.length),
+      );
 
       await tester.tap(find.byType(Switch).first);
       await tester.pumpAndSettle();
@@ -517,14 +536,17 @@ void main() {
       );
     });
 
-    testWidgets('says plainly that muting does not queue anything',
-        (tester) async {
+    testWidgets('says plainly that muting does not queue anything', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       await tester.pumpWidget(_wrap(const NotificationSettingsScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('will not fill in what you missed'),
-          findsOneWidget);
+      expect(
+        find.textContaining('will not fill in what you missed'),
+        findsOneWidget,
+      );
     });
   });
 }

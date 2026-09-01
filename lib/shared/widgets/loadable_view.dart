@@ -16,6 +16,7 @@ class LoadableView<T> extends StatelessWidget {
     this.emptyCheck,
     this.empty,
     this.errorPadding = const EdgeInsets.all(16),
+    this.silentOnError = false,
   });
 
   final Loadable<T> loadable;
@@ -30,6 +31,22 @@ class LoadableView<T> extends StatelessWidget {
   final Widget? empty;
 
   final EdgeInsets errorPadding;
+
+  /// Fail by drawing nothing instead of by saying so.
+  ///
+  /// The exception to the rule above, and it is meant to stay a narrow one. Use
+  /// it only for a section a shopper did not ask for and cannot miss -- where
+  /// the same failure is already reported by another block on the same page, so
+  /// a second copy of it is noise rather than honesty.
+  ///
+  /// The Random Products rail is the case it was added for: when the product
+  /// feed is down, the recommendations below it already say so, with the
+  /// server's words and a retry. Two identical error rows one above the other
+  /// tell a shopper nothing the first one did not.
+  ///
+  /// Never use it for something that was asked for. A search that quietly
+  /// renders nothing is a bug report waiting to happen.
+  final bool silentOnError;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +68,7 @@ class LoadableView<T> extends StatelessWidget {
         }
 
         final error = loadable.error;
+        if (error != null && silentOnError) return const SizedBox.shrink();
         if (error != null) {
           return Padding(
             padding: errorPadding,

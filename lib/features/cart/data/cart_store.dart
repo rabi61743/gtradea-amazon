@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/network/api_error.dart';
 import '../../../core/network/json.dart';
 import '../../auth/data/auth_store.dart';
+import '../../checkout/data/checkout_repository.dart';
 import '../../promo/data/coupon_store.dart';
 import 'cart_repository.dart';
 
@@ -93,38 +94,38 @@ class CartLine {
   num get vatIncluded => lineTotal * 13 / 113;
 
   CartLine copyWith({int? quantity, String? serverId}) => CartLine(
-        productId: productId,
-        variantLabel: variantLabel,
-        title: title,
-        unitPrice: unitPrice,
-        listPrice: listPrice,
-        imageUrl: imageUrl,
-        quantity: quantity ?? this.quantity,
-        minOrder: minOrder,
-        freeDelivery: freeDelivery,
-        category: category,
-        source: source,
-        skuId: skuId,
-        specId: specId,
-        serverId: serverId ?? this.serverId,
-      );
+    productId: productId,
+    variantLabel: variantLabel,
+    title: title,
+    unitPrice: unitPrice,
+    listPrice: listPrice,
+    imageUrl: imageUrl,
+    quantity: quantity ?? this.quantity,
+    minOrder: minOrder,
+    freeDelivery: freeDelivery,
+    category: category,
+    source: source,
+    skuId: skuId,
+    specId: specId,
+    serverId: serverId ?? this.serverId,
+  );
 
   Map<String, dynamic> toJson() => {
-        'productId': productId,
-        'variantLabel': variantLabel,
-        'title': title,
-        'unitPrice': unitPrice,
-        'listPrice': listPrice,
-        'imageUrl': imageUrl,
-        'quantity': quantity,
-        'minOrder': minOrder,
-        'freeDelivery': freeDelivery,
-        'category': category,
-        'source': source,
-        'skuId': skuId,
-        'specId': specId,
-        'serverId': serverId,
-      };
+    'productId': productId,
+    'variantLabel': variantLabel,
+    'title': title,
+    'unitPrice': unitPrice,
+    'listPrice': listPrice,
+    'imageUrl': imageUrl,
+    'quantity': quantity,
+    'minOrder': minOrder,
+    'freeDelivery': freeDelivery,
+    'category': category,
+    'source': source,
+    'skuId': skuId,
+    'specId': specId,
+    'serverId': serverId,
+  };
 
   /// Tolerant: a blob written by an older build may be missing fields, and one
   /// half-readable line beats dropping the whole cart.
@@ -182,6 +183,7 @@ class CartTotals {
     required this.lineCount,
     this.discount = 0,
     this.couponCode,
+    this.deliveryQuoted = true,
   });
 
   final num subtotal;
@@ -190,6 +192,14 @@ class CartTotals {
   final num savings;
 
   final num delivery;
+
+  /// Whether [delivery] is a figure somebody actually quoted.
+  ///
+  /// False means "not priced yet", which is **not** the same as free, and the
+  /// summary must not render it as such. Freight is quoted by the server
+  /// against the basket and its destination, so a cart with no address yet has
+  /// a delivery of zero that nobody has promised.
+  final bool deliveryQuoted;
 
   /// Taken off by a coupon. Separate from [savings], which is what the shop was
   /// already knocking off the list price -- conflating the two would let one
@@ -269,7 +279,22 @@ class CartTotals {
       savings: savings,
       discount: applied,
       couponCode: applied > 0 ? couponCode : null,
-      delivery: delivery ?? (everythingFree ? 0 : CartStore.deliveryFee),
+      // The server's figure, or nothing at all.
+      //
+      // There is no client-side fallback on purpose. Delivery here is freight:
+      // the server prices it on the weight and volume of what is in the basket
+      // and where it is going, and no number this app could substitute would
+      // match what checkout goes on to charge. Until the quote lands, the cart
+      // shows that it is being worked out rather than a figure that will move.
+      delivery:
+          delivery ??
+          (everythingFree ? 0 : (CartStore.instance.deliveryQuote?.total ?? 0)),
+      // Quoted when a past order froze one, when nothing in the basket is
+      // chargeable, or when the server has actually answered.
+      deliveryQuoted:
+          delivery != null ||
+          everythingFree ||
+          CartStore.instance.deliveryQuote != null,
       // Back-solved from what is actually charged for goods, not from the
       // subtotal: a discount reduces the VAT inside it, and quoting the
       // pre-discount figure would overstate the tax on the receipt.
@@ -296,10 +321,81 @@ class CartStore extends ChangeNotifier {
 
   static const _guestKey = 'gtradea_cart';
 
-  /// Flat fee when anything in the cart is not free-delivery. One figure rather
-  /// than per-item shipping: this storefront quotes a single delivery charge
-  /// per order, and the detail page already promises free delivery per product.
-  static const deliveryFee = 100;
+  /// The server's delivery quote for what is in the cart right now.
+  ///
+  /// Null until one has been fetched, or where the storefront has freight
+  /// pricing switched off. A null here means the cart says the charge is still
+  /// being worked out -- it does not mean zero, and it must never be replaced
+  /// by a figure calculated on the device.
+  ///
+  /// This replaced `static const deliveryFee = 100`, a flat charge added to
+  /// every order regardless of what was in it. Two polo shirts to Lalitpur by
+  /// air were measured at Rs. 551.18 against that Rs. 100, so the flat figure
+  /// understated some orders, overstated others, and matched what checkout
+  /// actually charged only by accident.
+  DeliveryQuote? get deliveryQuote => _deliveryQuote;
+  DeliveryQuote? _deliveryQuote;
+
+  /// True while a quote is in flight, so the cart can say so.
+  bool get quotingDelivery => _quoting;
+  bool _quoting = false;
+
+  /// Which cart the held quote was for. A quote is only good for the basket it
+  /// was asked about, so changing a quantity invalidates it rather than leaving
+  /// a stale figure under a different total.
+  String? _quotedFor;
+
+  /// A cheap identity for the current basket and destination.
+  String _basketKey(String district) => [
+    district,
+    for (final line in _lines) '${line.productId}:${line.quantity}',
+  ].join('|');
+
+  /// Asks the server what delivery costs for this cart.
+  ///
+  /// Needs a district: freight is priced to a destination, so with no address
+  /// chosen there is nothing to ask about and the cart says the charge is set
+  /// at checkout rather than inventing one.
+  Future<void> refreshDeliveryQuote({required String? district}) async {
+    if (district == null || district.trim().isEmpty || _lines.isEmpty) {
+      if (_deliveryQuote != null) {
+        _deliveryQuote = null;
+        _quotedFor = null;
+        notifyListeners();
+      }
+      return;
+    }
+
+    final key = _basketKey(district);
+    if (key == _quotedFor || _quoting) return;
+
+    _quoting = true;
+    notifyListeners();
+    try {
+      // The checkout repository's own call, not a second one: it already owns
+      // this endpoint, already parses the freight VAT out of the breakdown, and
+      // already returns null for a storefront with freight pricing switched
+      // off. A parallel copy here would be a second answer to one question.
+      final quote = await CheckoutRepository.instance.deliveryCharge(
+        district: district,
+        shippingMode: 'air',
+        guestLines: List.unmodifiable(_lines),
+      );
+      // The basket can change while the request is out; a quote for a cart
+      // nobody has any more is worse than none.
+      if (_basketKey(district) != key) return;
+      _deliveryQuote = quote;
+      _quotedFor = quote == null ? null : key;
+    } on ApiError {
+      // Left as it was. The cart says the charge is worked out at checkout,
+      // which is true, rather than showing a number nothing stands behind.
+      _deliveryQuote = null;
+      _quotedFor = null;
+    } finally {
+      _quoting = false;
+      notifyListeners();
+    }
+  }
 
   /// Upper bound per line. Not a stock rule -- a guard against a stuck finger
   /// on the stepper turning into a four-figure order.
@@ -343,10 +439,10 @@ class CartStore extends ChangeNotifier {
   /// total gets the same one -- a cart that shows the discount and a badge
   /// that does not would be two answers to one question.
   CartTotals get totals => CartTotals.of(
-        _lines,
-        discount: CouponStore.instance.discountFor(_lines),
-        couponCode: CouponStore.instance.applied?.code,
-      );
+    _lines,
+    discount: CouponStore.instance.discountFor(_lines),
+    couponCode: CouponStore.instance.applied?.code,
+  );
 
   /// Follows the signed-in account for the rest of the app's life.
   ///
@@ -421,8 +517,7 @@ class CartStore extends ChangeNotifier {
     if (email == _scope) return;
 
     final wasGuest = _scope == null || _scope!.isEmpty;
-    final carried =
-        wasGuest ? List<CartLine>.from(_lines) : const <CartLine>[];
+    final carried = wasGuest ? List<CartLine>.from(_lines) : const <CartLine>[];
 
     _scope = email;
     _lines.clear();
@@ -478,8 +573,10 @@ class CartStore extends ChangeNotifier {
       return clamped;
     }
     final existing = _lines[index];
-    final merged =
-        (existing.quantity + line.quantity).clamp(existing.minOrder, maxPerLine);
+    final merged = (existing.quantity + line.quantity).clamp(
+      existing.minOrder,
+      maxPerLine,
+    );
     _lines[index] = existing.copyWith(quantity: merged);
     return merged;
   }
@@ -644,15 +741,15 @@ class CartStore extends ChangeNotifier {
   /// What the server stores so the line still renders when the upstream
   /// listing changes or disappears.
   Map<String, dynamic> _snapshotOf(CartLine line) => {
-        'name': line.title,
-        'price': line.unitPrice,
-        'image': ?line.imageUrl,
-        'category': ?line.category,
-        'moq': line.minOrder,
-        'skuId': ?line.skuId,
-        'specId': ?line.specId,
-        'variantLabel': ?line.variantLabel,
-      };
+    'name': line.title,
+    'price': line.unitPrice,
+    'image': ?line.imageUrl,
+    'category': ?line.category,
+    'moq': line.minOrder,
+    'skuId': ?line.skuId,
+    'specId': ?line.specId,
+    'variantLabel': ?line.variantLabel,
+  };
 
   /// Replaces the cart with the account's, keeping local snapshots for the
   /// rows the server sends back thin.
@@ -682,7 +779,8 @@ class CartStore extends ChangeNotifier {
     final data = item.productData;
     final cached = known[keyOf(item.key, item.variantLabel)];
 
-    final price = asNum(data['price']) ??
+    final price =
+        asNum(data['price']) ??
         asNum(data['display_price']) ??
         cached?.unitPrice ??
         0;
@@ -690,12 +788,14 @@ class CartStore extends ChangeNotifier {
     return CartLine(
       productId: item.key,
       variantLabel: item.variantLabel,
-      title: asString(data['name']) ??
+      title:
+          asString(data['name']) ??
           asString(data['title']) ??
           cached?.title ??
           'Item',
       unitPrice: price,
-      imageUrl: asString(data['image']) ??
+      imageUrl:
+          asString(data['image']) ??
           asString(data['pic_url']) ??
           asString(data['image_url']) ??
           cached?.imageUrl,
@@ -774,6 +874,12 @@ class CartStore extends ChangeNotifier {
     _syncError = null;
     _syncDebounce?.cancel();
     _syncDebounce = null;
+    // The quote belongs to a basket. Leaving it behind when the basket is
+    // cleared means the next one starts with a freight figure that was priced
+    // for goods nobody has any more.
+    _deliveryQuote = null;
+    _quotedFor = null;
+    _quoting = false;
   }
 
   Future<void> _readInto(List<CartLine> target, String key) async {

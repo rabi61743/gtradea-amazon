@@ -58,7 +58,8 @@ class AuthInterceptor extends QueuedInterceptor {
     ErrorInterceptorHandler handler,
   ) async {
     final req = err.requestOptions;
-    final refusable = err.response?.statusCode == 401 &&
+    final refusable =
+        err.response?.statusCode == 401 &&
         req.extra['retried'] != true &&
         req.extra['skipAuth'] != true;
 
@@ -105,8 +106,9 @@ class AuthInterceptor extends QueuedInterceptor {
         queryParameters: {'grant_type': 'refresh_token'},
         data: {'refresh_token': refreshToken},
       );
-      final session =
-          AuthSession.fromJson((res.data as Map).cast<String, dynamic>());
+      final session = AuthSession.fromJson(
+        (res.data as Map).cast<String, dynamic>(),
+      );
       await _sessions.write(session);
       return session;
     } on DioException catch (e) {

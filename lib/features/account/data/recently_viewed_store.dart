@@ -42,7 +42,9 @@ class RecentlyViewedStore extends ChangeNotifier {
         final decoded = jsonDecode(raw);
         if (decoded is List) {
           for (final entry in decoded.whereType<Map>()) {
-            final product = SavedProduct.fromJson(entry.cast<String, dynamic>());
+            final product = SavedProduct.fromJson(
+              entry.cast<String, dynamic>(),
+            );
             if (product == null) continue;
             if (_items.any((item) => item.id == product.id)) continue;
             _items.add(product);
@@ -66,7 +68,9 @@ class RecentlyViewedStore extends ChangeNotifier {
 
     if (existingIndex > 0) _items.removeAt(existingIndex);
     _items.insert(0, product);
-    if (_items.length > maxEntries) _items.removeRange(maxEntries, _items.length);
+    if (_items.length > maxEntries) {
+      _items.removeRange(maxEntries, _items.length);
+    }
 
     notifyListeners();
     unawaited(_persist());

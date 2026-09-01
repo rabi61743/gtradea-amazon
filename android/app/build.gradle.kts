@@ -6,10 +6,20 @@ plugins {
 
 android {
     namespace = "com.gtradea.gtradea_amazon"
-    compileSdk = flutter.compileSdkVersion
+    // Pinned rather than taken from the Flutter default, which is still 35
+    // here: file_picker -- the system file browser the support form attaches
+    // from -- ships an AAR whose metadata refuses to link below 36. compileSdk
+    // only decides which APIs may be compiled against; minSdk and targetSdk
+    // are untouched, so which devices this installs on and how it behaves at
+    // runtime are exactly as before.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications schedules against java.time, which older
+        // Android levels do not carry. Without desugaring the build fails
+        // outright rather than degrading.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -46,4 +56,8 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

@@ -23,14 +23,17 @@ class SignUpResult {
 /// through it would mean a failed login could trigger a token refresh.
 class AuthRepository {
   AuthRepository({SessionStore? sessions, Dio? dio})
-      : _sessions = sessions ?? SessionStore.instance,
-        _dio = dio ??
-            Dio(BaseOptions(
+    : _sessions = sessions ?? SessionStore.instance,
+      _dio =
+          dio ??
+          Dio(
+            BaseOptions(
               baseUrl: Env.authBaseUrl,
               connectTimeout: Env.requestTimeout,
               receiveTimeout: Env.requestTimeout,
               contentType: 'application/json',
-            ));
+            ),
+          );
 
   static final AuthRepository instance = AuthRepository();
 
@@ -44,8 +47,9 @@ class AuthRepository {
         queryParameters: {'grant_type': 'password'},
         data: {'email': email.trim(), 'password': password},
       );
-      final session =
-          AuthSession.fromJson((res.data as Map).cast<String, dynamic>());
+      final session = AuthSession.fromJson(
+        (res.data as Map).cast<String, dynamic>(),
+      );
       await _sessions.write(session);
       return session;
     } on DioException catch (e) {
@@ -60,14 +64,18 @@ class AuthRepository {
     String? lastName,
   }) async {
     try {
-      final res = await _dio.post('/signup', data: {
-        'email': email.trim(),
-        'password': password,
-        'data': {
-          if (firstName != null && firstName.isNotEmpty) 'first_name': firstName,
-          if (lastName != null && lastName.isNotEmpty) 'last_name': lastName,
+      final res = await _dio.post(
+        '/signup',
+        data: {
+          'email': email.trim(),
+          'password': password,
+          'data': {
+            if (firstName != null && firstName.isNotEmpty)
+              'first_name': firstName,
+            if (lastName != null && lastName.isNotEmpty) 'last_name': lastName,
+          },
         },
-      });
+      );
       final body = (res.data as Map).cast<String, dynamic>();
       if (body['access_token'] != null) {
         final session = AuthSession.fromJson(body);
@@ -129,11 +137,13 @@ class AuthRepository {
 
   /// Start of a provider handshake. The caller opens this in a WebView and
   /// watches for [isOAuthReturn].
-  Uri authorizeUrl(String provider) =>
-      Uri.parse('${Env.authBaseUrl}/authorize').replace(queryParameters: {
-        'provider': provider,
-        'redirect_to': Env.oauthRedirect,
-      });
+  Uri authorizeUrl(String provider) => Uri.parse('${Env.authBaseUrl}/authorize')
+      .replace(
+        queryParameters: {
+          'provider': provider,
+          'redirect_to': Env.oauthRedirect,
+        },
+      );
 
   static bool isOAuthReturn(Uri uri) {
     final expected = Uri.parse(Env.oauthRedirect);
@@ -172,6 +182,76 @@ class AuthRepository {
       });
       await _sessions.write(session);
       return session;
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
+  }
+
+  /// Checks a password without disturbing the session.
+  ///
+  /// GoTrue has no "verify my password" call, so this is the token grant used
+  /// for what it proves rather than for what it returns: a wrong password is a
+  /// 400 here exactly as it is at sign-in. The session it hands back is
+  /// **deliberately dropped** -- adopting it would replace a working session
+  /// with a new one in the middle of an operation that may still fail, and the
+  /// point of asking is to guard the change, not to re-authenticate.
+  ///
+  /// Why ask at all, when `PUT /user` does not require it: without it, anyone
+  /// who picks up an unlocked phone can change the password and keep the
+  /// account. The storefront does not ask; that is a weakness of the
+  /// storefront, not a contract this has to match.
+  Future<void> verifyPassword({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      await _dio.post(
+        '/token',
+        queryParameters: {'grant_type': 'password'},
+        data: {'email': email.trim(), 'password': password},
+      );
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
+  }
+
+  /// Updates the signed-in user: their address, their password, or both.
+  ///
+  /// `PUT /user`, which is the same call the storefront's own account page
+  /// makes to change a password. Returns the updated GoTrue user.
+  ///
+  /// **Email changes are not immediate.** GoTrue sends a confirmation link to
+  /// the new address and leaves `email` as it was until the link is followed;
+  /// what comes back carries the pending address in `new_email`. That is the
+  /// existing verification flow, and the caller reports it rather than
+  /// pretending the address changed.
+  Future<Map<String, dynamic>> updateUser({
+    String? email,
+    String? password,
+    Map<String, dynamic>? data,
+  }) async {
+    final session = await _sessions.read();
+    if (session == null) {
+      throw const ApiError(
+        statusCode: 401,
+        message: 'Sign in again to change your account details.',
+      );
+    }
+
+    try {
+      final res = await _dio.put(
+        '/user',
+        data: {'email': ?email?.trim(), 'password': ?password, 'data': ?data},
+        options: Options(
+          headers: {'Authorization': 'Bearer ${session.accessToken}'},
+        ),
+      );
+      final user = (res.data as Map).cast<String, dynamic>();
+      // The stored session carries a copy of the user object, and the account
+      // header is drawn from it. Left alone it would keep showing the old name
+      // until the next sign-in.
+      await _sessions.write(session.withUser(user));
+      return user;
     } on DioException catch (e) {
       throw ApiError.fromDio(e);
     }

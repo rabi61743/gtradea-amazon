@@ -63,11 +63,15 @@ class ProductRail extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SectionHeader(
-          title: title,
-          leadingIcon: leadingIcon,
-          onSeeAll: onSeeAll,
-        ),
+        // Skipped when there is nothing to put in it. A rail under a heading
+        // that already names it -- the department picker does -- would say the
+        // same word twice, and an empty SectionHeader still takes its padding.
+        if (title.isNotEmpty || onSeeAll != null)
+          SectionHeader(
+            title: title,
+            leadingIcon: leadingIcon,
+            onSeeAll: onSeeAll,
+          ),
         SizedBox(
           // Grows with the device text scale. The card is title + rating +
           // price under a square panel, so a fixed height overflows on a

@@ -24,9 +24,9 @@ class PaymentWebViewScreen extends StatefulWidget {
     this.actionUrl,
     this.formFields,
   }) : assert(
-          redirectUrl != null || (actionUrl != null && formFields != null),
-          'a gateway needs either a URL to open or a form to post',
-        );
+         redirectUrl != null || (actionUrl != null && formFields != null),
+         'a gateway needs either a URL to open or a form to post',
+       );
 
   final String title;
 

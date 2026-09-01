@@ -6,17 +6,21 @@ import '../../../core/l10n/app_strings.dart';
 import '../../../core/l10n/payment_strings.dart';
 import '../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/widgets/artwork_panel.dart';
 import '../../address/data/address_store.dart';
 import '../../address/presentation/address_picker_sheet.dart';
 import '../../auth/data/auth_store.dart';
 import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
+import '../../profile/data/profile_store.dart';
 import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../notifications/data/notification_store.dart';
 import '../../orders/data/order_store.dart';
 import '../../promo/data/coupon_store.dart';
 import '../../../shared/widgets/loadable_view.dart';
+import '../../legal/presentation/terms_sheet.dart';
+import 'bill_to_section.dart';
 import '../data/checkout_models.dart';
 import '../data/card_details.dart';
 import '../data/checkout_repository.dart';
@@ -42,11 +46,7 @@ import 'payment_webview_screen.dart';
 /// app's own, and the server recomputes them -- so what it returns is what is
 /// actually charged, and this screen defers to it.
 class CheckoutScreen extends StatefulWidget {
-  const CheckoutScreen({
-    super.key,
-    required this.lines,
-    required this.totals,
-  });
+  const CheckoutScreen({super.key, required this.lines, required this.totals});
 
   final List<CartLine> lines;
   final CartTotals totals;
@@ -67,6 +67,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   bool _placing = false;
 
+  /// Whether the shopper has agreed to the shop's terms.
+  ///
+  /// Starts false, always. `CheckoutOrderInput.termsAccepted` was hardcoded to
+  /// `true` here, so every order this app has ever placed told the server the
+  /// customer had accepted terms they were never shown and never asked about.
+  bool _termsAccepted = false;
+
+  /// Who the invoice is for.
+  ///
+  /// `CheckoutOrderInput` has sent `billingType`, `companyName` and `taxId` to
+  /// the server since it was written, and nothing ever set them -- so every
+  /// order, wholesale ones included, has been billed to an individual.
+  bool _isBusiness = false;
+  String _companyName = '';
+  String _taxId = '';
+
+  /// Set once an order has been attempted, so the company name is not marked
+  /// wrong before it has been asked for.
+  bool _billingAttempted = false;
+
+  /// Whether the order summary is showing its line items.
+  ///
+  /// Closed to begin with. The lines are a recap of the cart a shopper has
+  /// just come from; the payment choice below them is the thing they are here
+  /// to make, and expanded lines push it off the screen.
+  bool _summaryExpanded = false;
+
+  /// A business invoice needs a name on it.
+  bool get _billingReady => !_isBusiness || _companyName.trim().isNotEmpty;
+
   /// Why the last attempt did not become an order. Shown on the screen rather
   /// than in a snack bar: this is the moment a shopper most needs to know what
   /// happened and whether they were charged.
@@ -83,6 +113,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     });
     SavedPaymentStore.instance.load();
+    // For the phone the order needs. A shopper who came straight here from the
+    // cart may never have opened Account, so the profile is not loaded yet;
+    // this is a no-op when it already is.
+    unawaited(ProfileStore.instance.load());
     unawaited(_loadMethods());
   }
 
@@ -98,14 +132,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (!mounted) return;
 
       final userId = AuthStore.instance.account?.id;
-      final visible =
-          methods.where((m) => m.isVisibleTo(userId)).toList(growable: false);
+      final visible = methods
+          .where((m) => m.isVisibleTo(userId))
+          .toList(growable: false);
 
       setState(() {
         _methods = visible;
         _methodsError = null;
         _loadingMethods = false;
-        _selected = visible.where((m) => m.isDefault).firstOrNull ??
+        _selected =
+            visible.where((m) => m.isDefault).firstOrNull ??
             visible.firstOrNull;
       });
     } on ApiError catch (e) {
@@ -131,6 +167,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _pay() async {
     if (_placing) return;
 
+    // Checked here as well as on the button. A rule that lives only in an
+    // `onPressed` is one the next entry point walks straight around.
+    if (!_billingReady) {
+      setState(() => _billingAttempted = true);
+      _say('Add the company name this invoice is for.');
+      return;
+    }
+
     // An order with nowhere to go is not an order. Asked for rather than
     // guessed at, and the sheet opens straight away so the shopper is one step
     // from finishing rather than being told off.
@@ -142,9 +186,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // The server holds the cart the order is built from, and it only holds one
     // for a signed-in shopper.
     if (!AuthStore.instance.isSignedIn) {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute(builder: (_) => const AuthScreen()),
-      );
+      await Navigator.of(context)
+          .push<void>(MaterialPageRoute(builder: (_) => const AuthScreen()));
       if (!mounted) return;
       if (!AuthStore.instance.isSignedIn) {
         _say('Sign in to place this order.');
@@ -154,6 +197,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     final method = _selected;
     if (method == null) return;
+
+    // Caught here rather than at the server, which answers "Phone is required"
+    // and leaves the shopper with no idea where to put one -- no screen in the
+    // checkout asks for it. Said before a card is collected or a gateway opens,
+    // so nothing is charged against an order that cannot be created.
+    if (_contactPhone().isEmpty) {
+      setState(
+        () => _failure =
+            'Add a phone number in Account > Profile settings so the courier '
+            'can reach you.',
+      );
+      return;
+    }
 
     // A card is collected before anything is sent, so a mistyped number costs
     // a correction rather than a declined order.
@@ -207,13 +263,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  /// The number the order will carry: the address's own, or the account's.
+  String _contactPhone() {
+    final onAddress = _address?.phone.trim() ?? '';
+    if (onAddress.isNotEmpty) return onAddress;
+    return ProfileStore.instance.profile?.phone?.trim() ?? '';
+  }
+
   Future<void> _submit(
     PaymentMethod method,
     ValueNotifier<PaymentOutcome> outcome,
     CardDetails? card,
   ) async {
     final input = CheckoutOrderInput(
-      shippingAddress: CheckoutAddress.fromAddress(_address!),
+      shippingAddress: CheckoutAddress.fromAddress(
+        _address!,
+        // The account's number, for an address saved without one. See the
+        // factory: the server refuses an order that carries no phone.
+        fallbackPhone: ProfileStore.instance.profile?.phone,
+      ),
       // Only the lines this screen was handed. An empty list would mean
       // "everything in the cart", which is not what was on screen.
       selectedCartItemIds: [
@@ -221,7 +289,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           if (line.serverId != null) line.serverId!,
       ],
       promoCode: widget.totals.couponCode,
-      termsAccepted: true,
+      // The shopper's actual answer. The button cannot be pressed without it.
+      termsAccepted: _termsAccepted,
+      // Likewise: what they chose, not a default nobody was asked about.
+      billingType: _isBusiness ? 'business' : 'individual',
+      companyName: _isBusiness ? _companyName.trim() : null,
+      taxId: _isBusiness ? _taxId.trim() : null,
     );
 
     try {
@@ -254,7 +327,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       outcome.value = PaymentFailed(
         message: e.isNetwork
             ? 'No connection, so the order was not placed. Nothing has been '
-                'charged.'
+                  'charged.'
             : e.message,
       );
       if (mounted) setState(() => _failure = e.message);
@@ -272,8 +345,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     PlacedOrder placed,
     ValueNotifier<PaymentOutcome> outcome,
   ) async {
-    final orderNumber =
-        placed.orderNumber.isEmpty ? null : placed.orderNumber;
+    final orderNumber = placed.orderNumber.isEmpty ? null : placed.orderNumber;
 
     final gateway = PaymentGateway.forId(method.id);
     if (gateway == null) {
@@ -318,8 +390,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         // Closed the page without coming back. That is not a refusal -- the
         // payment may have gone through in a banking app -- so the server is
         // asked rather than assumed.
-        final probe = gateway.poll(placed) ??
-            () => pollOrderPayment(placed.orderId);
+        final probe =
+            gateway.poll(placed) ?? () => pollOrderPayment(placed.orderId);
         verdict = await PaymentPendingScreen.show(
           context,
           gatewayLabel: method.label,
@@ -365,7 +437,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     outcome.value = PaymentFailed(
       message: verdict.underReview
           ? 'Your payment was received and is being checked. You will be '
-              'notified once it clears -- do not pay again.'
+                'notified once it clears -- do not pay again.'
           : (verdict.message ?? 'The payment did not go through.'),
       orderNumber: orderNumber,
       // Money has already been taken when a payment is under review. Offering
@@ -436,12 +508,40 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final account = AuthStore.instance.account;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Checkout')),
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Checkout'),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.shield_outlined,
+                  size: 13,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  // True of the app rather than a slogan: payment runs over the
+                  // gateways, and no card number is ever stored here.
+                  '100% Secure',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
           _Section(
             title: 'Deliver to',
+            icon: Icons.location_on_outlined,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -478,8 +578,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               children: [
                                 Text(
                                   _address!.fullName,
-                                  style: theme.textTheme.bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
@@ -525,7 +626,134 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ),
           _Section(
+            title: 'Bill To',
+            icon: Icons.sell_outlined,
+            child: BillToSection(
+              isBusiness: _isBusiness,
+              companyName: _companyName,
+              taxId: _taxId,
+              enabled: !_placing,
+              showCompanyError: _billingAttempted,
+              onChanged: (value) => setState(() {
+                _isBusiness = value;
+                if (!value) _billingAttempted = false;
+              }),
+              onCompanyName: (value) => setState(() => _companyName = value),
+              onTaxId: (value) => _taxId = value,
+            ),
+          ),
+          _Section(
+            title: 'Order summary',
+            icon: Icons.shopping_bag_outlined,
+            // The reference puts a collapse control here, and it earns its
+            // place: with the lines expanded, Payment -- which now sits below
+            // this section -- is pushed off the bottom of a 412x915 phone
+            // entirely. Measured: it was not even built. Collapsed by default,
+            // so the section a shopper has to act on is reachable, and the
+            // lines are one tap away for anyone who wants to check them.
+            trailing: InkWell(
+              onTap: () => setState(() => _summaryExpanded = !_summaryExpanded),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${totals.itemCount} '
+                      '${totals.itemCount == 1 ? 'item' : 'items'}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Icon(
+                      _summaryExpanded
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                      size: 18,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            child: Column(
+              children: [
+                if (_summaryExpanded)
+                  for (final line in widget.lines)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // The line's own photograph, off the field the cart
+                          // has always carried. The same panel the cart tile
+                          // and the order lines use, so a missing, slow or
+                          // failed picture lands on the tinted icon rather than
+                          // a broken-image glyph -- and smaller than any of
+                          // them, because this block is two short lines of type
+                          // rather than a row of its own.
+                          SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: ArtworkPanel(
+                              icon: Icons.checkroom,
+                              tint: theme.colorScheme.primary,
+                              imageUrl: line.imageUrl,
+                              iconScale: 0.4,
+                              // Known here, so the panel skips the
+                              // LayoutBuilder it would otherwise need to size
+                              // its decode.
+                              knownWidth: 44,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  line.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                                Text(
+                                  [
+                                    if (line.variantLabel != null)
+                                      line.variantLabel!,
+                                    'Qty ${line.quantity}',
+                                  ].join(' · '),
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            formatRupees(line.lineTotal),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                const Divider(height: 18),
+                // The same widget the cart renders. If these two screens each
+                // had their own version, they could disagree about the total
+                // for one order, and a shopper who noticed would be right to
+                // stop trusting both.
+                CartSummary(totals: totals),
+              ],
+            ),
+          ),
+          _Section(
             title: _strings.title,
+            icon: Icons.account_balance_wallet_outlined,
+            subtitle: 'Choose a secure payment option',
             child: _loadingMethods
                 ? const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
@@ -538,86 +766,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     ),
                   )
                 : _methodsError != null
-                    ? LoadFailed(
-                        compact: true,
-                        message: _methodsError!.isNetwork
-                            ? 'No connection, so we could not check which '
-                                'payment methods are available.'
-                            : _methodsError!.message,
-                        onRetry: _loadMethods,
-                      )
-                    : ListenableBuilder(
-                        listenable: SavedPaymentStore.instance,
-                        builder: (context, _) => PaymentMethodsSection(
-                          strings: _strings,
-                          methods: _methods,
-                          selected: _selected,
-                          enabled: !_placing,
-                          onSelected: (method) => setState(() {
-                            _selected = method;
-                            // A card chosen for one method means nothing for
-                            // another.
-                            _selectedCardId = null;
-                          }),
-                          savedCards: SavedPaymentStore.instance.cards,
-                          selectedCardId: _selectedCardId,
-                          onCardSelected: (card) =>
-                              setState(() => _selectedCardId = card.id),
-                          onUseNewCard: () =>
-                              setState(() => _selectedCardId = null),
-                          onRemoveCard: _confirmRemoveCard,
-                        ),
-                      ),
-          ),
-          _Section(
-            title: 'Order summary',
-            child: Column(
-              children: [
-                for (final line in widget.lines)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                line.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall,
-                              ),
-                              Text(
-                                [
-                                  if (line.variantLabel != null)
-                                    line.variantLabel!,
-                                  'Qty ${line.quantity}',
-                                ].join(' · '),
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          formatRupees(line.lineTotal),
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                      ],
+                ? LoadFailed(
+                    compact: true,
+                    message: _methodsError!.isNetwork
+                        ? 'No connection, so we could not check which '
+                              'payment methods are available.'
+                        : _methodsError!.message,
+                    onRetry: _loadMethods,
+                  )
+                : ListenableBuilder(
+                    listenable: SavedPaymentStore.instance,
+                    builder: (context, _) => PaymentMethodsSection(
+                      strings: _strings,
+                      methods: _methods,
+                      selected: _selected,
+                      enabled: !_placing,
+                      onSelected: (method) => setState(() {
+                        _selected = method;
+                        // A card chosen for one method means nothing for
+                        // another.
+                        _selectedCardId = null;
+                      }),
+                      savedCards: SavedPaymentStore.instance.cards,
+                      selectedCardId: _selectedCardId,
+                      onCardSelected: (card) =>
+                          setState(() => _selectedCardId = card.id),
+                      onUseNewCard: () =>
+                          setState(() => _selectedCardId = null),
+                      onRemoveCard: _confirmRemoveCard,
                     ),
                   ),
-                const Divider(height: 18),
-                // The same widget the cart renders. If these two screens each
-                // had their own version, they could disagree about the total
-                // for one order, and a shopper who noticed would be right to
-                // stop trusting both.
-                CartSummary(totals: totals),
-              ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),
+            child: TermsAcceptance(
+              accepted: _termsAccepted,
+              enabled: !_placing,
+              onChanged: (value) => setState(() => _termsAccepted = value),
             ),
           ),
           if (_failure != null)
@@ -638,22 +823,78 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             border: Border(top: BorderSide(color: theme.dividerColor)),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: ElevatedButton(
-              onPressed: _placing ? null : _pay,
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
-              ),
-              // "Pay" when money is about to move, "Place order" when it is
-              // not. A wallet button labelled "Place order" understates what
-              // the next tap does.
-              child: Text(
-                '${_selected == null ||
-                        _selected!.kind == PaymentKind.cashOnDelivery
-                    ? _strings.placeOrder
-                    : _strings.payNow}'
-                ' · ${formatRupees(totals.total)}',
-              ),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Total payable',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            formatRupees(totals.total),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          // The VAT already inside that figure, never added on
+                          // top of it.
+                          Text(
+                            'Includes ${formatRupees(totals.vatIncluded.round())} VAT',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: ElevatedButton.icon(
+                          // Gated on the terms. The field was already being
+                          // sent to the server as `true`; now it is only true
+                          // when somebody said so.
+                          onPressed: (_placing || !_termsAccepted)
+                              ? null
+                              : _pay,
+                          icon: const Icon(Icons.lock_outline, size: 18),
+                          // "Pay" when money is about to move, "Place order"
+                          // when it is not. A wallet button labelled "Place
+                          // order" understates what the next tap does.
+                          label: Text(
+                            _selected == null ||
+                                    _selected!.kind ==
+                                        PaymentKind.cashOnDelivery
+                                ? _strings.placeOrder
+                                : _strings.payNow,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Three claims that are true of this app: payment runs over the
+                // gateways, returns are a real flow, and every listing is the
+                // supplier's own record.
+                const _TrustRow(),
+              ],
             ),
           ),
         ),
@@ -662,31 +903,131 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 }
 
+/// One block of the checkout, as the reference draws them: a bordered card
+/// with an icon, a heading, an optional sub-line, and an optional action on the
+/// right.
+///
+/// The order these appear in is the requirement -- address, billing, summary,
+/// payment -- so a shopper says where it goes and who it is billed to, sees
+/// what it comes to, and only then chooses how to pay. There is a test on the
+/// vertical positions, not on the widget list, so a reshuffle fails.
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
+  const _Section({
+    required this.title,
+    required this.child,
+    this.icon,
+    this.subtitle,
+    this.trailing,
+  });
 
   final String title;
   final Widget child;
+  final IconData? icon;
+  final String? subtitle;
+
+  /// A control on the right of the heading -- the summary's collapse toggle.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          child,
-        ],
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppTheme.radiusCard + 2),
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 20, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                ?trailing,
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
       ),
     );
   }
 }
 
+/// The reassurance strip under the pay button.
+///
+/// Each of the three is something this app can stand behind: payment is handed
+/// to Khalti, eSewa or a bank rather than collected here; returns are a real
+/// flow with its own endpoint; and every listing is the supplier's own record
+/// rather than a description written by the shop.
+class _TrustRow extends StatelessWidget {
+  const _TrustRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    Widget mark(IconData icon, String label) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+      ],
+    );
+
+    // Wrap, not Row: at a large text size three marks and their separators are
+    // wider than a phone, and a second line beats shrinking them.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 10,
+      runSpacing: 4,
+      children: [
+        mark(Icons.shield_outlined, 'Secure payments'),
+        mark(Icons.autorenew, 'Easy returns'),
+        mark(Icons.verified_outlined, 'Quality assured'),
+      ],
+    );
+  }
+}

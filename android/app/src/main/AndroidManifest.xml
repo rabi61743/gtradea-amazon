@@ -3,10 +3,28 @@
          into the debug and profile manifests automatically, but a release
          build would ship without it and every image would fail. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- Coarse only: the address form needs to know which city the shopper is
-         in, not which building, and asking for fine location would be asking
-         for more than the feature uses. -->
+    <!-- Android 13 and above will not show a notification without this, and
+         asks the shopper for it the first time one is posted. Declared only;
+         it is requested when the notifications screen is opened, never at
+         launch. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Both, and fine is the one that matters. The address form fills a
+         street and house number, not just a town, and coarse alone returns a
+         network fix good to a kilometre or three, which is how "use my
+         current location" came to drop a pin in the wrong neighbourhood.
+         Android still requires coarse to be declared alongside fine, and
+         declaring both is what lets the system dialog offer Precise. It is
+         asked for only when the button is tapped, never at launch. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- Voice search. Requested at the moment the microphone is tapped, never
+         at launch, and the audio only ever reaches the platform recogniser. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Visual search. Requested at the moment the camera is chosen, never at
+         launch. The gallery needs no permission: image_picker goes through the
+         system photo picker, which hands back only the one file the shopper
+         chose. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
 
     <application
         android:label="gtradea_amazon"
@@ -49,6 +67,15 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Package visibility for the speech recogniser. Without these,
+             Android 11 and later hide it from this app entirely and voice
+             search reports "not available" on a phone that has one. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH"/>
         </intent>
     </queries>
 </manifest>

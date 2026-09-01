@@ -152,8 +152,9 @@ class _MethodTile extends StatelessWidget {
                               method.label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodyMedium
-                                  ?.copyWith(fontWeight: FontWeight.w700),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                           if (method.badge != null) ...[
@@ -228,8 +229,9 @@ class _SavedCards extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 6),
               child: Text(
                 strings.savedCards,
-                style: theme.textTheme.labelLarge
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             for (final card in cards)
@@ -306,8 +308,9 @@ class _SavedCardTile extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AppTheme.radiusControl),
               border: Border.all(
-                color:
-                    selected ? theme.colorScheme.primary : theme.dividerColor,
+                color: selected
+                    ? theme.colorScheme.primary
+                    : theme.dividerColor,
               ),
             ),
             child: Row(

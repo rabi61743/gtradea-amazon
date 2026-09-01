@@ -50,8 +50,8 @@ class ServerCartItem {
       productId: asString(json['product_id']),
       sourceProductId: asString(json['source_product_id']),
       source: asString(json['source']) ?? 'local',
-      variantLabel: asString(json['variant_label']) ??
-          asString(data['variantLabel']),
+      variantLabel:
+          asString(json['variant_label']) ?? asString(data['variantLabel']),
       productData: data,
     );
   }
@@ -69,12 +69,12 @@ class ServerCart {
   final num subtotal;
 
   factory ServerCart.fromJson(Map<String, dynamic> json) => ServerCart(
-        items: asRows(json['items'])
-            .map(ServerCartItem.fromJson)
-            .where((item) => item.id.isNotEmpty)
-            .toList(growable: false),
-        subtotal: asNum(json['subtotal']) ?? 0,
-      );
+    items: asRows(json['items'])
+        .map(ServerCartItem.fromJson)
+        .where((item) => item.id.isNotEmpty)
+        .toList(growable: false),
+    subtotal: asNum(json['subtotal']) ?? 0,
+  );
 }
 
 /// The signed-in shopper's cart, on the server.
@@ -89,9 +89,9 @@ class CartRepository {
   Dio get _dio => ApiClient.http;
 
   Future<ServerCart> list() => guarded(() async {
-        final res = await _dio.get('/cart');
-        return ServerCart.fromJson(asMap(res.data));
-      });
+    final res = await _dio.get('/cart');
+    return ServerCart.fromJson(asMap(res.data));
+  });
 
   /// Adds a line and returns the row the server created.
   Future<ServerCartItem> add({
@@ -103,28 +103,31 @@ class CartRepository {
     Map<String, dynamic>? productData,
   }) {
     return guarded(() async {
-      final res = await _dio.post('/cart', data: {
-        'quantity': quantity,
-        // Passed explicitly rather than defaulted: the server routes an order
-        // differently for an imported product than for a local one, and
-        // guessing here would send local products down the import path.
-        'source': source,
-        'source_product_id': ?sourceProductId,
-        'product_id': ?productId,
-        'variant_label': ?variantLabel,
-        'product_data': ?productData,
-      });
+      final res = await _dio.post(
+        '/cart',
+        data: {
+          'quantity': quantity,
+          // Passed explicitly rather than defaulted: the server routes an order
+          // differently for an imported product than for a local one, and
+          // guessing here would send local products down the import path.
+          'source': source,
+          'source_product_id': ?sourceProductId,
+          'product_id': ?productId,
+          'variant_label': ?variantLabel,
+          'product_data': ?productData,
+        },
+      );
       return ServerCartItem.fromJson(asMap(res.data));
     });
   }
 
   Future<void> setQuantity(String id, int quantity) => guarded(() async {
-        await _dio.patch('/cart/$id', data: {'quantity': quantity});
-      });
+    await _dio.patch('/cart/$id', data: {'quantity': quantity});
+  });
 
   Future<void> remove(String id) => guarded(() async {
-        await _dio.delete('/cart/$id');
-      });
+    await _dio.delete('/cart/$id');
+  });
 
   /// Empties the whole cart.
   ///
@@ -132,6 +135,6 @@ class CartRepository {
   /// part of the cart, and clearing everything would destroy the lines the
   /// shopper deliberately left behind.
   Future<void> clear() => guarded(() async {
-        await _dio.delete('/cart');
-      });
+    await _dio.delete('/cart');
+  });
 }

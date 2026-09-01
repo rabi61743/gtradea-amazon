@@ -102,10 +102,7 @@ class DetectResolved extends DetectResult {
     final seen = <String>{};
     final kept = <String>[];
 
-    for (final part in [
-      ...?street?.split(','),
-      ...?area?.split(','),
-    ]) {
+    for (final part in [...?street?.split(','), ...?area?.split(',')]) {
       final piece = part.trim();
       if (piece.isEmpty) continue;
       if (_isPlusCode(piece)) continue;
@@ -192,7 +189,12 @@ class LocationDetector {
   static LocationDetector instance = const LocationDetector();
 
   /// How long to wait for a fix before giving up and saying so.
-  static const fixTimeout = Duration(seconds: 15);
+  ///
+  /// Longer than it was, because a high-accuracy fix is a real GPS lock rather
+  /// than a cell-tower guess, and indoors or under cloud it can take twenty
+  /// seconds to settle. Cutting it off at fifteen turned a slow success into a
+  /// reported failure.
+  static const fixTimeout = Duration(seconds: 25);
 
   /// How long to wait on the permission dialog. Generous, because a shopper
   /// reads it, but bounded, because it can never come back at all.
@@ -236,10 +238,12 @@ class LocationDetector {
         // call -- delivers an empty grantResults, which the plugin drops
         // without completing its reply. The future then never resolves and the
         // caller is left spinning with nothing to tap.
-        permission = await Geolocator.requestPermission()
-            .timeout(permissionTimeout, onTimeout: () {
-          return LocationPermission.denied;
-        });
+        permission = await Geolocator.requestPermission().timeout(
+          permissionTimeout,
+          onTimeout: () {
+            return LocationPermission.denied;
+          },
+        );
       }
       if (permission == LocationPermission.deniedForever) {
         return const DetectPermissionDenied(permanently: true);
@@ -250,10 +254,13 @@ class LocationDetector {
 
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          // Coarse: a delivery address needs the street, and the geocoder
-          // supplies that from a rough fix. A GPS lock would cost the shopper
-          // a long wait and a warm phone for the same answer.
-          accuracy: LocationAccuracy.low,
+          // High, and the manifest declares ACCESS_FINE_LOCATION to match.
+          // The comment here used to argue the opposite -- that a rough fix was
+          // enough because the geocoder would supply the street from it. It is
+          // not: a network fix lands a kilometre or more out, and the geocoder
+          // faithfully names whatever is at that wrong point. The shopper then
+          // gets somebody else's neighbourhood presented as their address.
+          accuracy: LocationAccuracy.high,
           timeLimit: fixTimeout,
         ),
       );
@@ -328,11 +335,7 @@ class LocationDetector {
   /// province at all. A decorated match is accepted and canonicalised; a
   /// district falls through to the nearest served city, which is the right
   /// answer for it.
-  static String? _province(
-    Placemark place,
-    double latitude,
-    double longitude,
-  ) {
+  static String? _province(Placemark place, double latitude, double longitude) {
     final given = _firstNonEmpty([place.administrativeArea]);
     if (given != null) {
       final lower = given.toLowerCase();
@@ -372,8 +375,12 @@ class LocationDetector {
     var nearest = kServedCities.first;
     var best = double.infinity;
     for (final city in kServedCities) {
-      final distance =
-          distanceKm(latitude, longitude, city.latitude, city.longitude);
+      final distance = distanceKm(
+        latitude,
+        longitude,
+        city.latitude,
+        city.longitude,
+      );
       if (distance < best) {
         best = distance;
         nearest = city;
@@ -392,17 +399,13 @@ class LocationDetector {
   }
 
   /// Great-circle distance in kilometres.
-  static double distanceKm(
-    double lat1,
-    double lon1,
-    double lat2,
-    double lon2,
-  ) {
+  static double distanceKm(double lat1, double lon1, double lat2, double lon2) {
     const earthRadiusKm = 6371.0;
     final dLat = _radians(lat2 - lat1);
     final dLon = _radians(lon2 - lon1);
 
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(_radians(lat1)) *
             math.cos(_radians(lat2)) *
             math.sin(dLon / 2) *

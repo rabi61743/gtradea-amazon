@@ -106,8 +106,9 @@ class _GroupSwitch extends StatelessWidget {
                       children: [
                         Text(
                           group.label,
-                          style: theme.textTheme.bodyLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(

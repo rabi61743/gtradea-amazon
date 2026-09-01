@@ -34,34 +34,47 @@ class CheckoutAddress {
   final String? phone;
 
   Map<String, dynamic> toJson() => {
-        'firstName': firstName,
-        'lastName': lastName,
-        'address': address,
-        // Omitted rather than sent empty throughout: the server treats an
-        // absent key and an empty string differently.
-        'address2': ?_orNull(address2),
-        'city': city,
-        'state': ?_orNull(state),
-        'zipCode': ?_orNull(zipCode),
-        'country': country,
-        'phone': ?_orNull(phone),
-      };
+    'firstName': firstName,
+    'lastName': lastName,
+    'address': address,
+    // Omitted rather than sent empty throughout: the server treats an
+    // absent key and an empty string differently.
+    'address2': ?_orNull(address2),
+    'city': city,
+    'state': ?_orNull(state),
+    'zipCode': ?_orNull(zipCode),
+    'country': country,
+    'phone': ?_orNull(phone),
+  };
 
   static String? _orNull(String? value) =>
       (value == null || value.isEmpty) ? null : value;
 
   /// Built from a saved address.
-  factory CheckoutAddress.fromAddress(Address address) {
+  ///
+  /// [fallbackPhone] is the account's own number, used when the address has
+  /// none. **The server rejects an order with no phone** -- `Phone is required`,
+  /// measured against production -- and the new-address form no longer asks for
+  /// one, so without this fallback an address saved today can never be ordered
+  /// to. A courier needs a number to ring; whose address it is and whose account
+  /// it is are the same person, so the account's number is the right one.
+  factory CheckoutAddress.fromAddress(
+    Address address, {
+    String? fallbackPhone,
+  }) {
     final names = address.fullName.trim().split(RegExp(r'\s+'));
-    final digits = address.phone.replaceAll(RegExp(r'[^0-9]'), '');
+    final raw = address.phone.trim().isEmpty
+        ? (fallbackPhone ?? '')
+        : address.phone;
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
 
     return CheckoutAddress(
       firstName: names.isEmpty ? '' : names.first,
       lastName: names.length > 1 ? names.sublist(1).join(' ') : '',
-      address: [address.area, address.landmark]
-          .whereType<String>()
-          .where((part) => part.isNotEmpty)
-          .join(', '),
+      address: [
+        address.area,
+        address.landmark,
+      ].whereType<String>().where((part) => part.isNotEmpty).join(', '),
       // The district in both, on purpose. See the class doc.
       city: address.city,
       state: address.province,
@@ -174,15 +187,14 @@ class PlacedOrder {
   final Map<String, dynamic> gateway;
 
   factory PlacedOrder.fromJson(Map<String, dynamic> json) => PlacedOrder(
-        // Not `.toString()`: a missing value would become the literal string
-        // "null" and then be used to build a request path.
-        orderId: asString(json['orderId']) ?? asString(json['order_id']) ?? '',
-        orderNumber: asString(json['orderNumber']) ??
-            asString(json['order_number']) ??
-            '',
-        advanceAmount: asNum(json['advanceAmount']),
-        remainingAmount: asNum(json['remainingAmount']),
-        paidByWallet: asBool(json['paidByWallet']),
-        gateway: json,
-      );
+    // Not `.toString()`: a missing value would become the literal string
+    // "null" and then be used to build a request path.
+    orderId: asString(json['orderId']) ?? asString(json['order_id']) ?? '',
+    orderNumber:
+        asString(json['orderNumber']) ?? asString(json['order_number']) ?? '',
+    advanceAmount: asNum(json['advanceAmount']),
+    remainingAmount: asNum(json['remainingAmount']),
+    paidByWallet: asBool(json['paidByWallet']),
+    gateway: json,
+  );
 }

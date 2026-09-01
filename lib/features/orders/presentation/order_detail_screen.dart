@@ -10,6 +10,7 @@ import '../../cart/data/cart_store.dart';
 import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../data/order_store.dart';
+import '../data/orders_repository.dart';
 import '../widgets/order_status_chip.dart';
 import '../../../core/time_format.dart';
 import '../widgets/order_timeline.dart';
@@ -29,8 +30,14 @@ class OrderDetailScreen extends StatefulWidget {
 }
 
 class _OrderDetailScreenState extends State<OrderDetailScreen> {
-  Timer? _ticker;
-  DateTime _now = DateTime.now();
+  /// Captured once, as on the list.
+  ///
+  /// There used to be a `Timer.periodic(1s)` here calling `setState` on the
+  /// whole page for as long as an order was unsettled. It was left over from a
+  /// build where the stage was derived from elapsed time; the stage now comes
+  /// from the carrier, so the ticker rebuilt the timeline, every item row and
+  /// every product image once a second in order to change nothing at all.
+  final DateTime _now = DateTime.now();
 
   @override
   void initState() {
@@ -39,28 +46,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     // The carrier's view is a separate request that fails on its own, so it is
     // asked for here rather than folded into the order fetch.
     unawaited(OrderStore.instance.loadTracking(widget.orderId));
-    _syncTicker();
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
-
-  /// See OrdersScreen: the clock runs only while this order can still move.
-  void _syncTicker() {
-    final order = OrderStore.instance.byId(widget.orderId);
-    if (order == null || order.isSettled(_now)) {
-      _ticker?.cancel();
-      _ticker = null;
-      return;
-    }
-    _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _now = DateTime.now());
-      _syncTicker();
-    });
   }
 
   Future<void> _confirmCancel(Order order) async {
@@ -95,12 +80,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     if (!done) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(OrderStore.instance.error?.message ??
-              'This order could not be cancelled'),
+          content: Text(
+            OrderStore.instance.error?.message ??
+                'This order could not be cancelled',
+          ),
         ),
       );
     }
-    _syncTicker();
   }
 
   Future<void> _requestReturn(Order order) async {
@@ -131,12 +117,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     if (!done) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(OrderStore.instance.error?.message ??
-              'This return could not be requested'),
+          content: Text(
+            OrderStore.instance.error?.message ??
+                'This return could not be requested',
+          ),
         ),
       );
     }
-    _syncTicker();
   }
 
   @override
@@ -149,7 +136,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         if (order == null) {
           return Scaffold(
             appBar: AppBar(title: const Text('Order')),
-            body: const Center(child: Text('This order is no longer available')),
+            body: const Center(
+              child: Text('This order is no longer available'),
+            ),
           );
         }
 
@@ -164,12 +153,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 child: OrderTimeline(order: order, now: _now),
               ),
               _TrackingSection(order: order, now: _now),
+              _UpdatesSection(order: order),
               _Section(
                 title: 'Items',
                 child: Column(
                   children: [
-                    for (final line in order.lines)
-                      _ItemRow(line: line),
+                    for (final line in order.lines) _ItemRow(line: line),
                   ],
                 ),
               ),
@@ -215,7 +204,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                           : null,
                     ),
                     child: Text(
-                      order.canCancel(_now) ? 'Cancel order' : 'Request a return',
+                      order.canCancel(_now)
+                          ? 'Cancel order'
+                          : 'Request a return',
                     ),
                   ),
                 ),
@@ -242,10 +233,12 @@ class _StatusHeader extends StatelessWidget {
 
     final String detail;
     if (outcome == OrderOutcome.cancelled) {
-      detail = 'Cancelled ${formatWhen(order.outcomeAt ?? order.placedAt)}. '
+      detail =
+          'Cancelled ${formatWhen(order.outcomeAt ?? order.placedAt)}. '
           'Nothing will be delivered.';
     } else if (outcome == OrderOutcome.returned) {
-      detail = 'Return requested ${formatWhen(order.outcomeAt ?? order.placedAt)}. '
+      detail =
+          'Return requested ${formatWhen(order.outcomeAt ?? order.placedAt)}. '
           'A courier will collect it.';
     } else if (outcome == OrderOutcome.failed) {
       detail = 'The payment did not go through, so this order was not placed.';
@@ -293,6 +286,86 @@ class _StatusHeader extends StatelessWidget {
   }
 }
 
+/// The carrier's running log of what has happened to this order.
+///
+/// `updates[]` has been decoded off the wire since tracking was added and was
+/// never drawn -- the one part of the payload written as prose, thrown away
+/// while the screen rendered six labels this app made up instead.
+///
+/// Newest first, verbatim. `type` chooses an icon and nothing else: an
+/// unfamiliar type gets a neutral dot rather than being dropped, because the
+/// carrier's vocabulary is the carrier's to grow.
+class _UpdatesSection extends StatelessWidget {
+  const _UpdatesSection({required this.order});
+
+  final Order order;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final updates = order.tracking?.updates ?? const <TrackingUpdate>[];
+    final shown = updates.where((u) => u.title.isNotEmpty).toList()
+      ..sort((a, b) {
+        final left = a.at;
+        final right = b.at;
+        if (left == null || right == null) return 0;
+        return right.compareTo(left);
+      });
+
+    if (shown.isEmpty) return const SizedBox.shrink();
+
+    return _Section(
+      title: 'Updates',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final update in shown)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    _icon(update.type),
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(update.title, style: theme.textTheme.bodyMedium),
+                        // Only where the carrier timed it.
+                        if (update.at != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            formatRelative(update.at!),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static IconData _icon(String type) => switch (type.toLowerCase()) {
+    'delivered' => Icons.check_circle_outline,
+    'shipped' || 'transit' || 'dispatch' => Icons.local_shipping_outlined,
+    'delay' || 'delayed' || 'exception' => Icons.error_outline,
+    'cancelled' || 'cancel' => Icons.cancel_outlined,
+    _ => Icons.circle_outlined,
+  };
+}
+
 /// Courier and consignment number, once there is a parcel to track.
 class _TrackingSection extends StatelessWidget {
   const _TrackingSection({required this.order, required this.now});
@@ -335,8 +408,9 @@ class _TrackingSection extends StatelessWidget {
                       // Named by the carrier, or described plainly. Inventing a
                       // courier name would be a claim about who has the parcel.
                       order.courier ?? 'On its way',
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -379,7 +453,7 @@ class _PaymentBlock extends StatelessWidget {
     final theme = Theme.of(context);
     final state = order.paymentState;
     final colour = switch (state) {
-      PaymentState.paid => AppColors.success,
+      PaymentState.paid => AppColors.successInk,
       PaymentState.failed => theme.colorScheme.error,
       PaymentState.pending => AppColors.warning,
       PaymentState.cashOnDelivery => theme.colorScheme.onSurfaceVariant,
@@ -412,8 +486,9 @@ class _PaymentBlock extends StatelessWidget {
         ),
         Text(
           formatRupees(order.totals.total),
-          style: theme.textTheme.titleSmall
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ],
     );
@@ -471,8 +546,9 @@ class _ItemRow extends StatelessWidget {
           const SizedBox(width: 10),
           Text(
             formatRupees(line.lineTotal),
-            style: theme.textTheme.bodySmall
-                ?.copyWith(fontWeight: FontWeight.w700),
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -497,8 +573,9 @@ class _Section extends StatelessWidget {
         children: [
           Text(
             title,
-            style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 10),
           child,

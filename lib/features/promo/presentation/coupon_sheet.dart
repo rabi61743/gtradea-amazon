@@ -40,7 +40,8 @@ class CouponSheet extends StatelessWidget {
 
     // Usable first. An offers list that opens on three greyed-out cards reads
     // as "nothing for you" even when there is something.
-    final offers = [...CouponContent.all]..sort((a, b) {
+    final offers = [...CouponContent.all]
+      ..sort((a, b) {
         final aUsable = _refusalFor(a, store) == null;
         final bUsable = _refusalFor(b, store) == null;
         if (aUsable != bUsable) return aUsable ? -1 : 1;
@@ -77,8 +78,9 @@ class CouponSheet extends StatelessWidget {
                       children: [
                         Text(
                           'Offers for you',
-                          style: theme.textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w800),
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -183,7 +185,7 @@ class _CouponCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppTheme.radiusCard),
           border: Border.all(
             color: isApplied
-                ? AppColors.success
+                ? AppColors.successInk
                 : tint.withValues(alpha: usable ? 0.45 : 0.3),
             width: isApplied ? 1.5 : 1,
           ),
@@ -208,7 +210,7 @@ class _CouponCard extends StatelessWidget {
                               coupon.amountLabel,
                               style: theme.textTheme.titleSmall?.copyWith(
                                 fontWeight: FontWeight.w800,
-                                color: usable ? AppColors.success : null,
+                                color: usable ? AppColors.successInk : null,
                               ),
                             ),
                           ],
@@ -216,8 +218,9 @@ class _CouponCard extends StatelessWidget {
                         const SizedBox(height: 8),
                         Text(
                           coupon.headline,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(height: 1.3),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            height: 1.3,
+                          ),
                         ),
                       ],
                     ),
@@ -230,9 +233,9 @@ class _CouponCard extends StatelessWidget {
                       Clipboard.setData(ClipboardData(text: coupon.code));
                       ScaffoldMessenger.of(context)
                         ..hideCurrentSnackBar()
-                        ..showSnackBar(SnackBar(
-                          content: Text('${coupon.code} copied'),
-                        ));
+                        ..showSnackBar(
+                          SnackBar(content: Text('${coupon.code} copied')),
+                        );
                     },
                   ),
                 ],
@@ -284,39 +287,39 @@ class _CouponCard extends StatelessWidget {
                     child: isApplied
                         ? Row(
                             children: [
-                              const Icon(Icons.check_circle,
-                                  size: 15, color: AppColors.success),
+                              const Icon(
+                                Icons.check_circle,
+                                size: 15,
+                                color: AppColors.successInk,
+                              ),
                               const SizedBox(width: 6),
                               Text(
                                 'Applied',
                                 style: theme.textTheme.labelMedium?.copyWith(
-                                  color: AppColors.success,
+                                  color: AppColors.successInk,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ],
                           )
                         : refusal != null
-                            ? Text(
-                                _shortReason(refusal!),
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                  height: 1.3,
-                                ),
-                              )
-                            : Text(
-                                'Saves ${formatRupees(coupon.discountFor(lines))} '
-                                'on this order',
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
+                        ? Text(
+                            _shortReason(refusal!),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              height: 1.3,
+                            ),
+                          )
+                        : Text(
+                            'Saves ${formatRupees(coupon.discountFor(lines))} '
+                            'on this order',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                   ),
                   if (!isApplied)
-                    TextButton(
-                      onPressed: onApply,
-                      child: const Text('Apply'),
-                    ),
+                    TextButton(onPressed: onApply, child: const Text('Apply')),
                 ],
               ),
             ),
@@ -329,20 +332,30 @@ class _CouponCard extends StatelessWidget {
   /// The card carries a short form; the full sentence belongs where the
   /// shopper acted, not on every card in a list.
   static String _shortReason(CouponOutcome outcome) => switch (outcome) {
-        CouponExpired() => 'This offer has ended',
-        CouponAlreadyUsed() => 'You have used this one',
-        CouponBelowMinimum(:final shortfall) =>
-          'Add ${formatRupees(shortfall)} more to use this',
-        CouponNotApplicable(:final coupon) =>
-          'Nothing from ${coupon.eligibleCategories.join(' or ')} in your cart',
-        CouponConflict() => 'Remove the applied offer first',
-        CouponUnknown() || CouponApplied() => '',
-      };
+    CouponExpired() => 'This offer has ended',
+    CouponAlreadyUsed() => 'You have used this one',
+    CouponBelowMinimum(:final shortfall) =>
+      'Add ${formatRupees(shortfall)} more to use this',
+    CouponNotApplicable(:final coupon) =>
+      'Nothing from ${coupon.eligibleCategories.join(' or ')} in your cart',
+    CouponConflict() => 'Remove the applied offer first',
+    CouponUnknown() || CouponApplied() => '',
+  };
 
   static String _date(DateTime when) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${when.day} ${months[when.month - 1]}';
   }

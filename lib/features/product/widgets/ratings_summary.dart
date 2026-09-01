@@ -40,26 +40,32 @@ class RatingsSummary extends StatelessWidget {
                   children: [
                     Text(
                       summary.average.toStringAsFixed(1),
-                      style: theme.textTheme.headlineMedium
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     const SizedBox(width: 4),
-                    const Icon(Icons.star, size: 20, color: AppColors.success),
+                    const Icon(
+                      Icons.star,
+                      size: 20,
+                      color: AppColors.successInk,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 2),
                 Text(
                   summary.verdict,
                   style: theme.textTheme.labelMedium?.copyWith(
-                    color: AppColors.success,
+                    color: AppColors.successInk,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${summary.total} ratings',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -84,14 +90,18 @@ class RatingsSummary extends StatelessWidget {
         const SizedBox(height: 10),
         Row(
           children: [
-            Icon(Icons.verified_user_outlined,
-                size: 15, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.verified_user_outlined,
+              size: 15,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
                 '${summary.verifiedCount} from confirmed purchases',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],
@@ -124,8 +134,9 @@ class _DistributionBar extends StatelessWidget {
           width: 12,
           child: Text(
             '$stars',
-            style: theme.textTheme.labelSmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
         const Icon(Icons.star, size: 11, color: AppColors.star),
@@ -137,8 +148,9 @@ class _DistributionBar extends StatelessWidget {
               value: maxCount == 0 ? 0 : count / maxCount,
               minHeight: 6,
               backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(AppColors.success),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                AppColors.successInk,
+              ),
             ),
           ),
         ),
@@ -148,8 +160,9 @@ class _DistributionBar extends StatelessWidget {
           child: Text(
             '$count',
             textAlign: TextAlign.right,
-            style: theme.textTheme.labelSmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       ],
@@ -174,10 +187,9 @@ class _ReviewTile extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppColors.success,
+                  color: AppColors.successInk,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Row(
@@ -205,8 +217,9 @@ class _ReviewTile extends StatelessWidget {
                   review.author,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               // Unverified reviews are marked rather than dropped: hiding them
@@ -224,8 +237,9 @@ class _ReviewTile extends StatelessWidget {
               const Spacer(),
               Text(
                 review.when,
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),

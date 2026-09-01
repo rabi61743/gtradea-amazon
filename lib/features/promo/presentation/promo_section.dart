@@ -113,7 +113,8 @@ class _PromoSectionState extends State<PromoSection> {
                   _CodeField(
                     controller: _controller,
                     expanded: _expanded,
-                    onFocusChanged: (value) => setState(() => _expanded = value),
+                    onFocusChanged: (value) =>
+                        setState(() => _expanded = value),
                     onSubmit: _apply,
                   ),
                 if (_outcome != null && _outcome is! CouponApplied) ...[
@@ -177,9 +178,7 @@ class _CodeField extends StatelessWidget {
           valueListenable: controller,
           builder: (context, value, _) => FilledButton(
             onPressed: value.text.trim().isEmpty ? null : onSubmit,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(84, 44),
-            ),
+            style: FilledButton.styleFrom(minimumSize: const Size(84, 44)),
             child: const Text('Apply'),
           ),
         ),
@@ -194,8 +193,7 @@ class _UpperCaseFormatter extends TextInputFormatter {
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
     TextEditingValue newValue,
-  ) =>
-      newValue.copyWith(text: newValue.text.toUpperCase());
+  ) => newValue.copyWith(text: newValue.text.toUpperCase());
 }
 
 class _AppliedRow extends StatelessWidget {
@@ -222,7 +220,7 @@ class _AppliedRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.check_circle, size: 19, color: AppColors.success),
+          const Icon(Icons.check_circle, size: 19, color: AppColors.successInk),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -263,15 +261,20 @@ class _Success extends StatelessWidget {
 
     return Row(
       children: [
-        const Icon(Icons.celebration_outlined, size: 16,
-            color: AppColors.success),
+        const Icon(
+          Icons.celebration_outlined,
+          size: 16,
+          color: AppColors.successInk,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             '${outcome.coupon.code} applied. You saved '
             '${formatRupees(outcome.discount)}.',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: AppColors.success, height: 1.35),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.successInk,
+              height: 1.35,
+            ),
           ),
         ),
       ],
@@ -310,30 +313,40 @@ class _Refusal extends StatelessWidget {
   /// Shared with the offers sheet, so a code refused by typing and the same
   /// code refused by tapping give the same reason.
   static String message(CouponOutcome outcome) => switch (outcome) {
-        CouponUnknown(:final code) =>
-          'We do not recognise "$code". Check the spelling, or pick one from '
-              'the offers.',
-        CouponExpired(:final coupon) =>
-          '${coupon.code} expired on ${_date(coupon.expiresAt)}.',
-        CouponAlreadyUsed(:final coupon) =>
-          'You have already used ${coupon.code}. It is one per shopper.',
-        CouponBelowMinimum(:final coupon, :final shortfall) =>
-          'Spend ${formatRupees(shortfall)} more to use ${coupon.code}. '
-              'It needs an order of ${formatRupees(coupon.minOrder)}.',
-        CouponNotApplicable(:final coupon) =>
-          '${coupon.code} only applies to '
-              '${coupon.eligibleCategories.join(' and ')}, and there is none '
-              'in your cart.',
-        CouponConflict(:final existing) =>
-          '${existing.code} is already on this order, and offers cannot be '
-              'combined. Remove it first.',
-        CouponApplied() => '',
-      };
+    CouponUnknown(:final code) =>
+      'We do not recognise "$code". Check the spelling, or pick one from '
+          'the offers.',
+    CouponExpired(:final coupon) =>
+      '${coupon.code} expired on ${_date(coupon.expiresAt)}.',
+    CouponAlreadyUsed(:final coupon) =>
+      'You have already used ${coupon.code}. It is one per shopper.',
+    CouponBelowMinimum(:final coupon, :final shortfall) =>
+      'Spend ${formatRupees(shortfall)} more to use ${coupon.code}. '
+          'It needs an order of ${formatRupees(coupon.minOrder)}.',
+    CouponNotApplicable(:final coupon) =>
+      '${coupon.code} only applies to '
+          '${coupon.eligibleCategories.join(' and ')}, and there is none '
+          'in your cart.',
+    CouponConflict(:final existing) =>
+      '${existing.code} is already on this order, and offers cannot be '
+          'combined. Remove it first.',
+    CouponApplied() => '',
+  };
 
   static String _date(DateTime when) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${when.day} ${months[when.month - 1]}';
   }

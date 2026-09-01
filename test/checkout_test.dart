@@ -27,16 +27,15 @@ CheckoutOrderInput input({
   num walletApply = 0,
   String billingType = 'individual',
   String? companyName,
-}) =>
-    CheckoutOrderInput(
-      shippingAddress: CheckoutAddress.fromAddress(_address),
-      selectedCartItemIds: selected,
-      promoCode: promoCode,
-      walletApply: walletApply,
-      billingType: billingType,
-      companyName: companyName,
-      termsAccepted: true,
-    );
+}) => CheckoutOrderInput(
+  shippingAddress: CheckoutAddress.fromAddress(_address),
+  selectedCartItemIds: selected,
+  promoCode: promoCode,
+  walletApply: walletApply,
+  billingType: billingType,
+  companyName: companyName,
+  termsAccepted: true,
+);
 
 ServerPromo promo({
   String type = 'percentage',
@@ -48,19 +47,18 @@ ServerPromo promo({
   DateTime? until,
   int limit = 0,
   int used = 0,
-}) =>
-    ServerPromo(
-      code: 'DASHAIN20',
-      discountType: type,
-      discountValue: value,
-      maxDiscountAmount: max,
-      minPurchaseAmount: min,
-      freeShipping: freeShipping,
-      isActive: active,
-      validUntil: until,
-      usageLimit: limit,
-      usedCount: used,
-    );
+}) => ServerPromo(
+  code: 'DASHAIN20',
+  discountType: type,
+  discountValue: value,
+  maxDiscountAmount: max,
+  minPurchaseAmount: min,
+  freeShipping: freeShipping,
+  isActive: active,
+  validUntil: until,
+  usageLimit: limit,
+  usedCount: used,
+);
 
 void main() {
   group('the order body', () {
@@ -94,10 +92,9 @@ void main() {
       // An empty array and an absent key are not the same request: absent
       // tells the server to price the whole cart.
       expect(input().toJson().containsKey('selectedCartItemIds'), isFalse);
-      expect(
-        input(selected: ['row-1']).toJson()['selectedCartItemIds'],
-        ['row-1'],
-      );
+      expect(input(selected: ['row-1']).toJson()['selectedCartItemIds'], [
+        'row-1',
+      ]);
     });
 
     test('a zero wallet application is omitted', () {
@@ -118,22 +115,32 @@ void main() {
       expect(input().toJson(paymentMethod: 'cod')['paymentMethod'], 'cod');
     });
 
-    test('billing mirrors shipping, with the tax fields only for a business',
-        () {
-      final personal = input().toJson()['billingAddress'] as Map;
-      expect(personal['city'], 'Lalitpur');
-      expect(personal['billingType'], 'individual');
-      expect(personal.containsKey('companyName'), isFalse);
+    test(
+      'billing mirrors shipping, with the tax fields only for a business',
+      () {
+        final personal = input().toJson()['billingAddress'] as Map;
+        expect(personal['city'], 'Lalitpur');
+        expect(personal['billingType'], 'individual');
+        expect(personal.containsKey('companyName'), isFalse);
 
-      final business = input(billingType: 'business', companyName: 'GT Ltd')
-          .toJson()['billingAddress'] as Map;
-      expect(business['companyName'], 'GT Ltd');
+        final business =
+            input(
+                  billingType: 'business',
+                  companyName: 'GT Ltd',
+                ).toJson()['billingAddress']
+                as Map;
+        expect(business['companyName'], 'GT Ltd');
 
-      // Business, but the field was left blank: neither key is sent.
-      final blank = input(billingType: 'business', companyName: '')
-          .toJson()['billingAddress'] as Map;
-      expect(blank.containsKey('companyName'), isFalse);
-    });
+        // Business, but the field was left blank: neither key is sent.
+        final blank =
+            input(
+                  billingType: 'business',
+                  companyName: '',
+                ).toJson()['billingAddress']
+                as Map;
+        expect(blank.containsKey('companyName'), isFalse);
+      },
+    );
   });
 
   group('the money', () {
@@ -206,29 +213,35 @@ void main() {
       expect(summary.totalOrder, 1000);
     });
 
-    test('delivery is added to the total, with the server figure for its tax',
-        () {
-      final summary = OrderSummary.compute(
-        subtotal: 1000,
-        delivery: const DeliveryQuote(total: 250, vat: 29),
-      );
+    test(
+      'delivery is added to the total, with the server figure for its tax',
+      () {
+        final summary = OrderSummary.compute(
+          subtotal: 1000,
+          delivery: const DeliveryQuote(total: 250, vat: 29),
+        );
 
-      expect(summary.logisticTotal, 250);
-      expect(summary.logisticVat, 29, reason: 'the server computed it');
-      expect(summary.totalOrder, 1250);
-    });
+        expect(summary.logisticTotal, 250);
+        expect(summary.logisticVat, 29, reason: 'the server computed it');
+        expect(summary.totalOrder, 1250);
+      },
+    );
 
     test('the mode discount is the only figure kept to paisa', () {
-      final summary =
-          OrderSummary.compute(subtotal: 999, modeDiscountPercent: 7);
+      final summary = OrderSummary.compute(
+        subtotal: 999,
+        modeDiscountPercent: 7,
+      );
       expect(summary.modeDiscount, 69.93);
     });
 
     test('no quote means no delivery leg and the default rate', () {
       // A quote of mode "off", or nothing at all, hides the block rather than
       // showing a zero row.
-      expect(DeliveryQuote.fromJson(const {'mode': 'off', 'total': 500}),
-          isNull);
+      expect(
+        DeliveryQuote.fromJson(const {'mode': 'off', 'total': 500}),
+        isNull,
+      );
       expect(DeliveryQuote.fromJson(const {'total': 0}), isNull);
 
       final summary = OrderSummary.compute(subtotal: 1000);
@@ -245,14 +258,8 @@ void main() {
         refusePromo(promo(until: DateTime(2020)), 1000),
         PromoRefusal.expired,
       );
-      expect(
-        refusePromo(promo(limit: 5, used: 5), 1000),
-        PromoRefusal.usedUp,
-      );
-      expect(
-        refusePromo(promo(min: 2000), 1000),
-        PromoRefusal.belowMinimum,
-      );
+      expect(refusePromo(promo(limit: 5, used: 5), 1000), PromoRefusal.usedUp);
+      expect(refusePromo(promo(min: 2000), 1000), PromoRefusal.belowMinimum);
       expect(refusePromo(promo(), 1000), isNull);
     });
   });
@@ -269,15 +276,20 @@ void main() {
     tearDown(() => ApiClient.overrideDio = null);
 
     test('reads the order back', () async {
-      api.on('POST', '/checkout', body: const {
-        'orderId': 'order-1',
-        'orderNumber': 'GT-1001',
-        'advanceAmount': 500,
-        'remainingAmount': 1760,
-      });
+      api.on(
+        'POST',
+        '/checkout',
+        body: const {
+          'orderId': 'order-1',
+          'orderNumber': 'GT-1001',
+          'advanceAmount': 500,
+          'remainingAmount': 1760,
+        },
+      );
 
-      final placed =
-          await CheckoutRepository.instance.placeCashOnDelivery(input());
+      final placed = await CheckoutRepository.instance.placeCashOnDelivery(
+        input(),
+      );
 
       expect(placed.orderId, 'order-1');
       expect(placed.orderNumber, 'GT-1001');
@@ -288,53 +300,75 @@ void main() {
       // Checkout has a second failure convention on top of HTTP status. Missed,
       // it would decode as an order with no id and then be used to build a
       // request path.
-      api.on('POST', '/checkout', body: const {
-        'success': false,
-        'error': 'That promo code has expired',
-      });
+      api.on(
+        'POST',
+        '/checkout',
+        body: const {'success': false, 'error': 'That promo code has expired'},
+      );
 
       await expectLater(
         CheckoutRepository.instance.placeCashOnDelivery(input()),
-        throwsA(isA<ApiError>().having(
-          (e) => e.message,
-          'message',
-          'That promo code has expired',
-        )),
+        throwsA(
+          isA<ApiError>().having(
+            (e) => e.message,
+            'message',
+            'That promo code has expired',
+          ),
+        ),
       );
     });
 
     test('an absent success flag is a success, not a failure', () async {
       // Only a literal false counts. Treating a missing key as failure would
       // reject every ordinary response.
-      api.on('POST', '/checkout',
-          body: const {'orderId': 'x', 'orderNumber': 'GT-2'});
+      api.on(
+        'POST',
+        '/checkout',
+        body: const {'orderId': 'x', 'orderNumber': 'GT-2'},
+      );
 
-      final placed =
-          await CheckoutRepository.instance.placeCashOnDelivery(input());
+      final placed = await CheckoutRepository.instance.placeCashOnDelivery(
+        input(),
+      );
       expect(placed.orderNumber, 'GT-2');
     });
 
-    test('a missing order id stays empty rather than becoming "null"', () async {
-      // `.toString()` on a missing value yields the four-character string
-      // "null", which then goes into GET /orders/null.
-      api.on('POST', '/checkout', body: const {'orderNumber': 'GT-3'});
+    test(
+      'a missing order id stays empty rather than becoming "null"',
+      () async {
+        // `.toString()` on a missing value yields the four-character string
+        // "null", which then goes into GET /orders/null.
+        api.on('POST', '/checkout', body: const {'orderNumber': 'GT-3'});
 
-      final placed =
-          await CheckoutRepository.instance.placeCashOnDelivery(input());
-      expect(placed.orderId, '');
-    });
+        final placed = await CheckoutRepository.instance.placeCashOnDelivery(
+          input(),
+        );
+        expect(placed.orderId, '');
+      },
+    );
 
-    test('store credit covering everything comes back with no gateway payload',
-        () async {
-      api.on('POST', '/payments/khalti/initiate',
-          body: const {'orderId': 'o1', 'orderNumber': 'GT-4', 'paidByWallet': true});
+    test(
+      'store credit covering everything comes back with no gateway payload',
+      () async {
+        api.on(
+          'POST',
+          '/payments/khalti/initiate',
+          body: const {
+            'orderId': 'o1',
+            'orderNumber': 'GT-4',
+            'paidByWallet': true,
+          },
+        );
 
-      final placed = await CheckoutRepository.instance
-          .initiatePayment('khalti', input());
+        final placed = await CheckoutRepository.instance.initiatePayment(
+          'khalti',
+          input(),
+        );
 
-      expect(placed.paidByWallet, isTrue);
-      expect(placed.gateway.containsKey('paymentUrl'), isFalse);
-    });
+        expect(placed.paidByWallet, isTrue);
+        expect(placed.gateway.containsKey('paymentUrl'), isFalse);
+      },
+    );
 
     test('eSewa is told its own name and the others are not', () async {
       api.on('POST', '/payments/esewa/initiate', body: const {'orderId': 'o'});
@@ -347,31 +381,46 @@ void main() {
       expect(api.calls[1].json.containsKey('paymentMethod'), isFalse);
     });
 
-    test('an NPS instrument rides alongside the address, not inside it',
-        () async {
-      api.on('POST', '/payments/nps/initiate', body: const {'orderId': 'o'});
+    test(
+      'an NPS instrument rides alongside the address, not inside it',
+      () async {
+        api.on('POST', '/payments/nps/initiate', body: const {'orderId': 'o'});
 
-      await CheckoutRepository.instance
-          .initiatePayment('nps', input(), instrumentCode: 'NIBLMOBILE');
+        await CheckoutRepository.instance.initiatePayment(
+          'nps',
+          input(),
+          instrumentCode: 'NIBLMOBILE',
+        );
 
-      expect(api.calls.single.json['instrumentCode'], 'NIBLMOBILE');
-    });
+        expect(api.calls.single.json['instrumentCode'], 'NIBLMOBILE');
+      },
+    );
 
     test('a delivery quote that fails does not block the order', () async {
       // Someone who cannot get a freight estimate should still be able to buy.
-      api.on('POST', '/checkout/delivery-charge',
-          status: 500, body: const {'error': 'down'});
+      api.on(
+        'POST',
+        '/checkout/delivery-charge',
+        status: 500,
+        body: const {'error': 'down'},
+      );
 
       expect(
-        await CheckoutRepository.instance
-            .deliveryCharge(district: 'Lalitpur', shippingMode: 'land'),
+        await CheckoutRepository.instance.deliveryCharge(
+          district: 'Lalitpur',
+          shippingMode: 'land',
+        ),
         isNull,
       );
     });
 
     test('an unknown promo code is absent, not an error', () async {
-      api.on('GET', '/promo-codes/by-code/NOPE',
-          status: 404, body: const {'error': 'not found'});
+      api.on(
+        'GET',
+        '/promo-codes/by-code/NOPE',
+        status: 404,
+        body: const {'error': 'not found'},
+      );
 
       expect(await CheckoutRepository.instance.promoByCode('nope'), isNull);
     });

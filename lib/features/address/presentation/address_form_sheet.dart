@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../auth/data/auth_store.dart';
 import '../data/address_store.dart';
 
 /// Add or edit one address.
@@ -10,9 +10,17 @@ import '../data/address_store.dart';
 /// in both cases the shopper is in the middle of something they want to get
 /// back to.
 ///
-/// Fields are ordered the way an address is spoken here -- who, then how to
-/// reach them, then province down to the door -- rather than the way a
-/// database would store it.
+/// Three things to fill in, not seven: where it goes, which door, and a number
+/// to ring. Everything else the shop needs it already knows or can detect.
+///
+///   * **The name** is the signed-in account's. The checkout payload requires
+///     one, so it is still sent -- it is just not asked for twice.
+///   * **City and province** are filled by detection and shown as a summary
+///     line. They still reach the gateway, which needs the district in both
+///     `city` and `state` for freight, but they stop being fields.
+///   * **The postal code** is kept when a geocoder supplies one and never
+///     typed. Plenty of Nepali addresses have none, so asking was a question
+///     most shoppers had to skip.
 class AddressFormSheet extends StatefulWidget {
   const AddressFormSheet({
     super.key,
@@ -62,14 +70,14 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
 
   Address? get _start => widget.existing ?? widget.seed;
 
-  late final _name = TextEditingController(text: _start?.fullName);
   late final _phone = TextEditingController(text: _start?.phone);
   late final _city = TextEditingController(text: _start?.city);
   late final _area = TextEditingController(text: _start?.area);
   late final _landmark = TextEditingController(text: _start?.landmark);
   late final _postal = TextEditingController(text: _start?.postalCode);
 
-  late AddressLabel _label = _start?.label ?? AddressLabel.home;
+  late final AddressLabel _label = _start?.label ?? AddressLabel.home;
+
   /// Guarded, not trusted. The dropdown asserts when its value is not among
   /// its items, which would mean the form never opens at all -- so a seed
   /// carrying anything the list does not know falls back to the default
@@ -77,20 +85,48 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
   late String _province = kProvinces.contains(_start?.province)
       ? _start!.province
       : kProvinces[2];
-  late bool _makeDefault = widget.existing == null ||
+  late bool _makeDefault =
+      widget.existing == null ||
       AddressStore.instance.isDefault(widget.existing!.id);
+
+  /// Whether the city and province are showing as controls rather than as the
+  /// one-line summary.
+  ///
+  /// Open from the start in the two cases where the summary would be the wrong
+  /// answer:
+  ///
+  ///   * nothing detected, so there is nothing to summarise -- a shopper typing
+  ///     an address by hand meets "Edit" over a blank line, which is a puzzle
+  ///     rather than an affordance;
+  ///   * the city came from the nearest-town fallback, which is precisely when
+  ///     it is worth a second look. Hiding a guess behind a summary is how a
+  ///     wrong city gets saved without anybody reading it.
+  late bool _editingPlace =
+      (_start?.city ?? '').trim().isEmpty || widget.seedApproximate;
 
   bool get _isEditing => widget.existing != null;
 
   @override
   void dispose() {
-    _name.dispose();
     _phone.dispose();
     _city.dispose();
     _area.dispose();
     _landmark.dispose();
     _postal.dispose();
     super.dispose();
+  }
+
+  /// Who the parcel is for.
+  ///
+  /// No longer a field. The checkout payload requires a first and last name and
+  /// always sends them, so this cannot simply become empty -- it comes from the
+  /// signed-in account instead, which already knows. An address being edited
+  /// keeps whatever name it was saved with rather than being quietly rewritten
+  /// to the account holder's: somebody may well have addressed it to a relative.
+  String get _receiverName {
+    final existing = widget.existing?.fullName.trim() ?? '';
+    if (existing.isNotEmpty) return existing;
+    return AuthStore.instance.account?.displayName ?? '';
   }
 
   void _save() {
@@ -101,7 +137,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
     if (_isEditing) {
       saved = widget.existing!.copyWith(
         label: _label,
-        fullName: _name.text,
+        fullName: _receiverName,
         phone: _phone.text,
         province: _province,
         city: _city.text,
@@ -114,7 +150,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
     } else {
       saved = store.add(
         label: _label,
-        fullName: _name.text,
+        fullName: _receiverName,
         phone: _phone.text,
         province: _province,
         city: _city.text,
@@ -137,174 +173,112 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
       // it is placed rather than only inside a modal route.
       color: theme.colorScheme.surface,
       child: Padding(
-      // Lifts the sheet clear of the keyboard, so the field being typed into
-      // is never the one hidden behind it.
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.9,
-        maxChildSize: 0.95,
-        minChildSize: 0.5,
-        builder: (context, controller) => Form(
-          key: _formKey,
-          child: ListView(
-            controller: controller,
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-            children: [
-              const _Grabber(),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _isEditing ? 'Edit address' : 'New address',
-                      style: theme.textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w800),
+        // Lifts the sheet clear of the keyboard, so the field being typed into
+        // is never the one hidden behind it.
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.9,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          builder: (context, controller) => Form(
+            key: _formKey,
+            child: ListView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+              children: [
+                const _Grabber(),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _isEditing ? 'Edit address' : 'New address',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                _FieldLabel('Where it goes'),
+                TextFormField(
+                  controller: _area,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  maxLines: 2,
+                  minLines: 1,
+                  decoration: const InputDecoration(
+                    labelText: 'Address',
+                    prefixIcon: Icon(Icons.signpost_outlined),
+                    helperText: 'Tole, street and house number',
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              _FieldLabel('Save this address as'),
-              _LabelPicker(
-                selected: _label,
-                onChanged: (label) => setState(() => _label = label),
-              ),
-              const SizedBox(height: 20),
-
-              _FieldLabel('Who is receiving it'),
-              TextFormField(
-                controller: _name,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Full name',
-                  prefixIcon: Icon(Icons.person_outline),
-                ),
-                validator: (value) =>
-                    (value ?? '').trim().isEmpty ? 'Enter a name' : null,
-              ),
-              const SizedBox(height: 14),
-              TextFormField(
-                controller: _phone,
-                keyboardType: TextInputType.phone,
-                textInputAction: TextInputAction.next,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9+\- ]')),
-                ],
-                decoration: const InputDecoration(
-                  labelText: 'Phone',
-                  prefixIcon: Icon(Icons.phone_outlined),
-                  helperText: 'The courier calls this number on the day',
-                ),
-                validator: _validatePhone,
-              ),
-              const SizedBox(height: 20),
-
-              _FieldLabel('Where it goes'),
-              DropdownButtonFormField<String>(
-                initialValue: _province,
-                decoration: const InputDecoration(
-                  labelText: 'Province',
-                  prefixIcon: Icon(Icons.map_outlined),
-                ),
-                items: [
-                  for (final province in kProvinces)
-                    DropdownMenuItem(value: province, child: Text(province)),
-                ],
-                onChanged: (value) =>
-                    setState(() => _province = value ?? _province),
-              ),
-              const SizedBox(height: 14),
-              TextFormField(
-                controller: _city,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                decoration: InputDecoration(
-                  labelText: 'City or district',
-                  prefixIcon: const Icon(Icons.location_city_outlined),
-                  helperText: widget.seedApproximate
-                      ? 'We guessed this from your rough position -- change it '
-                          'if it is wrong'
+                  validator: (value) => (value ?? '').trim().isEmpty
+                      ? 'Enter the street and house'
                       : null,
-                  helperMaxLines: 2,
                 ),
-                validator: (value) =>
-                    (value ?? '').trim().isEmpty ? 'Enter a city' : null,
-              ),
-              const SizedBox(height: 14),
-              TextFormField(
-                controller: _area,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                maxLines: 2,
-                minLines: 1,
-                decoration: const InputDecoration(
-                  labelText: 'Tole, street and house number',
-                  prefixIcon: Icon(Icons.signpost_outlined),
-                ),
-                validator: (value) => (value ?? '').trim().isEmpty
-                    ? 'Enter the street and house'
-                    : null,
-              ),
-              const SizedBox(height: 14),
-              TextFormField(
-                controller: _postal,
-                keyboardType: TextInputType.number,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Postal code (optional)',
-                  prefixIcon: Icon(Icons.markunread_mailbox_outlined),
-                  // Optional because plenty of Nepali addresses do not carry
-                  // one, and demanding it would block the shoppers who have
-                  // none from saving anything at all.
-                  helperText: 'Leave blank if you do not have one',
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextFormField(
-                controller: _landmark,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _save(),
-                decoration: const InputDecoration(
-                  labelText: 'Landmark (optional)',
-                  prefixIcon: Icon(Icons.storefront_outlined),
-                  // Not decoration: plenty of deliveries here are found by
-                  // landmark rather than by street number.
-                  helperText: 'A shop or building nearby helps the courier',
-                ),
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 10),
 
-              CheckboxListTile(
-                value: _makeDefault,
-                onChanged: (value) =>
-                    setState(() => _makeDefault = value ?? false),
-                title: const Text('Deliver here by default'),
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-              ),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: _save,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
+                // The city and province, which the checkout payload needs and
+                // which a shopper should not be typing. Detection fills them; the
+                // summary lets them be corrected without being two more fields to
+                // work through.
+                _PlaceSummary(
+                  city: _city,
+                  province: _province,
+                  approximate: widget.seedApproximate,
+                  expanded: _editingPlace,
+                  onEdit: () => setState(() => _editingPlace = true),
+                  onProvinceChanged: (value) =>
+                      setState(() => _province = value ?? _province),
                 ),
-                child: Text(_isEditing ? 'Save changes' : 'Save address'),
-              ),
-            ],
+                const SizedBox(height: 14),
+
+                TextFormField(
+                  controller: _landmark,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Apartment, floor or unit (optional)',
+                    prefixIcon: Icon(Icons.meeting_room_outlined),
+                    // Doubles as the landmark line it used to be: plenty of
+                    // deliveries here are found by a nearby shop rather than by a
+                    // unit number, and both belong on the same second line.
+                    helperText: 'Or a nearby landmark, if that helps more',
+                    helperMaxLines: 2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                CheckboxListTile(
+                  value: _makeDefault,
+                  onChanged: (value) =>
+                      setState(() => _makeDefault = value ?? false),
+                  title: const Text('Deliver here by default'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                const SizedBox(height: 8),
+                FilledButton(
+                  onPressed: _save,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                  ),
+                  child: Text(_isEditing ? 'Save changes' : 'Save address'),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -312,11 +286,115 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
   /// Loose on purpose. Nepali mobile numbers are ten digits, but a landline,
   /// a country code or a spare number written with spaces are all things a
   /// real shopper types, and rejecting them helps nobody.
-  static String? _validatePhone(String? value) {
-    final digits = (value ?? '').replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.isEmpty) return 'Enter a phone number';
-    if (digits.length < 7) return 'That looks too short';
-    return null;
+}
+
+/// The city and province: one quiet line, or two controls.
+///
+/// They cannot be dropped -- the checkout payload sends the district as both
+/// `city` and `state`, and the freight calculation keys on one of them -- but
+/// they are also not things a shopper should be typing when detection has
+/// already answered them. So they are shown as a summary with a way in, and
+/// only become fields when somebody actually disagrees with them.
+class _PlaceSummary extends StatelessWidget {
+  const _PlaceSummary({
+    required this.city,
+    required this.province,
+    required this.approximate,
+    required this.expanded,
+    required this.onEdit,
+    required this.onProvinceChanged,
+  });
+
+  final TextEditingController city;
+  final String province;
+
+  /// True when the city came from the nearest-town fallback rather than from a
+  /// real geocode. Said plainly, because it is the one case where the summary
+  /// is a guess.
+  final bool approximate;
+
+  final bool expanded;
+  final VoidCallback onEdit;
+  final ValueChanged<String?> onProvinceChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (expanded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextFormField(
+            controller: city,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.next,
+            decoration: InputDecoration(
+              labelText: 'City or district',
+              prefixIcon: const Icon(Icons.location_city_outlined),
+              helperText: approximate
+                  ? 'We guessed this from your rough position -- change it '
+                        'if it is wrong'
+                  : null,
+              helperMaxLines: 2,
+            ),
+            validator: (value) =>
+                (value ?? '').trim().isEmpty ? 'Enter a city' : null,
+          ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            initialValue: province,
+            decoration: const InputDecoration(
+              labelText: 'Province',
+              prefixIcon: Icon(Icons.map_outlined),
+            ),
+            items: [
+              for (final option in kProvinces)
+                DropdownMenuItem(value: option, child: Text(option)),
+            ],
+            onChanged: onProvinceChanged,
+          ),
+        ],
+      );
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+      onTap: onEdit,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              approximate ? Icons.help_outline : Icons.location_city_outlined,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                approximate
+                    ? '${city.text}, $province — roughly'
+                    : '${city.text}, $province',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Edit',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -344,70 +422,6 @@ class _FieldLabel extends StatelessWidget {
 }
 
 /// Home / Work / Other as segmented chips.
-class _LabelPicker extends StatelessWidget {
-  const _LabelPicker({required this.selected, required this.onChanged});
-
-  final AddressLabel selected;
-  final ValueChanged<AddressLabel> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      children: [
-        for (final label in AddressLabel.values) ...[
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-              onTap: () => onChanged(label),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                padding: const EdgeInsets.symmetric(vertical: 11),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-                  color: label == selected
-                      ? theme.colorScheme.primary.withValues(alpha: 0.10)
-                      : null,
-                  border: Border.all(
-                    color: label == selected
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.outlineVariant,
-                    width: label == selected ? 1.5 : 1,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      label.icon,
-                      size: 19,
-                      color: label == selected
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      label.title,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: label == selected
-                            ? FontWeight.w800
-                            : FontWeight.w500,
-                        color: label == selected
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          if (label != AddressLabel.values.last) const SizedBox(width: 10),
-        ],
-      ],
-    );
-  }
-}
 
 class _Grabber extends StatelessWidget {
   const _Grabber();

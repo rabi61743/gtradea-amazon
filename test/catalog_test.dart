@@ -6,26 +6,30 @@ import 'package:gtradea_amazon/features/catalog/data/product.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/catalog.dart';
+import 'support/api.dart';
 import 'support/fake_api.dart';
 
 /// A department row as `/alibaba-categories` returns it.
 Map<String, dynamic> dept(String cid, String name, {int sort = 0}) => {
-      'cid': cid,
-      'parent_cid': null,
-      'name': name,
-      'sort_order': sort,
-      'is_leaf': false,
-    };
+  'cid': cid,
+  'parent_cid': null,
+  'name': name,
+  'sort_order': sort,
+  'is_leaf': false,
+};
 
-Map<String, dynamic> child(String cid, String parent, String name,
-        {int sort = 0}) =>
-    {
-      'cid': cid,
-      'parent_cid': parent,
-      'name': name,
-      'sort_order': sort,
-      'is_leaf': true,
-    };
+Map<String, dynamic> child(
+  String cid,
+  String parent,
+  String name, {
+  int sort = 0,
+}) => {
+  'cid': cid,
+  'parent_cid': parent,
+  'name': name,
+  'sort_order': sort,
+  'is_leaf': true,
+};
 
 void main() {
   late FakeApi api;
@@ -39,11 +43,10 @@ void main() {
   tearDown(() => ApiClient.overrideDio = null);
 
   group('the department tree', () {
-    test('a department with no children does not bring the tree down',
-        () async {
-      // The bulk children query is capped server-side, so most departments come
-      // back with nothing attached. Sorting the shared const empty list threw,
-      // and every screen that reads the tree showed a failure.
+    test('a department with no children does not bring the tree down', () async {
+      // A handful of the real departments genuinely have nothing under them.
+      // Sorting the shared const empty list threw, and every screen that reads
+      // the tree showed a failure.
       api.onCall('GET', '/alibaba-categories', (call) {
         if (call.query['parent_cid'] == 'null') {
           return reply([dept('a', 'Women'), dept('b', 'Men', sort: 1)]);
@@ -60,7 +63,9 @@ void main() {
 
     test('children come back in the order the server ordered them', () async {
       api.onCall('GET', '/alibaba-categories', (call) {
-        if (call.query['parent_cid'] == 'null') return reply([dept('a', 'Home')]);
+        if (call.query['parent_cid'] == 'null') {
+          return reply([dept('a', 'Home')]);
+        }
         return reply([
           child('a2', 'a', 'Second', sort: 2),
           child('a1', 'a', 'First', sort: 1),
@@ -71,11 +76,39 @@ void main() {
       expect(tree.single.children.map((c) => c.name), ['First', 'Second']);
     });
 
-    test('a refused children query still yields the departments', () async {
-      // Departments with no subcategories still beat an empty browse screen.
+    test(
+      'a refused children query is reported, not silently swallowed',
+      () async {
+        // This assertion used to be the opposite way round: the failure was
+        // caught and the tree came back as departments that each claimed to
+        // contain nothing. That was written for a server-side cap on the bulk
+        // query which does not exist -- all forty-eight parents in one request
+        // answers with every one of the eleven hundred subcategories.
+        //
+        // So the only thing the catch could ever hide was a real failure, and
+        // it hid it as an empty catalogue: no error, no retry, nothing to do.
+        api.onCall('GET', '/alibaba-categories', (call) {
+          if (call.query['parent_cid'] == 'null') {
+            return reply([dept('a', 'Home')]);
+          }
+          return reply({'error': 'too many ids'}, status: 414);
+        });
+
+        await expectLater(
+          CatalogRepository.instance.categoryTree(),
+          throwsA(isA<ApiError>()),
+        );
+      },
+    );
+
+    test('an empty children response is not a failure', () async {
+      // The distinction the test above depends on: a server that answers "no
+      // children" is telling the truth and must still render.
       api.onCall('GET', '/alibaba-categories', (call) {
-        if (call.query['parent_cid'] == 'null') return reply([dept('a', 'Home')]);
-        return reply({'error': 'too many ids'}, status: 414);
+        if (call.query['parent_cid'] == 'null') {
+          return reply([dept('a', 'Home')]);
+        }
+        return reply(const []);
       });
 
       final tree = await CatalogRepository.instance.categoryTree();
@@ -83,39 +116,48 @@ void main() {
       expect(tree.single.children, isEmpty);
     });
 
-    test('rows with no cid or no name are dropped, not rendered blank',
-        () async {
-      api.onCall('GET', '/alibaba-categories', (call) {
-        if (call.query['parent_cid'] == 'null') {
-          return reply([
-            dept('a', 'Home'),
-            {'cid': '', 'name': 'No id'},
-            {'cid': 'c', 'name': ''},
-          ]);
-        }
-        return reply(const []);
-      });
+    test(
+      'rows with no cid or no name are dropped, not rendered blank',
+      () async {
+        api.onCall('GET', '/alibaba-categories', (call) {
+          if (call.query['parent_cid'] == 'null') {
+            return reply([
+              dept('a', 'Home'),
+              {'cid': '', 'name': 'No id'},
+              {'cid': 'c', 'name': ''},
+            ]);
+          }
+          return reply(const []);
+        });
 
-      final tree = await CatalogRepository.instance.categoryTree();
-      expect(tree.map((c) => c.name), ['Home']);
-    });
+        final tree = await CatalogRepository.instance.categoryTree();
+        expect(tree.map((c) => c.name), ['Home']);
+      },
+    );
   });
 
   group('failures', () {
-    test('a failure inside the app is not reported as a dead connection',
-        () async {
-      // Both arrive with no status code. Telling someone on full signal to
-      // check their network sends them to reboot a router over our bug.
-      await expectLater(
-        guarded(() async => throw StateError('a decode blew up')),
-        throwsA(isA<ApiError>()
-            .having((e) => e.local, 'local', isTrue)
-            .having((e) => e.isNetwork, 'isNetwork', isFalse)
-            // And it does not put a Dart error in front of a shopper.
-            .having((e) => e.message, 'message',
-                isNot(contains('a decode blew up')))),
-      );
-    });
+    test(
+      'a failure inside the app is not reported as a dead connection',
+      () async {
+        // Both arrive with no status code. Telling someone on full signal to
+        // check their network sends them to reboot a router over our bug.
+        await expectLater(
+          guarded(() async => throw StateError('a decode blew up')),
+          throwsA(
+            isA<ApiError>()
+                .having((e) => e.local, 'local', isTrue)
+                .having((e) => e.isNetwork, 'isNetwork', isFalse)
+                // And it does not put a Dart error in front of a shopper.
+                .having(
+                  (e) => e.message,
+                  'message',
+                  isNot(contains('a decode blew up')),
+                ),
+          ),
+        );
+      },
+    );
 
     test('a real transport failure is a network failure', () async {
       // No route registered means the fake answers 404, which is a response --
@@ -125,33 +167,41 @@ void main() {
 
       await expectLater(
         CatalogRepository.instance.discover(),
-        throwsA(isA<ApiError>()
-            .having((e) => e.statusCode, 'statusCode', 503)
-            .having((e) => e.message, 'message', 'down')
-            .having((e) => e.isNetwork, 'isNetwork', isFalse)),
+        throwsA(
+          isA<ApiError>()
+              .having((e) => e.statusCode, 'statusCode', 503)
+              .having((e) => e.message, 'message', 'down')
+              .having((e) => e.isNetwork, 'isNetwork', isFalse),
+        ),
       );
     });
   });
 
   group('products', () {
-    test('a row with no price says so rather than claiming it is free',
-        () async {
-      api.on('GET', '/feed/discover', body: feedRows(3));
+    test(
+      'a row with no price says so rather than claiming it is free',
+      () async {
+        api.on('GET', '/feed/discover', body: feedRows(3));
 
-      final products = await CatalogRepository.instance.discover();
-      final unpriced = products.firstWhere((p) => p.numIid == 'iid-1');
+        final products = await CatalogRepository.instance.discover();
+        final unpriced = products.firstWhere((p) => p.numIid == 'iid-1');
 
-      expect(unpriced.displayPrice, isNull);
-      expect(unpriced.hasPrice, isFalse);
-      expect(products.first.hasPrice, isTrue);
-    });
+        expect(unpriced.displayPrice, isNull);
+        expect(unpriced.hasPrice, isFalse);
+        expect(products.first.hasPrice, isTrue);
+      },
+    );
 
     test('rows with no id are dropped', () async {
-      api.on('GET', '/feed/discover', body: [
-        feedRowJson,
-        {...feedRowJson, 'num_iid': null},
-        {...feedRowJson, 'num_iid': 'x', 'title': ''},
-      ]);
+      api.on(
+        'GET',
+        '/feed/discover',
+        body: [
+          feedRowJson,
+          {...feedRowJson, 'num_iid': null},
+          {...feedRowJson, 'num_iid': 'x', 'title': ''},
+        ],
+      );
 
       final products = await CatalogRepository.instance.discover();
       expect(products, hasLength(1));
@@ -171,14 +221,60 @@ void main() {
       expect(product.repurchaseRate, isNull);
     });
 
-    test('sales are rounded to an order of magnitude, and hidden when tiny',
-        () {
-      Product withSales(int n) => Product.fromJson({...feedRowJson, 'sales': n});
+    test(
+      'sales are rounded to an order of magnitude, and hidden when tiny',
+      () {
+        Product withSales(int n) =>
+            Product.fromJson({...feedRowJson, 'sales': n});
 
-      expect(withSales(10).salesLabel, isNull);
-      expect(withSales(240).salesLabel, '240 sold');
-      expect(withSales(4300).salesLabel, '4k+ sold');
-      expect(withSales(111344).salesLabel, '100k+ sold');
+        expect(withSales(10).salesLabel, isNull);
+        expect(withSales(240).salesLabel, '240 sold');
+        expect(withSales(4300).salesLabel, '4k+ sold');
+        expect(withSales(111344).salesLabel, '100k+ sold');
+      },
+    );
+  });
+
+  group('brands', () {
+    test('are read from the server, active ones only', () async {
+      // Names for a control the sheet draws switched off. They are fetched
+      // rather than typed into the app precisely because they are shown: a
+      // hardcoded list of plausible brands would be invented data.
+      api.on(
+        'GET',
+        '/brands',
+        body: const [
+          {'id': '1', 'name': 'Adidas', 'is_active': true},
+          {'id': '2', 'name': 'Retired Brand', 'is_active': false},
+          {'id': '3', 'name': 'Apple', 'is_active': true},
+        ],
+      );
+
+      final brands = await CatalogRepository.instance.brands();
+
+      expect(brands, ['Adidas', 'Apple']);
+    });
+
+    test('a row with no name is dropped rather than shown blank', () async {
+      api.on(
+        'GET',
+        '/brands',
+        body: const [
+          {'id': '1', 'is_active': true},
+          {'id': '2', 'name': 'Dell', 'is_active': true},
+        ],
+      );
+
+      expect(await CatalogRepository.instance.brands(), ['Dell']);
+    });
+
+    test('and are asked for without a credential', () async {
+      // Public data, like the rest of the catalogue.
+      api.on('GET', '/brands', body: const <Map<String, dynamic>>[]);
+
+      await CatalogRepository.instance.brands();
+
+      expect(api.calls.single.authorization, isNull);
     });
   });
 
@@ -225,52 +321,69 @@ void main() {
 
   group('banners', () {
     test('an expired campaign is not shown', () async {
-      api.on('GET', '/hero-banners', body: [
-        {
-          'id': '1',
-          'title': 'Live now',
-          'promo_valid_until': '2999-01-01T00:00:00Z',
-        },
-        {
-          'id': '2',
-          'title': 'Last Dashain',
-          'promo_valid_until': '2020-01-01T00:00:00Z',
-        },
-        {'id': '3', 'title': 'No expiry set'},
-      ]);
+      api.on(
+        'GET',
+        '/hero-banners',
+        body: [
+          {
+            'id': '1',
+            'title': 'Live now',
+            'promo_valid_until': '2999-01-01T00:00:00Z',
+          },
+          {
+            'id': '2',
+            'title': 'Last Dashain',
+            'promo_valid_until': '2020-01-01T00:00:00Z',
+          },
+          {'id': '3', 'title': 'No expiry set'},
+        ],
+      );
 
       final banners = await CatalogRepository.instance.heroBanners();
       expect(banners.map((b) => b.title), ['Live now', 'No expiry set']);
     });
 
-    test('a banner whose artwork carries the words keeps its overlay flag',
-        () async {
-      api.on('GET', '/hero-banners', body: [
-        {'id': '1', 'title': 'Art only', 'show_text_overlay': false},
-        {'id': '2', 'title': 'Text over art'},
-      ]);
+    test(
+      'a banner whose artwork carries the words keeps its overlay flag',
+      () async {
+        api.on(
+          'GET',
+          '/hero-banners',
+          body: [
+            {'id': '1', 'title': 'Art only', 'show_text_overlay': false},
+            {'id': '2', 'title': 'Text over art'},
+          ],
+        );
 
-      final banners = await CatalogRepository.instance.heroBanners();
-      expect(banners[0].showTextOverlay, isFalse);
-      // Absent means yes: a banner that says nothing about it is the ordinary
-      // case, and hiding the title by default would blank most of them.
-      expect(banners[1].showTextOverlay, isTrue);
-    });
+        final banners = await CatalogRepository.instance.heroBanners();
+        expect(banners[0].showTextOverlay, isFalse);
+        // Absent means yes: a banner that says nothing about it is the ordinary
+        // case, and hiding the title by default would blank most of them.
+        expect(banners[1].showTextOverlay, isTrue);
+      },
+    );
   });
 
   group('guest browsing', () {
     test('carries no credential', () async {
       api.on('GET', '/feed/discover', body: feedRows(1));
-      api.on('GET', '/search/products', body: feedRows(1));
       api.on('GET', '/hero-banners', body: const []);
+      // Both search endpoints: a plain keyword search goes to the live
+      // catalogue and a filtered one to /search/products, and browsing signed
+      // out has to stay credential-free on either path.
+      stubSearch(api, feedRows(1));
 
       await CatalogRepository.instance.discover();
       await CatalogRepository.instance.search(query: 'x');
+      await CatalogRepository.instance.search(query: 'x', minPrice: 1);
       await CatalogRepository.instance.heroBanners();
 
       for (final call in api.calls) {
-        expect(call.headers.containsKey('Authorization'), isFalse,
-            reason: call.path);
+        expect(
+          call.headers.containsKey('Authorization'),
+          isFalse,
+          reason: call.path,
+        );
       }
     });
   });

@@ -49,8 +49,9 @@ class AssuranceRow extends StatelessWidget {
                         Text(
                           assurance.label,
                           textAlign: TextAlign.center,
-                          style: theme.textTheme.labelSmall
-                              ?.copyWith(fontWeight: FontWeight.w600),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
@@ -82,8 +83,9 @@ class AssuranceRow extends StatelessWidget {
                     const SizedBox(width: 10),
                     Text(
                       assurance.label,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),

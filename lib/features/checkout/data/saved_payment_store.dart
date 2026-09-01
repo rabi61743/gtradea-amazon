@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../auth/data/auth_store.dart';
 import 'card_details.dart';
+import 'saved_payment_repository.dart';
 
 /// A card the shopper asked us to remember.
 ///
@@ -35,6 +36,8 @@ class SavedPaymentMethod {
     required this.expiryMonth,
     required this.expiryYear,
     this.gatewayToken,
+    this.serverId,
+    this.isDefault = false,
   });
 
   final String id;
@@ -50,6 +53,15 @@ class SavedPaymentMethod {
   /// The gateway's handle for this card, when there is one.
   final String? gatewayToken;
 
+  /// The row id on the shop's own record of saved cards, when this card came
+  /// from there. Null for one remembered on the device alone, which cannot be
+  /// deleted or made default on the server because the server has never seen
+  /// it.
+  final String? serverId;
+
+  /// Whether the shop has this marked as the card to reach for first.
+  final bool isDefault;
+
   String get maskedNumber => '•••• •••• •••• $last4';
 
   String get expiryLabel =>
@@ -59,8 +71,10 @@ class SavedPaymentMethod {
   /// shopper looking for a card they saved should find it, marked expired.
   bool isExpired([DateTime? now]) {
     final today = now ?? DateTime.now();
-    return !DateTime(expiryYear, expiryMonth + 1)
-        .isAfter(DateTime(today.year, today.month, today.day));
+    return !DateTime(
+      expiryYear,
+      expiryMonth + 1,
+    ).isAfter(DateTime(today.year, today.month, today.day));
   }
 
   /// Built from details that have just been used.
@@ -70,7 +84,8 @@ class SavedPaymentMethod {
       SavedPaymentMethod(
         // Derived from what is stored anyway, so no new identifier has to be
         // invented and the same card saved twice does not appear twice.
-        id: '${card.brand.name}:${card.last4}:${card.expiryMonth}'
+        id:
+            '${card.brand.name}:${card.last4}:${card.expiryMonth}'
             '${card.expiryYear}',
         brand: card.brand,
         last4: card.last4,
@@ -81,14 +96,16 @@ class SavedPaymentMethod {
       );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'brand': brand.name,
-        'last4': last4,
-        'holder': holder,
-        'expiryMonth': expiryMonth,
-        'expiryYear': expiryYear,
-        'gatewayToken': gatewayToken,
-      };
+    'id': id,
+    'brand': brand.name,
+    'last4': last4,
+    'holder': holder,
+    'expiryMonth': expiryMonth,
+    'expiryYear': expiryYear,
+    'gatewayToken': gatewayToken,
+    'serverId': serverId,
+    'isDefault': isDefault,
+  };
 
   static SavedPaymentMethod? fromJson(Map<String, dynamic> json) {
     final id = json['id'];
@@ -112,13 +129,26 @@ class SavedPaymentMethod {
       gatewayToken: json['gatewayToken'] is String
           ? json['gatewayToken'] as String
           : null,
+      serverId: json['serverId'] is String ? json['serverId'] as String : null,
+      isDefault: json['isDefault'] == true,
     );
   }
 
+  SavedPaymentMethod copyWith({bool? isDefault}) => SavedPaymentMethod(
+    id: id,
+    brand: brand,
+    last4: last4,
+    holder: holder,
+    expiryMonth: expiryMonth,
+    expiryYear: expiryYear,
+    gatewayToken: gatewayToken,
+    serverId: serverId,
+    isDefault: isDefault ?? this.isDefault,
+  );
+
   @override
   bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is SavedPaymentMethod && other.id == id);
+      identical(this, other) || (other is SavedPaymentMethod && other.id == id);
 
   @override
   int get hashCode => id.hashCode;
@@ -190,6 +220,88 @@ class SavedPaymentStore extends ChangeNotifier {
   @visibleForTesting
   Future<void> switchIdentity(String? email) => _switchTo(email);
 
+  /// Replaces the local list with the shop's own record of this account.
+  ///
+  /// The device copy stays as the cache it always was: checkout reads the
+  /// cards synchronously while it builds, and waiting on a request there would
+  /// mean a payment screen that flickers its saved cards in. This refreshes
+  /// behind that.
+  ///
+  /// Guests are left alone. A card list belongs to an account, and there is no
+  /// account to ask about.
+  Future<void> syncFromServer() async {
+    if (!AuthStore.instance.isSignedIn) return;
+    final rows = await SavedPaymentRepository.instance.list();
+    _cards
+      ..clear()
+      ..addAll(rows);
+    _loaded = true;
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  /// Saves a card on the server and keeps the local copy in step.
+  ///
+  /// The number is passed straight through to the repository, which reads its
+  /// brand and last four digits and sends neither it nor anything else that
+  /// could be used to charge the card.
+  Future<SavedPaymentMethod> addCard({
+    required String number,
+    required String holder,
+    required int expiryMonth,
+    required int expiryYear,
+    bool makeDefault = false,
+  }) async {
+    final saved = await SavedPaymentRepository.instance.add(
+      number: number,
+      holder: holder,
+      expiryMonth: expiryMonth,
+      expiryYear: expiryYear,
+      isDefault: makeDefault,
+    );
+
+    // The server decides which card is default, so the whole list is re-read
+    // rather than guessing that this one took the flag and the others lost it.
+    if (makeDefault) {
+      for (var i = 0; i < _cards.length; i++) {
+        if (_cards[i].isDefault) {
+          _cards[i] = _cards[i].copyWith(isDefault: false);
+        }
+      }
+    }
+    _cards.removeWhere((card) => card.id == saved.id);
+    _cards.insert(0, saved);
+    _loaded = true;
+    notifyListeners();
+    unawaited(_persist());
+    return saved;
+  }
+
+  /// Forgets a card, on the server first.
+  ///
+  /// Server first on purpose: a card removed locally and then left on the
+  /// server would come back on the next sync, which reads as the delete having
+  /// been ignored.
+  Future<void> removeCard(SavedPaymentMethod card) async {
+    final serverId = card.serverId;
+    if (serverId != null && serverId.isNotEmpty) {
+      await SavedPaymentRepository.instance.remove(serverId);
+    }
+    remove(card.id);
+  }
+
+  /// Marks one as the card to reach for first.
+  Future<void> makeDefault(SavedPaymentMethod card) async {
+    final serverId = card.serverId;
+    if (serverId == null || serverId.isEmpty) return;
+    await SavedPaymentRepository.instance.setDefault(serverId);
+    for (var i = 0; i < _cards.length; i++) {
+      _cards[i] = _cards[i].copyWith(isDefault: _cards[i].id == card.id);
+    }
+    notifyListeners();
+    unawaited(_persist());
+  }
+
   /// Remembers a card. Returns false when it was already saved.
   bool save(SavedPaymentMethod card) {
     if (_cards.any((existing) => existing.id == card.id)) return false;
@@ -224,10 +336,7 @@ class SavedPaymentStore extends ChangeNotifier {
     _bound = false;
   }
 
-  Future<void> _readInto(
-    List<SavedPaymentMethod> target,
-    String key,
-  ) async {
+  Future<void> _readInto(List<SavedPaymentMethod> target, String key) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(key);
@@ -252,8 +361,9 @@ class SavedPaymentStore extends ChangeNotifier {
   /// not land under another's after a fast sign-in.
   Future<void> _persist() {
     final key = storageKeyFor(_scope);
-    final payload =
-        jsonEncode(_cards.map((card) => card.toJson()).toList(growable: false));
+    final payload = jsonEncode(
+      _cards.map((card) => card.toJson()).toList(growable: false),
+    );
 
     return _writes = _writes.then((_) async {
       try {

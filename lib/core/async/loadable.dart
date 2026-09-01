@@ -17,12 +17,7 @@ import '../network/api_error.dart';
 /// sees the catalogue immediately and a dead connection shows yesterday's
 /// products rather than a spinner over nothing.
 class Loadable<T> extends ChangeNotifier {
-  Loadable(
-    this._fetch, {
-    this.cacheKey,
-    this.encode,
-    this.decode,
-  });
+  Loadable(this._fetch, {this.cacheKey, this.encode, this.decode});
 
   final Future<T> Function() _fetch;
 
@@ -52,6 +47,34 @@ class Loadable<T> extends ChangeNotifier {
   Future<void> load() {
     if (_everLoaded || _loading) return Future.value();
     return refresh();
+  }
+
+  /// Show what is held, and quietly go and check.
+  ///
+  /// For data that is cached to disk and changes on the server without the app
+  /// being told -- the department tree is the case this exists for. [load]
+  /// alone never revalidates: it returns early once anything has loaded, so a
+  /// cached tree would go on being shown until the app was restarted, and an
+  /// edit made in the backoffice would be invisible.
+  ///
+  /// Returns immediately when there is something to paint. The fetch runs
+  /// behind it and swaps the value in if it differs, so there is no spinner
+  /// over data the shopper can already see.
+  Future<void> revalidate() {
+    if (_loading) return Future.value();
+
+    // Nothing to show yet: behave exactly like `load`, spinner and all.
+    // Deferring this one instead would blank the screen for a turn, and
+    // whatever `empty` says would flash before the spinner replaced it.
+    if (!_everLoaded && _value == null) return refresh();
+
+    // Deferred, because this is called from `build`. `refresh` notifies its
+    // listeners on the way in, and notifying during a build asks every other
+    // widget listening to this same store to rebuild while the framework is
+    // already building -- which is an assertion, not a warning. A microtask
+    // puts it after the frame, where a state change belongs.
+    unawaited(Future.microtask(refresh));
+    return Future.value();
   }
 
   Future<void> refresh() async {
@@ -93,6 +116,10 @@ class Loadable<T> extends ChangeNotifier {
     _error = null;
     _everLoaded = false;
     _stale = false;
+    // The disk copy goes too. Clearing memory alone left the next load reading
+    // the departed account's data straight back off disk, which is the one
+    // thing this method exists to prevent.
+    unawaited(_clearCache());
     notifyListeners();
   }
 
@@ -109,6 +136,17 @@ class Loadable<T> extends ChangeNotifier {
       notifyListeners();
     } catch (_) {
       // A cache that will not decode is a cache worth ignoring.
+    }
+  }
+
+  Future<void> _clearCache() async {
+    final key = cacheKey;
+    if (key == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('cache_$key');
+    } catch (_) {
+      // Best effort, like the write.
     }
   }
 

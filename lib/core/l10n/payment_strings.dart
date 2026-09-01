@@ -36,6 +36,7 @@ class PaymentStrings {
     required this.orderPlaced,
     required this.payOnDelivery,
     required this.paymentFailed,
+    required this.orderNotPlaced,
     required this.paymentCancelled,
     required this.cancelledDetail,
     required this.orderStillExists,
@@ -90,6 +91,14 @@ class PaymentStrings {
   final String orderPlaced;
   final String payOnDelivery;
   final String paymentFailed;
+
+  /// Shown when the order was refused before any payment was attempted.
+  ///
+  /// Distinct from [paymentFailed] because the two are different events and
+  /// telling them apart is what stops a shopper hunting a charge that was never
+  /// made. The server rejects an order for real reasons -- a line with no
+  /// variant chosen, an item that has gone -- and none of those is a payment.
+  final String orderNotPlaced;
   final String paymentCancelled;
   final String cancelledDetail;
 
@@ -111,7 +120,8 @@ class PaymentStrings {
     savedCards: 'Saved cards',
     useNewCard: 'Use a different card',
     saveThisCard: 'Remember this card',
-    saveCardNote: 'Only the brand, last four digits and expiry are kept. The '
+    saveCardNote:
+        'Only the brand, last four digits and expiry are kept. The '
         'card number and security code are never stored.',
     removeCard: 'Remove',
     removeCardConfirm: 'Remove this card?',
@@ -120,7 +130,8 @@ class PaymentStrings {
     cardHolder: 'Name on card',
     expiry: 'Expiry (MM/YY)',
     cvv: 'Security code',
-    cvvHelp: 'The code on the back of your card. It is used once and never '
+    cvvHelp:
+        'The code on the back of your card. It is used once and never '
         'saved.',
     orderTotal: 'Order total',
     discount: 'Discount',
@@ -138,17 +149,25 @@ class PaymentStrings {
     orderPlaced: 'Order placed',
     payOnDelivery: 'Pay the courier when it arrives',
     paymentFailed: 'Payment failed',
+    orderNotPlaced: 'Order not placed',
     paymentCancelled: 'Payment cancelled',
-    cancelledDetail: 'Nothing has been charged. You can pay another way or try '
+    cancelledDetail:
+        'Nothing has been charged. You can pay another way or try '
         'again.',
+    // Does not send the shopper to Your orders. Measured against production:
+    // the gateway lists only orders that have been paid for, so an order
+    // abandoned at the gateway is not there -- and the old wording sent
+    // someone looking for it to an empty screen. Retrying here is the one
+    // route that actually works.
     orderStillExists: (number) =>
-        'Your order $number was created and is waiting for payment. You can pay '
-        'for it from your orders.',
+        'Your order $number was created and is waiting for payment. Pay for it '
+        'here -- nothing is charged until you do.',
     tryAgain: 'Try again',
     chooseAnother: 'Choose another method',
     trackOrder: 'Track order',
     done: 'Done',
-    securityNote: 'Your card details go straight to the payment provider. This '
+    securityNote:
+        'Your card details go straight to the payment provider. This '
         'app never stores your card number or security code.',
   );
 
@@ -163,7 +182,8 @@ class PaymentStrings {
     savedCards: 'सुरक्षित कार्डहरू',
     useNewCard: 'अर्को कार्ड प्रयोग गर्नुहोस्',
     saveThisCard: 'यो कार्ड सम्झ्नुहोस्',
-    saveCardNote: 'कार्डको प्रकार, अन्तिम चार अंक र म्याद मात्र राखिन्छ। '
+    saveCardNote:
+        'कार्डको प्रकार, अन्तिम चार अंक र म्याद मात्र राखिन्छ। '
         'कार्ड नम्बर र सुरक्षा कोड कहिल्यै सुरक्षित गरिँदैन।',
     removeCard: 'हटाउनुहोस्',
     removeCardConfirm: 'यो कार्ड हटाउने?',
@@ -172,7 +192,8 @@ class PaymentStrings {
     cardHolder: 'कार्डमा लेखिएको नाम',
     expiry: 'म्याद (MM/YY)',
     cvv: 'सुरक्षा कोड',
-    cvvHelp: 'कार्डको पछाडि लेखिएको कोड। एक पटक मात्र प्रयोग हुन्छ, सुरक्षित '
+    cvvHelp:
+        'कार्डको पछाडि लेखिएको कोड। एक पटक मात्र प्रयोग हुन्छ, सुरक्षित '
         'गरिँदैन।',
     orderTotal: 'अर्डर जम्मा',
     discount: 'छुट',
@@ -190,17 +211,20 @@ class PaymentStrings {
     orderPlaced: 'अर्डर भयो',
     payOnDelivery: 'सामान आउँदा कुरियरलाई तिर्नुहोस्',
     paymentFailed: 'भुक्तानी असफल',
+    orderNotPlaced: 'अर्डर राखिएन',
     paymentCancelled: 'भुक्तानी रद्द भयो',
-    cancelledDetail: 'कुनै रकम काटिएको छैन। अर्को तरिकाले वा फेरि प्रयास '
+    cancelledDetail:
+        'कुनै रकम काटिएको छैन। अर्को तरिकाले वा फेरि प्रयास '
         'गर्न सक्नुहुन्छ।',
     orderStillExists: (number) =>
-        'तपाईंको अर्डर $number बनेको छ र भुक्तानी कुरिरहेको छ। अर्डरहरूबाट '
-        'भुक्तानी गर्न सक्नुहुन्छ।',
+        'तपाईंको अर्डर $number बनेको छ र भुक्तानी कुरिरहेको छ। यहीँबाट '
+        'भुक्तानी गर्नुहोस् -- नगरेसम्म केही शुल्क लाग्दैन।',
     tryAgain: 'फेरि प्रयास गर्नुहोस्',
     chooseAnother: 'अर्को विधि छान्नुहोस्',
     trackOrder: 'अर्डर ट्रयाक गर्नुहोस्',
     done: 'भयो',
-    securityNote: 'तपाईंको कार्ड विवरण सिधै भुक्तानी सेवामा जान्छ। यो एपले '
+    securityNote:
+        'तपाईंको कार्ड विवरण सिधै भुक्तानी सेवामा जान्छ। यो एपले '
         'कार्ड नम्बर वा सुरक्षा कोड कहिल्यै राख्दैन।',
   );
 }

@@ -6,7 +6,10 @@ import 'package:gtradea_amazon/features/address/presentation/address_form_sheet.
 import 'package:gtradea_amazon/features/address/presentation/address_list_screen.dart';
 import 'package:gtradea_amazon/features/address/presentation/address_picker_sheet.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+import 'package:gtradea_amazon/features/checkout/data/checkout_models.dart';
+
 import 'support/auth.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 Widget _wrap(Widget child) => MaterialApp(theme: AppTheme.light, home: child);
@@ -23,16 +26,26 @@ Address _add({
   String area = 'Jhamsikhel, house 12',
   AddressLabel label = AddressLabel.home,
   bool makeDefault = false,
-}) =>
-    AddressStore.instance.add(
-      label: label,
-      fullName: name,
-      phone: '9800000000',
-      province: 'Bagmati',
-      city: city,
-      area: area,
-      makeDefault: makeDefault,
-    );
+}) => AddressStore.instance.add(
+  label: label,
+  fullName: name,
+  phone: '9800000000',
+  province: 'Bagmati',
+  city: city,
+  area: area,
+  makeDefault: makeDefault,
+);
+
+/// What the form saves now that it no longer asks for a phone.
+const _blankPhoneAddress = Address(
+  id: 'a1',
+  label: AddressLabel.home,
+  fullName: 'Rabi Yadav',
+  phone: '',
+  province: 'Bagmati',
+  city: 'Lalitpur',
+  area: 'Jhamsikhel',
+);
 
 void main() {
   setUp(() {
@@ -125,8 +138,11 @@ void main() {
       expect(AddressStore.instance.search('lakeside').length, 1);
       expect(AddressStore.instance.search('pokhara').length, 1);
       expect(AddressStore.instance.search('work').length, 1);
-      expect(AddressStore.instance.search('').length, 2,
-          reason: 'an empty query is not a filter');
+      expect(
+        AddressStore.instance.search('').length,
+        2,
+        reason: 'an empty query is not a filter',
+      );
       expect(AddressStore.instance.search('nowhere'), isEmpty);
     });
 
@@ -153,7 +169,8 @@ void main() {
 
     test('an address missing what a courier needs is dropped', () async {
       SharedPreferences.setMockInitialValues({
-        'gtradea_addresses': '{"addresses":['
+        'gtradea_addresses':
+            '{"addresses":['
             '{"id":"1","fullName":"No area","city":"Lalitpur"},'
             '{"id":"2","fullName":"No city","area":"Jhamsikhel"},'
             '{"id":"3","fullName":"Fine","area":"Jhamsikhel","city":"Lalitpur"}'
@@ -176,25 +193,31 @@ void main() {
 
       expect(AddressStore.instance.count, 1);
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString('gtradea_addresses'), isNull,
-          reason: 'the guest copy is cleared once carried over');
+      expect(
+        prefs.getString('gtradea_addresses'),
+        isNull,
+        reason: 'the guest copy is cleared once carried over',
+      );
     });
   });
 
   group('AddressPickerSheet', () {
-    testWidgets('an empty book offers a way forward, not a wall',
-        (tester) async {
+    testWidgets('an empty book offers a way forward, not a wall', (
+      tester,
+    ) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(
-        Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () => AddressPickerSheet.show(context),
-              child: const Text('open'),
+      await tester.pumpWidget(
+        _wrap(
+          Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => AddressPickerSheet.show(context),
+                child: const Text('open'),
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
@@ -206,8 +229,9 @@ void main() {
       expect(find.textContaining('shopping as a guest'), findsOneWidget);
     });
 
-    testWidgets('saved addresses are listed with the default marked',
-        (tester) async {
+    testWidgets('saved addresses are listed with the default marked', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       _add();
       _add(name: 'Sita Sharma', city: 'Pokhara', label: AddressLabel.work);
@@ -215,14 +239,18 @@ void main() {
       await tester.pumpWidget(_wrap(const AddressPickerSheet()));
       await tester.pumpAndSettle();
 
-      expect(find.text('Rabi Yadav'), findsOneWidget);
-      expect(find.text('Sita Sharma'), findsOneWidget);
+      // Listed by address, not by name: the form no longer asks for one, so
+      // every row would otherwise carry the account holder's.
+      expect(find.textContaining('Lalitpur'), findsOneWidget);
+      expect(find.textContaining('Pokhara'), findsOneWidget);
+      expect(find.text('Rabi Yadav'), findsNothing);
       expect(find.text('Default'), findsOneWidget);
       expect(find.text('Work'), findsOneWidget);
     });
 
-    testWidgets('the search box only appears once the book needs one',
-        (tester) async {
+    testWidgets('the search box only appears once the book needs one', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       _add();
       _add(name: 'Sita', city: 'Pokhara');
@@ -237,8 +265,9 @@ void main() {
       expect(find.byType(TextField), findsOneWidget);
     });
 
-    testWidgets('searching narrows the list and says so when nothing matches',
-        (tester) async {
+    testWidgets('searching narrows the list and says so when nothing matches', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       _add(name: 'Rabi Yadav', city: 'Lalitpur');
       _add(name: 'Sita Sharma', city: 'Pokhara');
@@ -249,8 +278,10 @@ void main() {
 
       await tester.enterText(find.byType(TextField), 'pokhara');
       await tester.pumpAndSettle();
-      expect(find.text('Sita Sharma'), findsOneWidget);
-      expect(find.text('Rabi Yadav'), findsNothing);
+      // Search still matches on the name behind the row -- it just is not what
+      // the row prints any more.
+      expect(find.textContaining('Pokhara'), findsOneWidget);
+      expect(find.textContaining('Lalitpur'), findsNothing);
 
       await tester.enterText(find.byType(TextField), 'zzz');
       await tester.pumpAndSettle();
@@ -267,25 +298,61 @@ void main() {
       await tester.tap(find.text('Save address'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Enter a name'), findsOneWidget);
-      expect(find.text('Enter a phone number'), findsOneWidget);
+      // A name is no longer asked for -- it comes from the account -- so there
+      // is no "Enter a name" to fail on. What a courier genuinely cannot work
+      // without still stops the save.
+      expect(find.text('Enter a name'), findsNothing);
+      // The phone field was removed from this form, so there is nothing to
+      // fail on -- and nothing collected. See the note on the order payload.
+      expect(find.text('Enter a phone number'), findsNothing);
       expect(find.text('Enter a city'), findsOneWidget);
+      expect(find.text('Enter the street and house'), findsOneWidget);
       expect(AddressStore.instance.isEmpty, isTrue);
     });
 
-    testWidgets('a filled form saves and becomes the default', (tester) async {
+    testWidgets('asks for three things, not seven', (tester) async {
+      // The whole point of the change. Name, province, postal code and the
+      // separate landmark line are gone; what is left is where it goes, which
+      // door, and a number to ring.
       _useTallWindow(tester);
       await tester.pumpWidget(_wrap(const AddressFormSheet()));
       await tester.pumpAndSettle();
 
+      expect(find.widgetWithText(TextFormField, 'Full name'), findsNothing);
+      expect(
+        find.widgetWithText(TextFormField, 'Postal code (optional)'),
+        findsNothing,
+      );
+      expect(
+        find.widgetWithText(TextFormField, 'Landmark (optional)'),
+        findsNothing,
+      );
+
+      expect(find.widgetWithText(TextFormField, 'Address'), findsOneWidget);
+      expect(
+        find.widgetWithText(
+          TextFormField,
+          'Apartment, floor or unit (optional)',
+        ),
+        findsOneWidget,
+      );
+      // Phone and the Home/Work/Other picker were removed from this form.
+      expect(find.widgetWithText(TextFormField, 'Phone'), findsNothing);
+      expect(find.text('Work'), findsNothing);
+    });
+
+    testWidgets('a filled form saves and becomes the default', (tester) async {
+      _useTallWindow(tester);
+      signInForTest(name: 'Rabi Yadav');
+      await tester.pumpWidget(_wrap(const AddressFormSheet()));
+      await tester.pumpAndSettle();
+
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Full name'), 'Rabi Yadav');
+        find.widgetWithText(TextFormField, 'City or district'),
+        'Lalitpur',
+      );
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Phone'), '9800000000');
-      await tester.enterText(
-          find.widgetWithText(TextFormField, 'City or district'), 'Lalitpur');
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'Tole, street and house number'),
+        find.widgetWithText(TextFormField, 'Address'),
         'Jhamsikhel, house 12',
       );
       await tester.tap(find.text('Save address'));
@@ -293,76 +360,176 @@ void main() {
 
       expect(AddressStore.instance.count, 1);
       final saved = AddressStore.instance.addresses.single;
+      // Taken from the signed-in account rather than typed. This is the
+      // assertion that stops the checkout regression: CheckoutAddress requires
+      // a first and last name and always sends them.
       expect(saved.fullName, 'Rabi Yadav');
       expect(saved.city, 'Lalitpur');
-      expect(saved.label, AddressLabel.home,
-          reason: 'Home is the default label, untouched');
+      expect(
+        saved.label,
+        AddressLabel.home,
+        reason: 'Home is the default label, untouched',
+      );
       expect(AddressStore.instance.isDefault(saved.id), isTrue);
     });
 
-    testWidgets('a province the dropdown does not know does not crash it',
-        (tester) async {
+    testWidgets('the order it produces carries a name, but no phone', (
+      tester,
+    ) async {
+      // Asserted end to end rather than trusted, and it records a real
+      // consequence: with the phone field removed from the form there is no
+      // longer any source for one -- the account does not carry a phone either
+      // -- so the order reaches the courier without a contact number.
+      _useTallWindow(tester);
+      signInForTest(name: 'Rabi Yadav');
+      await tester.pumpWidget(_wrap(const AddressFormSheet()));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'City or district'),
+        'Lalitpur',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Address'),
+        'Jhamsikhel',
+      );
+      await tester.tap(find.text('Save address'));
+      await tester.pumpAndSettle();
+
+      final payload = CheckoutAddress.fromAddress(
+        AddressStore.instance.addresses.single,
+      ).toJson();
+
+      expect(payload['firstName'], 'Rabi');
+      expect(payload['lastName'], 'Yadav');
+      expect(
+        payload['phone'],
+        anyOf(isNull, isEmpty),
+        reason: 'nothing collects one any more',
+      );
+      expect(payload['city'], 'Lalitpur');
+      expect(payload['state'], isNotNull, reason: 'freight keys on this');
+    });
+
+    test('the account phone fills in for an address saved without one', () {
+      // The form stopped collecting a phone, but the server refuses an order
+      // that carries none -- "Phone is required". Without this the whole
+      // checkout is a dead end, so it is the account's number that goes.
+      final payload = CheckoutAddress.fromAddress(
+        _blankPhoneAddress,
+        fallbackPhone: '9800000000',
+      ).toJson();
+
+      expect(payload['phone'], '+9779800000000');
+    });
+
+    test('an address that has a phone keeps its own', () {
+      final payload = CheckoutAddress.fromAddress(
+        _blankPhoneAddress.copyWith(phone: '9811111111'),
+        fallbackPhone: '9800000000',
+      ).toJson();
+
+      expect(
+        payload['phone'],
+        '+9779811111111',
+        reason: 'the doorstep number beats the account one when there is one',
+      );
+    });
+
+    test('a blank account phone is not sent as a country code', () {
+      // '+977' alone is not a number anyone can ring, and it would sail past a
+      // server check for a non-empty phone.
+      final payload = CheckoutAddress.fromAddress(
+        _blankPhoneAddress,
+        fallbackPhone: '   ',
+      ).toJson();
+
+      expect(payload['phone'], anyOf(isNull, isEmpty));
+    });
+
+    testWidgets('a province the dropdown does not know does not crash it', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       // A geocoder can return 'Bagmati Province' or a district name. Handing
       // that straight to the dropdown asserts, and the form never opens at
       // all -- so the seed is guarded rather than trusted.
-      await tester.pumpWidget(_wrap(
-        const AddressFormSheet(
-          seed: Address(
-            id: '',
-            label: AddressLabel.home,
-            fullName: '',
-            phone: '',
-            province: 'Province No. 3',
-            city: 'Kathmandu',
-            area: '',
+      await tester.pumpWidget(
+        _wrap(
+          const AddressFormSheet(
+            seed: Address(
+              id: '',
+              label: AddressLabel.home,
+              fullName: '',
+              phone: '',
+              province: 'Province No. 3',
+              city: 'Kathmandu',
+              area: '',
+            ),
           ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
       expect(find.text('New address'), findsOneWidget);
+      // A detected city shows as the summary line rather than as a field.
+      expect(find.textContaining('Kathmandu'), findsOneWidget);
+      expect(
+        find.widgetWithText(TextFormField, 'City or district'),
+        findsNothing,
+      );
+
+      // And Edit still opens it, guarded onto a province the list knows.
+      await tester.tap(find.text('Edit'));
+      await tester.pumpAndSettle();
+
       expect(find.widgetWithText(TextFormField, 'Kathmandu'), findsOneWidget);
+      expect(
+        find.text('Bagmati'),
+        findsWidgets,
+        reason: '"Province No. 3" fell back rather than asserting',
+      );
     });
 
     testWidgets('a seeded form is still an add, not an edit', (tester) async {
       _useTallWindow(tester);
       // The picker seeds city and province from a chip. Treating that as an
       // edit would try to update a row with no id and save nothing at all.
-      await tester.pumpWidget(_wrap(
-        const AddressFormSheet(
-          seed: Address(
-            id: '',
-            label: AddressLabel.home,
-            fullName: '',
-            phone: '',
-            province: 'Gandaki',
-            city: 'Pokhara',
-            area: '',
+      await tester.pumpWidget(
+        _wrap(
+          const AddressFormSheet(
+            seed: Address(
+              id: '',
+              label: AddressLabel.home,
+              fullName: '',
+              phone: '',
+              province: 'Gandaki',
+              city: 'Pokhara',
+              area: '',
+            ),
           ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('New address'), findsOneWidget);
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Full name'), 'Sita');
-      await tester.enterText(
-          find.widgetWithText(TextFormField, 'Phone'), '9800000000');
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'Tole, street and house number'),
+        find.widgetWithText(TextFormField, 'Address'),
         'Lakeside',
       );
       await tester.tap(find.text('Save address'));
       await tester.pumpAndSettle();
 
       expect(AddressStore.instance.count, 1);
+      // Carried through the summary line without ever being typed.
       expect(AddressStore.instance.addresses.single.city, 'Pokhara');
+      expect(AddressStore.instance.addresses.single.province, 'Gandaki');
     });
 
-    testWidgets('editing an existing address updates it in place',
-        (tester) async {
+    testWidgets('editing an existing address updates it in place', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       final address = _add();
 
@@ -391,8 +558,9 @@ void main() {
       expect(find.text('No addresses saved'), findsOneWidget);
     });
 
-    testWidgets('shows the default as a statement, not a button',
-        (tester) async {
+    testWidgets('shows the default as a statement, not a button', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       _add();
       _add(name: 'Sita', city: 'Pokhara');
@@ -418,8 +586,9 @@ void main() {
       expect(AddressStore.instance.isDefault(second.id), isTrue);
     });
 
-    testWidgets('deleting asks first, and backing out keeps it',
-        (tester) async {
+    testWidgets('deleting asks first, and backing out keeps it', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       _add();
 

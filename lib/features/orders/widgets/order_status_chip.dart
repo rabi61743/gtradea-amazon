@@ -58,12 +58,21 @@ class OrderStatusChip extends StatelessWidget {
     }
 
     return switch (order.stage(now)) {
-      OrderStage.delivered => (AppColors.success, Icons.check_circle_outline),
-      OrderStage.outForDelivery => (AppColors.inProgress, Icons.local_shipping_outlined),
+      OrderStage.delivered => (
+        AppColors.successInk,
+        Icons.check_circle_outline,
+      ),
+      OrderStage.outForDelivery => (
+        AppColors.inProgress,
+        Icons.local_shipping_outlined,
+      ),
       OrderStage.shipped => (AppColors.shipLand, Icons.local_shipping_outlined),
       OrderStage.packed => (AppColors.shipLand, Icons.inventory_2_outlined),
       OrderStage.confirmed => (theme.colorScheme.primary, Icons.task_alt),
-      OrderStage.placed => (theme.colorScheme.primary, Icons.receipt_long_outlined),
+      OrderStage.placed => (
+        theme.colorScheme.primary,
+        Icons.receipt_long_outlined,
+      ),
     };
   }
 }

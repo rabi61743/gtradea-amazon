@@ -36,15 +36,14 @@ Map<String, dynamic> row(
   String? variantLabel,
   num price = 554,
   String name = 'Quick-drying polo',
-}) =>
-    {
-      'id': id,
-      'quantity': quantity,
-      'source': '1688',
-      'source_product_id': sourceProductId,
-      'variant_label': variantLabel,
-      'product_data': {'name': name, 'price': price, 'image': null},
-    };
+}) => {
+  'id': id,
+  'quantity': quantity,
+  'source': '1688',
+  'source_product_id': sourceProductId,
+  'variant_label': variantLabel,
+  'product_data': {'name': name, 'price': price, 'image': null},
+};
 
 /// Runs whatever sync is pending, without waiting out the debounce.
 ///
@@ -127,8 +126,9 @@ void main() {
       await CartStore.instance.switchIdentity('rabi@example.com');
       await settleSync();
 
-      final data = (api.calls.firstWhere((c) => c.method == 'POST').json
-          ['product_data'] as Map);
+      final data =
+          (api.calls.firstWhere((c) => c.method == 'POST').json['product_data']
+              as Map);
       expect(data['skuId'], 'sku-green-m');
       expect(data['specId'], 'spec-green-m');
       expect(data['name'], 'Quick-drying polo');
@@ -138,12 +138,20 @@ void main() {
     test('does not add a product the account already holds', () async {
       // Added on the web, then signed in on the phone holding the same thing.
       // Adding it again would silently double the order.
-      api.on('GET', '/cart', body: {
-        'items': [
-          row('srv-1', sourceProductId: _polo.productId,
-              variantLabel: 'Green / M', quantity: 2),
-        ],
-      });
+      api.on(
+        'GET',
+        '/cart',
+        body: {
+          'items': [
+            row(
+              'srv-1',
+              sourceProductId: _polo.productId,
+              variantLabel: 'Green / M',
+              quantity: 2,
+            ),
+          ],
+        },
+      );
       var posts = 0;
       api.onCall('POST', '/cart', (call) {
         posts++;
@@ -161,9 +169,13 @@ void main() {
     });
 
     test('an empty guest cart just takes the account cart', () async {
-      api.on('GET', '/cart', body: {
-        'items': [row('srv-9', sourceProductId: '999', quantity: 3)],
-      });
+      api.on(
+        'GET',
+        '/cart',
+        body: {
+          'items': [row('srv-9', sourceProductId: '999', quantity: 3)],
+        },
+      );
 
       signInForTest();
       await CartStore.instance.switchIdentity('rabi@example.com');
@@ -177,7 +189,11 @@ void main() {
 
   group('while signed in', () {
     setUp(() async {
-      api.onCall('POST', '/cart', (call) => reply({...call.json, 'id': 'srv-1'}));
+      api.onCall(
+        'POST',
+        '/cart',
+        (call) => reply({...call.json, 'id': 'srv-1'}),
+      );
       signInForTest();
       await CartStore.instance.switchIdentity('rabi@example.com');
     });
@@ -186,12 +202,20 @@ void main() {
       CartStore.instance.add(_polo);
       await settleSync();
 
-      api.on('GET', '/cart', body: {
-        'items': [
-          row('srv-1', sourceProductId: _polo.productId,
-              variantLabel: 'Green / M', quantity: 2),
-        ],
-      });
+      api.on(
+        'GET',
+        '/cart',
+        body: {
+          'items': [
+            row(
+              'srv-1',
+              sourceProductId: _polo.productId,
+              variantLabel: 'Green / M',
+              quantity: 2,
+            ),
+          ],
+        },
+      );
       api.on('PATCH', '/cart/srv-1', status: 204);
 
       CartStore.instance.setQuantity(_polo.key, 5);
@@ -203,12 +227,20 @@ void main() {
     });
 
     test('a removal deletes the row rather than leaving it behind', () async {
-      api.on('GET', '/cart', body: {
-        'items': [
-          row('srv-1', sourceProductId: _polo.productId,
-              variantLabel: 'Green / M', quantity: 2),
-        ],
-      });
+      api.on(
+        'GET',
+        '/cart',
+        body: {
+          'items': [
+            row(
+              'srv-1',
+              sourceProductId: _polo.productId,
+              variantLabel: 'Green / M',
+              quantity: 2,
+            ),
+          ],
+        },
+      );
       api.on('DELETE', '/cart/srv-1', status: 204);
 
       await CartStore.instance.refreshFromServer();
@@ -217,8 +249,10 @@ void main() {
       CartStore.instance.remove(CartStore.instance.lines.single.key);
       await settleSync();
 
-      expect(api.calls.any((c) => c.method == 'DELETE' && c.path == '/cart/srv-1'),
-          isTrue);
+      expect(
+        api.calls.any((c) => c.method == 'DELETE' && c.path == '/cart/srv-1'),
+        isTrue,
+      );
     });
 
     test('the change stays on screen when the server refuses it', () async {
@@ -232,8 +266,10 @@ void main() {
       CartStore.instance.setQuantity(_polo.key, 4);
       await settleSync();
 
-      expect(CartStore.instance.lineFor(_polo.productId, 'Green / M')?.quantity,
-          4);
+      expect(
+        CartStore.instance.lineFor(_polo.productId, 'Green / M')?.quantity,
+        4,
+      );
       expect(CartStore.instance.syncError?.message, 'cart is down');
     });
 
@@ -252,19 +288,21 @@ void main() {
       expect(CartStore.instance.syncError, isNull);
     });
 
-    test('a failed refresh keeps the cached cart rather than emptying it',
-        () async {
-      // An empty cart shown because the network failed reads as "we lost your
-      // things", which is the worst possible way to be wrong here.
-      CartStore.instance.add(_polo);
-      await settleSync();
+    test(
+      'a failed refresh keeps the cached cart rather than emptying it',
+      () async {
+        // An empty cart shown because the network failed reads as "we lost your
+        // things", which is the worst possible way to be wrong here.
+        CartStore.instance.add(_polo);
+        await settleSync();
 
-      api.on('GET', '/cart', status: 503, body: {'error': 'down'});
-      await CartStore.instance.refreshFromServer();
+        api.on('GET', '/cart', status: 503, body: {'error': 'down'});
+        await CartStore.instance.refreshFromServer();
 
-      expect(CartStore.instance.lineCount, 1);
-      expect(CartStore.instance.syncError, isNotNull);
-    });
+        expect(CartStore.instance.lineCount, 1);
+        expect(CartStore.instance.syncError, isNotNull);
+      },
+    );
   });
 
   group('adopting the account cart', () {
@@ -274,18 +312,22 @@ void main() {
       signInForTest();
       CartStore.instance.add(_polo);
 
-      api.on('GET', '/cart', body: {
-        'items': [
-          {
-            'id': 'srv-1',
-            'quantity': 2,
-            'source': '1688',
-            'source_product_id': _polo.productId,
-            'variant_label': 'Green / M',
-            'product_data': const <String, dynamic>{},
-          },
-        ],
-      });
+      api.on(
+        'GET',
+        '/cart',
+        body: {
+          'items': [
+            {
+              'id': 'srv-1',
+              'quantity': 2,
+              'source': '1688',
+              'source_product_id': _polo.productId,
+              'variant_label': 'Green / M',
+              'product_data': const <String, dynamic>{},
+            },
+          ],
+        },
+      );
 
       await CartStore.instance.refreshFromServer();
 
@@ -297,17 +339,21 @@ void main() {
 
     test('a local catalogue row is read from its joined product', () async {
       signInForTest();
-      api.on('GET', '/cart', body: {
-        'items': [
-          {
-            'id': 'srv-2',
-            'quantity': 1,
-            'source': 'local',
-            'product_id': 'local-7',
-            'product': {'name': 'Local thing', 'price': 240},
-          },
-        ],
-      });
+      api.on(
+        'GET',
+        '/cart',
+        body: {
+          'items': [
+            {
+              'id': 'srv-2',
+              'quantity': 1,
+              'source': 'local',
+              'product_id': 'local-7',
+              'product': {'name': 'Local thing', 'price': 240},
+            },
+          ],
+        },
+      );
 
       await CartStore.instance.refreshFromServer();
 

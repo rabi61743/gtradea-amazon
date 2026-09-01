@@ -220,15 +220,13 @@ class RealtimeService {
         ? (frame['payload'] as Map).cast<String, dynamic>()
         : frame;
 
-    _events.add(RealtimeEvent(
-      name: name,
-      orderId: _firstString(payload, const [
-        'order_id',
-        'orderId',
-        'id',
-      ]),
-      raw: frame,
-    ));
+    _events.add(
+      RealtimeEvent(
+        name: name,
+        orderId: _firstString(payload, const ['order_id', 'orderId', 'id']),
+        raw: frame,
+      ),
+    );
   }
 
   static String? _firstString(Map<String, dynamic> map, List<String> keys) {

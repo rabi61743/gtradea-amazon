@@ -101,7 +101,8 @@ class _PaymentPendingScreenState extends State<PaymentPendingScreen> {
       if (!mounted) return;
 
       // Paid, or definitely not. Anything else is still in flight.
-      final terminal = verdict.paid ||
+      final terminal =
+          verdict.paid ||
           verdict.status == 'failed' ||
           verdict.status == 'fail' ||
           verdict.abandoned;
@@ -146,15 +147,16 @@ class _PaymentPendingScreenState extends State<PaymentPendingScreen> {
                   Text(
                     'Waiting for ${widget.gatewayLabel}',
                     textAlign: TextAlign.center,
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     widget.orderNumber.isEmpty
                         ? 'Finish the payment in the page that opened.'
                         : 'Order ${widget.orderNumber}. Finish the payment in '
-                            'the page that opened.',
+                              'the page that opened.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
@@ -167,11 +169,13 @@ class _PaymentPendingScreenState extends State<PaymentPendingScreen> {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
-                        color:
-                            theme.colorScheme.primary.withValues(alpha: 0.07),
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.07,
+                        ),
                         border: Border.all(
-                          color:
-                              theme.colorScheme.primary.withValues(alpha: 0.25),
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.25,
+                          ),
                         ),
                       ),
                       child: Text(
@@ -182,8 +186,7 @@ class _PaymentPendingScreenState extends State<PaymentPendingScreen> {
                         'account the order will update on its own -- check '
                         'your orders in a minute.',
                         textAlign: TextAlign.center,
-                        style:
-                            theme.textTheme.bodySmall?.copyWith(height: 1.4),
+                        style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
                       ),
                     ),
                   ],

@@ -58,45 +58,43 @@ class _AddressListScreenState extends State<AddressListScreen> {
         return Scaffold(
           appBar: AppBar(title: const Text('Delivery addresses')),
           body: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                  children: [
-                    // Offered here as well as at checkout: adding an address
-                    // from the account page benefits from it just as much, and
-                    // one widget serves both.
-                    UseMyLocationTile(
-                      onDetected: (found) => AddressFormSheet.show(
-                        context,
-                        seed: Address(
-                          id: '',
-                          label: AddressLabel.home,
-                          fullName: '',
-                          phone: '',
-                          province: found.province,
-                          city: found.city,
-                          area: found.addressLine ?? '',
-                          postalCode: found.postalCode,
-                        ),
-                        seedApproximate: found.approximate,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (addresses.isEmpty) const _EmptyBook(),
-                    for (final address in addresses)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _AddressRow(
-                          address: address,
-                          isDefault: store.isDefault(address.id),
-                          onEdit: () => AddressFormSheet.show(
-                            context,
-                            existing: address,
-                          ),
-                          onMakeDefault: () => store.setDefault(address.id),
-                          onDelete: () => _confirmDelete(address),
-                        ),
-                      ),
-                  ],
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+            children: [
+              // Offered here as well as at checkout: adding an address
+              // from the account page benefits from it just as much, and
+              // one widget serves both.
+              UseMyLocationTile(
+                onDetected: (found) => AddressFormSheet.show(
+                  context,
+                  seed: Address(
+                    id: '',
+                    label: AddressLabel.home,
+                    fullName: '',
+                    phone: '',
+                    province: found.province,
+                    city: found.city,
+                    area: found.addressLine ?? '',
+                    postalCode: found.postalCode,
+                  ),
+                  seedApproximate: found.approximate,
                 ),
+              ),
+              const SizedBox(height: 16),
+              if (addresses.isEmpty) const _EmptyBook(),
+              for (final address in addresses)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _AddressRow(
+                    address: address,
+                    isDefault: store.isDefault(address.id),
+                    onEdit: () =>
+                        AddressFormSheet.show(context, existing: address),
+                    onMakeDefault: () => store.setDefault(address.id),
+                    onDelete: () => _confirmDelete(address),
+                  ),
+                ),
+            ],
+          ),
           floatingActionButton: FloatingActionButton.extended(
             onPressed: () => AddressFormSheet.show(context),
             icon: const Icon(Icons.add),
@@ -164,16 +162,13 @@ class _AddressRow extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Flexible(
-                            child: Text(
-                              address.fullName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodyLarge
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
+                          // No headline any more. It used to be the name, and
+                          // the form has stopped asking for one -- it comes
+                          // from the account, so every row would carry the same
+                          // word. Putting the address there instead just
+                          // printed it twice, since the line below is the full
+                          // address already. The label leads the row and the
+                          // address speaks for itself.
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 7,
@@ -295,15 +290,17 @@ class _EmptyBook extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'No addresses saved',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               'Add one here, or the first time you check out.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),

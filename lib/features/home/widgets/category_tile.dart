@@ -26,7 +26,6 @@ class CategoryTile extends StatelessWidget {
   /// only picks one value per category.
   final Color tint;
 
-
   /// Photograph for the tile; falls back to the tinted panel when absent.
   final String? imageUrl;
 
@@ -50,8 +49,9 @@ class CategoryTile extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(fontWeight: FontWeight.w500),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),

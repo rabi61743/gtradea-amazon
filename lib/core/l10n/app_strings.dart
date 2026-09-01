@@ -51,7 +51,7 @@ class AppStrings {
     required this.languageDetail,
     required this.jumpTo,
     required this.departmentNames,
-    required this.groupNames,
+    required this.browseIn,
     required this.payment,
   });
 
@@ -75,20 +75,36 @@ class AppStrings {
   final String languageDetail;
   final String jumpTo;
 
-  /// Department and group names, keyed by their English name -- which is the
-  /// identifier in [CatalogContent]. A name with no translation falls back to
-  /// that key, so a new department shows up in English rather than blank.
+  /// Department names, keyed by the exact name the server sends.
+  ///
+  /// The catalogue is the server's, and it sends English and Chinese but no
+  /// Nepali -- so most of the forty-eight departments have nothing to
+  /// translate them from and render in English. This map is the override for
+  /// the ones worth hand-translating; anything missing falls back to the
+  /// server's own name rather than to blank.
+  ///
+  /// It used to be keyed by the names of a hardcoded department list that no
+  /// longer exists, so none of its keys matched anything and every department
+  /// rendered untranslated while looking as though it should not.
   final Map<String, String> departmentNames;
-  final Map<String, String> groupNames;
+
+  /// The heading over a department's subcategory tiles.
+  ///
+  /// Takes the already-translated department name. This replaced a lookup
+  /// table of group names that had been dead since group titles started being
+  /// derived from server data -- none of its twelve keys could ever match, so
+  /// the heading stayed English in Nepali while appearing to be translated.
+  final String Function(String department) browseIn;
 
   /// Everything the payment flow says.
   final PaymentStrings payment;
 
   String department(String key) => departmentNames[key] ?? key;
-  String group(String key) => groupNames[key] ?? key;
 
-  static AppStrings of(AppLanguage language) =>
-      switch (language) { AppLanguage.english => en, AppLanguage.nepali => ne };
+  static AppStrings of(AppLanguage language) => switch (language) {
+    AppLanguage.english => en,
+    AppLanguage.nepali => ne,
+  };
 
   static final en = AppStrings(
     categories: 'Categories',
@@ -105,7 +121,7 @@ class AppStrings {
     languageDetail: 'Choose the language this app speaks',
     jumpTo: 'Jump to a category',
     departmentNames: const {},
-    groupNames: const {},
+    browseIn: (department) => 'Browse $department',
     payment: PaymentStrings.en,
   );
 
@@ -127,29 +143,32 @@ class AppStrings {
     language: 'भाषा',
     languageDetail: 'यो एपले बोल्ने भाषा छान्नुहोस्',
     jumpTo: 'श्रेणीमा जानुहोस्',
+    // Keyed by the exact strings `/alibaba-categories` returns for the
+    // top-level departments -- "Sports Outdoors", not "Sports and outdoors".
+    // The busiest departments are covered; the long tail of industrial ones
+    // falls back to the server's English, which is what a shopper looking for
+    // them would search for anyway.
     departmentNames: const {
-      'Electronics': 'इलेक्ट्रोनिक्स',
-      'Home and kitchen': 'घर र भान्सा',
-      'Fashion': 'फेसन',
-      'Beauty': 'सौन्दर्य',
-      'Sports and outdoors': 'खेलकुद',
-      'Family and toys': 'परिवार र खेलौना',
-      'Pet supplies': 'पाल्तु सामान',
-    },
-    groupNames: const {
-      'Audio and devices': 'अडियो र उपकरण',
-      'Computing': 'कम्प्युटिङ',
-      'Gaming gear': 'गेमिङ सामान',
-      'Living and dining': 'बैठक र भोजन',
-      'Kitchen': 'भान्सा',
-      'Storage': 'भण्डारण',
+      'Women': 'महिला',
+      'Men': 'पुरुष',
+      'Kidswear': 'बालबालिकाको लुगा',
+      'Toys': 'खेलौना',
+      'Beauty Skincare/Makeup': 'सौन्दर्य र मेकअप',
       'Footwear': 'जुत्ता',
-      'Clothing': 'लुगा',
-      'Skin and hair': 'छाला र कपाल',
-      'Training and outdoors': 'व्यायाम र बाहिरी',
-      'Toys and family': 'खेलौना र परिवार',
-      'For your pets': 'तपाईंको पाल्तुका लागि',
+      'Sports Outdoors': 'खेलकुद र बाहिरी',
+      'Home Textile Furniture': 'घरायसी कपडा र फर्निचर',
+      'Food & Beverage': 'खाद्य र पेय',
+      'Home appliance': 'घरायसी उपकरण',
+      'Bags & Leather': 'झोला र छाला',
+      'Digital, Computer': 'डिजिटल र कम्प्युटर',
+      'Pets & Gardening': 'पाल्तु र बगैंचा',
+      'Underwear': 'भित्री वस्त्र',
+      'Bedding': 'ओछ्यान सामग्री',
+      'Sportswear': 'खेल पोशाक',
+      'Lighting': 'बत्ती',
+      'Household essentials': 'घरायसी आवश्यक सामान',
     },
+    browseIn: (department) => '$department हेर्नुहोस्',
     payment: PaymentStrings.ne,
   );
 }

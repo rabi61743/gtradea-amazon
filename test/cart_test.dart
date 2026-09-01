@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
 import 'support/api.dart';
 import 'support/catalog.dart';
+
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/address/data/address_store.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+
 import 'support/auth.dart';
+
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/cart/presentation/cart_screen.dart';
+import 'package:gtradea_amazon/shared/widgets/artwork_panel.dart';
 import 'package:gtradea_amazon/features/checkout/presentation/checkout_screen.dart';
 import 'package:gtradea_amazon/features/product/data/product_detail_content.dart';
 import 'package:gtradea_amazon/features/product/presentation/product_detail_screen.dart';
@@ -95,23 +100,28 @@ void _useTallWindow(WidgetTester tester) {
 /// built from -- so there is no such thing as a guest order.
 void _stubCheckout() {
   stubCatalog()
-    ..on('POST', '/checkout', body: const {
-      'orderId': 'order-1',
-      'orderNumber': 'GT-1001',
-    })
+    ..on(
+      'POST',
+      '/checkout',
+      body: const {'orderId': 'order-1', 'orderNumber': 'GT-1001'},
+    )
     // Which methods the shop takes comes from the server now, so a checkout
     // test has to say what this shop takes.
-    ..on('GET', '/site-settings/active_payment_methods', body: const {
-      'setting_value': {
-        'cod': {
-          'label': 'Cash on Delivery',
-          'description': 'Pay when you receive your order',
-          'order': 1,
-          'enabled': true,
-          'isDefault': true,
+    ..on(
+      'GET',
+      '/site-settings/active_payment_methods',
+      body: const {
+        'setting_value': {
+          'cod': {
+            'label': 'Cash on Delivery',
+            'description': 'Pay when you receive your order',
+            'order': 1,
+            'enabled': true,
+            'isDefault': true,
+          },
         },
       },
-    })
+    )
     ..on('GET', '/orders', body: const []);
   signInForTest();
 }
@@ -127,13 +137,13 @@ void main() {
   /// Checkout will not place an order with nowhere to send it, so the tests
   /// that get that far need somewhere to send it.
   void seedAddress() => AddressStore.instance.add(
-        label: AddressLabel.home,
-        fullName: 'Rabi Yadav',
-        phone: '9800000000',
-        province: 'Bagmati',
-        city: 'Lalitpur',
-        area: 'Jhamsikhel, house 12',
-      );
+    label: AddressLabel.home,
+    fullName: 'Rabi Yadav',
+    phone: '9800000000',
+    province: 'Bagmati',
+    city: 'Lalitpur',
+    area: 'Jhamsikhel, house 12',
+  );
 
   group('CartLine', () {
     test('variant is part of the identity', () {
@@ -141,8 +151,7 @@ void main() {
       expect(_dress.key, 'dress', reason: 'no variant still has a stable key');
     });
 
-    test('a delimiter in the title cannot collide two products onto one line',
-        () {
+    test('a delimiter in the title cannot collide two products onto one line', () {
       // The product id here is the title, so it can contain anything a visible
       // separator would have used.
       const a = CartLine(productId: 'Shirt|Red', title: 'x', unitPrice: 1);
@@ -207,12 +216,14 @@ void main() {
       final key = _jacketPink.key;
 
       store.decrement(key);
-      expect(store.lineFor('jacket', 'Red')?.quantity, 1,
-          reason: 'decrementing at the floor does not remove the line');
+      expect(
+        store.lineFor('jacket', 'Red')?.quantity,
+        1,
+        reason: 'decrementing at the floor does not remove the line',
+      );
 
       store.setQuantity(key, 500);
-      expect(store.lineFor('jacket', 'Red')?.quantity,
-          CartStore.maxPerLine);
+      expect(store.lineFor('jacket', 'Red')?.quantity, CartStore.maxPerLine);
     });
 
     test('a minimum order is a real floor', () {
@@ -290,26 +301,32 @@ void main() {
       expect(totals.lineCount, 2);
     });
 
-    test('delivery is free only when every line is free-delivery', () {
+    test('no delivery charge is invented before the server quotes one', () {
       CartStore.instance.add(_jacketPink);
       expect(CartStore.instance.totals.delivery, 0);
 
-      // The dress is not free-delivery, so the order is charged.
+      // The dress is not free-delivery, so this order will be charged for
+      // freight -- but the figure is the server's, and none has been fetched.
+      // This used to add a flat CartStore.deliveryFee of 100, which was a
+      // number this app made up and checkout did not agree with.
       CartStore.instance.add(_dress);
-      expect(CartStore.instance.totals.delivery, CartStore.deliveryFee);
+      expect(CartStore.instance.totals.delivery, 0);
+      expect(CartStore.instance.deliveryQuote, isNull);
     });
 
-    test('total is subtotal plus delivery, with VAT inside not added on top',
-        () {
-      CartStore.instance.add(_jacketPink);
-      final totals = CartStore.instance.totals;
+    test(
+      'total is subtotal plus delivery, with VAT inside not added on top',
+      () {
+        CartStore.instance.add(_jacketPink);
+        final totals = CartStore.instance.totals;
 
-      expect(totals.total, 1130, reason: 'free delivery on this line');
-      expect(totals.vatIncluded.round(), 130);
-      // The VAT figure must not appear in the total. 1130 + 130 would be the
-      // double-charge this guards against.
-      expect(totals.total, isNot(1260));
-    });
+        expect(totals.total, 1130, reason: 'free delivery on this line');
+        expect(totals.vatIncluded.round(), 130);
+        // The VAT figure must not appear in the total. 1130 + 130 would be the
+        // double-charge this guards against.
+        expect(totals.total, isNot(1260));
+      },
+    );
   });
 
   group('persistence', () {
@@ -321,8 +338,10 @@ void main() {
       await CartStore.instance.load();
 
       expect(CartStore.instance.count, 3);
-      expect(CartStore.instance.lineFor('jacket', 'Red')?.title,
-          'Ice silk jacket');
+      expect(
+        CartStore.instance.lineFor('jacket', 'Red')?.title,
+        'Ice silk jacket',
+      );
     });
 
     test('rapid changes persist in the order they were made', () async {
@@ -350,7 +369,7 @@ void main() {
       SharedPreferences.setMockInitialValues({
         'gtradea_cart':
             '[{"title":"no id","unitPrice":1},'
-                '{"productId":"ok","title":"Fine","unitPrice":2}]',
+            '{"productId":"ok","title":"Fine","unitPrice":2}]',
       });
       CartStore.instance.resetForTest();
       await CartStore.instance.load();
@@ -361,8 +380,8 @@ void main() {
       SharedPreferences.setMockInitialValues({
         'gtradea_cart':
             '[{"productId":"bad","title":"No price"},'
-                '{"productId":"zero","title":"Free?","unitPrice":0},'
-                '{"productId":"ok","title":"Fine","unitPrice":2}]',
+            '{"productId":"zero","title":"Free?","unitPrice":0},'
+            '{"productId":"ok","title":"Fine","unitPrice":2}]',
       });
       CartStore.instance.resetForTest();
       await CartStore.instance.load();
@@ -377,8 +396,11 @@ void main() {
       });
       CartStore.instance.resetForTest();
       await CartStore.instance.load();
-      expect(CartStore.instance.lines.single.quantity, 1,
-          reason: 'a zero-quantity line would be invisible but still counted');
+      expect(
+        CartStore.instance.lines.single.quantity,
+        1,
+        reason: 'a zero-quantity line would be invisible but still counted',
+      );
     });
   });
 
@@ -391,13 +413,12 @@ void main() {
       expect(CartStore.instance.lineFor('jacket', 'Red'), isNotNull);
     });
 
-    test('merging adds quantities for a line the account already had',
-        () async {
+    test('merging adds quantities for a line the account already had', () async {
       // Seed an account cart on disk with 2, then sign in holding 1 as a guest.
       SharedPreferences.setMockInitialValues({
         'gtradea_cart_rabi@example.com':
             '[{"productId":"jacket","variantLabel":"Red",'
-                '"title":"Ice silk jacket","unitPrice":1130,"quantity":2}]',
+            '"title":"Ice silk jacket","unitPrice":1130,"quantity":2}]',
       });
       CartStore.instance.resetForTest();
       await CartStore.instance.load();
@@ -417,20 +438,25 @@ void main() {
       expect(prefs.getString('gtradea_cart'), isNull);
     });
 
-    test('signing out leaves the account cart on disk under its own key',
-        () async {
-      await CartStore.instance.switchIdentity('rabi@example.com');
-      CartStore.instance.add(_dress);
-      await Future<void>.delayed(Duration.zero);
+    test(
+      'signing out leaves the account cart on disk under its own key',
+      () async {
+        await CartStore.instance.switchIdentity('rabi@example.com');
+        CartStore.instance.add(_dress);
+        await Future<void>.delayed(Duration.zero);
 
-      await CartStore.instance.switchIdentity(null);
-      expect(CartStore.instance.isEmpty, isTrue,
-          reason: 'the guest cart was empty');
+        await CartStore.instance.switchIdentity(null);
+        expect(
+          CartStore.instance.isEmpty,
+          isTrue,
+          reason: 'the guest cart was empty',
+        );
 
-      // Signing back in brings it back.
-      await CartStore.instance.switchIdentity('rabi@example.com');
-      expect(CartStore.instance.lineFor('dress'), isNotNull);
-    });
+        // Signing back in brings it back.
+        await CartStore.instance.switchIdentity('rabi@example.com');
+        expect(CartStore.instance.lineFor('dress'), isNotNull);
+      },
+    );
 
     test('two accounts do not see each other carts', () async {
       await CartStore.instance.switchIdentity('a@example.com');
@@ -450,8 +476,11 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
-      expect(CartStore.instance.count, 1,
-          reason: 'the guest cart followed the shopper into their account');
+      expect(
+        CartStore.instance.count,
+        1,
+        reason: 'the guest cart followed the shopper into their account',
+      );
     });
   });
 
@@ -461,13 +490,17 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Your cart is empty'), findsOneWidget);
-      expect(find.text('Checkout'), findsNothing,
-          reason: 'nothing to check out');
+      expect(
+        find.text('Checkout'),
+        findsNothing,
+        reason: 'nothing to check out',
+      );
       expect(find.text('Empty'), findsNothing);
     });
 
-    testWidgets('lists lines with variant, unit price and line total',
-        (tester) async {
+    testWidgets('lists lines with variant, unit price and line total', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       CartStore.instance.add(_jacketPink.copyWith(quantity: 2));
       await tester.pumpWidget(_wrap(const CartScreen()));
@@ -480,7 +513,9 @@ void main() {
       expect(find.text('Cart (2 items)'), findsOneWidget);
     });
 
-    testWidgets('the stepper changes the quantity and the totals', (tester) async {
+    testWidgets('the stepper changes the quantity and the totals', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       CartStore.instance.add(_jacketPink);
       await tester.pumpWidget(_wrap(const CartScreen()));
@@ -496,28 +531,31 @@ void main() {
       expect(CartStore.instance.count, 1);
     });
 
-    testWidgets('Fewer is disabled at the floor rather than deleting the line',
-        (tester) async {
-      _useTallWindow(tester);
-      CartStore.instance.add(_jacketPink);
-      await tester.pumpWidget(_wrap(const CartScreen()));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'Fewer is disabled at the floor rather than deleting the line',
+      (tester) async {
+        _useTallWindow(tester);
+        CartStore.instance.add(_jacketPink);
+        await tester.pumpWidget(_wrap(const CartScreen()));
+        await tester.pumpAndSettle();
 
-      // byTooltip finds the Tooltip the IconButton builds, so the button is
-      // its ancestor rather than its descendant.
-      final fewer = tester.widget<IconButton>(
-        find
-            .ancestor(
-              of: find.byTooltip('Fewer'),
-              matching: find.byType(IconButton),
-            )
-            .first,
-      );
-      expect(fewer.onPressed, isNull);
-    });
+        // byTooltip finds the Tooltip the IconButton builds, so the button is
+        // its ancestor rather than its descendant.
+        final fewer = tester.widget<IconButton>(
+          find
+              .ancestor(
+                of: find.byTooltip('Fewer'),
+                matching: find.byType(IconButton),
+              )
+              .first,
+        );
+        expect(fewer.onPressed, isNull);
+      },
+    );
 
-    testWidgets('removing a line offers an undo that really restores it',
-        (tester) async {
+    testWidgets('removing a line offers an undo that really restores it', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       CartStore.instance.add(_jacketPink);
       await tester.pumpWidget(_wrap(const CartScreen()));
@@ -549,8 +587,9 @@ void main() {
       expect(CartStore.instance.isEmpty, isFalse);
     });
 
-    testWidgets('the summary shows savings, free delivery and the total',
-        (tester) async {
+    testWidgets('the summary shows savings, free delivery and the total', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       CartStore.instance.add(_jacketPink);
       await tester.pumpWidget(_wrap(const CartScreen()));
@@ -562,23 +601,26 @@ void main() {
       expect(find.text('Includes Rs. 130 VAT'), findsOneWidget);
     });
 
-    testWidgets('a charged delivery is shown as a figure, not as free',
-        (tester) async {
+    testWidgets('an unpriced delivery is not shown as free', (tester) async {
+      // The difference this guards. Delivery is zero here only because the
+      // server has not quoted one -- there is no address to quote against --
+      // and "Free" would promise something checkout then takes back.
       _useTallWindow(tester);
       CartStore.instance.add(_dress);
       await tester.pumpWidget(_wrap(const CartScreen()));
       await tester.pumpAndSettle();
 
       expect(find.text('Free'), findsNothing);
-      expect(find.text('Rs. 100'), findsOneWidget);
-      // 1808 + 100 delivery.
-      expect(find.text('Rs. 1,908'), findsWidgets);
+      expect(find.text('Calculated at checkout'), findsOneWidget);
+      // Goods only: nothing is added for freight until the server prices it.
+      expect(find.text('Rs. 1,808'), findsWidgets);
     });
   });
 
   group('checkout', () {
-    testWidgets('Checkout opens with the cart data it was given',
-        (tester) async {
+    testWidgets('Checkout opens with the cart data it was given', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       CartStore.instance.add(_jacketPink.copyWith(quantity: 2));
       await tester.pumpWidget(_wrap(const CartScreen()));
@@ -589,12 +631,22 @@ void main() {
 
       expect(find.byType(CheckoutScreen), findsOneWidget);
       expect(find.text('Order summary'), findsOneWidget);
+
+      // The lines are collapsed to begin with, so the payment choice below
+      // them stays on screen. Opened here to check what is being bought.
+      await tester.tap(find.text('2 items'));
+      await tester.pumpAndSettle();
       expect(find.text('Red · Qty 2'), findsOneWidget);
-      expect(find.text('Place order · Rs. 2,260'), findsOneWidget);
+      // The total sits beside the button now, not inside its label -- the bar
+      // reads "Total payable / Rs. 2,260" with the action to its right.
+      expect(find.text('Place order'), findsOneWidget);
+      expect(find.text('Total payable'), findsOneWidget);
+      expect(find.text('Rs. 2,260'), findsWidgets);
     });
 
-    testWidgets('placing the order empties the cart and confirms',
-        (tester) async {
+    testWidgets('placing the order empties the cart and confirms', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       _stubCheckout();
       seedAddress();
@@ -603,6 +655,9 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Checkout'));
+      await tester.pumpAndSettle();
+      // The terms gate the button, so it is ticked here as a shopper would.
+      await tester.tap(find.byType(Checkbox));
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('Place order'));
       await tester.pumpAndSettle();
@@ -620,8 +675,9 @@ void main() {
       expect(find.text('Your cart is empty'), findsOneWidget);
     });
 
-    testWidgets('an item added after checkout opened survives the order',
-        (tester) async {
+    testWidgets('an item added after checkout opened survives the order', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       _stubCheckout();
       seedAddress();
@@ -636,6 +692,9 @@ void main() {
       // this order and must not be cleared by it.
       CartStore.instance.add(_dress);
 
+      // The terms gate the button, so it is ticked here as a shopper would.
+      await tester.tap(find.byType(Checkbox));
+      await tester.pumpAndSettle();
       await tester.tap(find.textContaining('Place order'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Done'));
@@ -646,11 +705,100 @@ void main() {
     });
   });
 
-  group('add to cart from the product page', () {
-    testWidgets('Add to cart puts the selected variant in the cart',
-        (tester) async {
+  group('back to the product from the cart', () {
+    /// The screen the tap landed on, or null if it did not navigate.
+    ProductDetailScreen? opened(WidgetTester tester) {
+      final found = tester.widgetList<ProductDetailScreen>(
+        find.byType(ProductDetailScreen),
+      );
+      return found.isEmpty ? null : found.first;
+    }
+
+    testWidgets('the title opens that line own product', (tester) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(ProductDetailScreen(product: sampleProduct, detail: sampleDetail)));
+      // Two lines, so a tap that opened "a product" rather than "this
+      // product" would still look right until the id is checked.
+      CartStore.instance.add(_jacketPink);
+      CartStore.instance.add(_dress);
+      await tester.pumpWidget(_wrap(const CartScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Suspender dress'));
+      await tester.pumpAndSettle();
+
+      expect(opened(tester)?.product.numIid, 'dress');
+    });
+
+    testWidgets('the photo opens the same product', (tester) async {
+      _useTallWindow(tester);
+      CartStore.instance.add(_jacketPink);
+      await tester.pumpWidget(_wrap(const CartScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(ArtworkPanel).first);
+      await tester.pumpAndSettle();
+
+      expect(opened(tester)?.product.numIid, 'jacket');
+    });
+
+    testWidgets('the chosen option opens it too', (tester) async {
+      _useTallWindow(tester);
+      CartStore.instance.add(_jacketPink);
+      await tester.pumpWidget(_wrap(const CartScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Red'));
+      await tester.pumpAndSettle();
+
+      expect(opened(tester)?.product.numIid, 'jacket');
+    });
+
+    testWidgets('the page opens on the line own title and price', (
+      tester,
+    ) async {
+      // The stub has to carry what the line knows, or the page paints an
+      // empty first frame while the real record is fetched.
+      _useTallWindow(tester);
+      CartStore.instance.add(_jacketPink);
+      await tester.pumpWidget(_wrap(const CartScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Ice silk jacket'));
+      await tester.pumpAndSettle();
+
+      final product = opened(tester)?.product;
+      expect(product?.title, 'Ice silk jacket');
+      expect(product?.displayPrice, 1130);
+    });
+
+    testWidgets('the stepper still steps rather than opening the product', (
+      tester,
+    ) async {
+      // The controls sit inside the same tile. If the link swallowed them,
+      // every quantity change would become a navigation.
+      _useTallWindow(tester);
+      CartStore.instance.add(_jacketPink);
+      await tester.pumpWidget(_wrap(const CartScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pumpAndSettle();
+
+      expect(opened(tester), isNull, reason: 'a step is not a navigation');
+      expect(CartStore.instance.lines.single.quantity, 2);
+    });
+  });
+
+  group('add to cart from the product page', () {
+    testWidgets('Add to cart puts the selected variant in the cart', (
+      tester,
+    ) async {
+      _useTallWindow(tester);
+      await tester.pumpWidget(
+        _wrap(
+          ProductDetailScreen(product: sampleProduct, detail: sampleDetail),
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 200));
 
       await tester.tap(find.text('Add to cart'));
@@ -665,7 +813,11 @@ void main() {
 
     testWidgets('the app-bar badge counts what was added', (tester) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(ProductDetailScreen(product: sampleProduct, detail: sampleDetail)));
+      await tester.pumpWidget(
+        _wrap(
+          ProductDetailScreen(product: sampleProduct, detail: sampleDetail),
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 200));
 
       await tester.tap(find.text('Add to cart'));
@@ -678,10 +830,15 @@ void main() {
       );
     });
 
-    testWidgets('the quantity chosen on the page is the quantity added',
-        (tester) async {
+    testWidgets('the quantity chosen on the page is the quantity added', (
+      tester,
+    ) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(ProductDetailScreen(product: sampleProduct, detail: sampleDetail)));
+      await tester.pumpWidget(
+        _wrap(
+          ProductDetailScreen(product: sampleProduct, detail: sampleDetail),
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 200));
 
       await tester.tap(find.byTooltip('More'));
@@ -692,12 +849,18 @@ void main() {
       expect(CartStore.instance.count, 3);
     });
 
-    testWidgets('the page opens on a buyable colour, not a sold-out one',
-        (tester) async {
+    testWidgets('the page opens on a buyable colour, not a sold-out one', (
+      tester,
+    ) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(
-        ProductDetailScreen(product: sampleProduct, detail: _firstVariantSoldOut),
-      ));
+      await tester.pumpWidget(
+        _wrap(
+          ProductDetailScreen(
+            product: sampleProduct,
+            detail: _firstVariantSoldOut,
+          ),
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 200));
 
       // Index 0 is sold out and the picker refuses to select it, so opening
@@ -708,25 +871,34 @@ void main() {
       expect(CartStore.instance.lines.single.variantLabel, 'Ivory');
     });
 
-    testWidgets('a sold-out selection is refused by the page, not just hidden',
-        (tester) async {
+    testWidgets(
+      'a sold-out selection is refused by the page, not just hidden',
+      (tester) async {
+        _useTallWindow(tester);
+        await tester.pumpWidget(
+          _wrap(
+            ProductDetailScreen(product: sampleProduct, detail: _allSoldOut),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 200));
+
+        await tester.tap(find.text('Add to cart'));
+        await tester.pump();
+
+        expect(CartStore.instance.isEmpty, isTrue);
+        expect(find.textContaining('is sold out'), findsOneWidget);
+      },
+    );
+
+    testWidgets('Buy now adds the line and goes straight to the cart', (
+      tester,
+    ) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(
-        ProductDetailScreen(product: sampleProduct, detail: _allSoldOut),
-      ));
-      await tester.pump(const Duration(milliseconds: 200));
-
-      await tester.tap(find.text('Add to cart'));
-      await tester.pump();
-
-      expect(CartStore.instance.isEmpty, isTrue);
-      expect(find.textContaining('is sold out'), findsOneWidget);
-    });
-
-    testWidgets('Buy now adds the line and goes straight to the cart',
-        (tester) async {
-      _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(ProductDetailScreen(product: sampleProduct, detail: sampleDetail)));
+      await tester.pumpWidget(
+        _wrap(
+          ProductDetailScreen(product: sampleProduct, detail: sampleDetail),
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 200));
 
       await tester.tap(find.textContaining('Buy · '));

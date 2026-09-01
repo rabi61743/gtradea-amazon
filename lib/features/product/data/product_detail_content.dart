@@ -13,10 +13,23 @@ class ProductVariant {
     this.skuId,
     this.specId,
     this.price,
+    this.stock,
+    this.axisNames = const [],
+    this.axisValues = const [],
   });
 
   final String label;
   final String imageUrl;
+
+  /// The axes this option sits on, and where on each it sits: `['Color',
+  /// 'Size']` against `['Wine red', 'M']`.
+  ///
+  /// Kept apart from [label] rather than derived back out of it. The label is
+  /// for reading -- it joins the values with a slash -- and a seller who puts a
+  /// slash in a colour name would make that join impossible to undo. These two
+  /// are what [VariantMatrix] pivots on, so they have to be the originals.
+  final List<String> axisNames;
+  final List<String> axisValues;
 
   /// The SKU this option buys. Sent with the cart line, because the order the
   /// server places upstream is against a SKU, not against a colour name.
@@ -31,6 +44,150 @@ class ProductVariant {
   /// Out-of-stock variants stay visible but unselectable. Hiding them makes a
   /// shopper think the option never existed and hunt for it elsewhere.
   final bool inStock;
+
+  /// How many the seller says are left, when they said.
+  ///
+  /// Null is "they did not say", which is not zero -- see [inStock]. Wholesale
+  /// listings routinely publish five figures here, so this is worth showing
+  /// only when it is small enough to be a constraint on the order.
+  final int? stock;
+}
+
+/// One axis value down the side of a [VariantMatrix], with its photograph.
+class VariantRow {
+  const VariantRow({required this.value, required this.imageUrl});
+
+  final String value;
+
+  /// The first picture any SKU in this row carried. Sellers photograph the
+  /// colourway, not the colour-and-size, so every cell in a row shares one.
+  final String imageUrl;
+}
+
+/// A two-axis listing pivoted into a grid: colours down, sizes across.
+///
+/// Wholesale listings are sold this way -- 21 colours by 4 sizes is 84 SKUs,
+/// and the flat picker [VariantPicker] draws asks a buyer to find each of those
+/// 84 in a horizontal strip and buy them one at a time. The grid puts every
+/// combination on screen at once and lets a quantity be typed into each.
+///
+/// Null for anything that is not exactly two axes. One axis is a strip and the
+/// strip is better at it; three axes do not pivot into a plane at all. Both
+/// fall back to the existing picker rather than being forced into a shape they
+/// do not have.
+class VariantMatrix {
+  const VariantMatrix({
+    required this.rowLabel,
+    required this.columnLabel,
+    required this.rows,
+    required this.columns,
+    required this.cells,
+  });
+
+  /// What the seller calls each axis -- "Color", "Size" -- never assumed. A
+  /// listing can sell by material and by length, and labelling those two
+  /// "Colour" and "Size" would be a lie the grid tells in its own headers.
+  final String rowLabel;
+  final String columnLabel;
+
+  final List<VariantRow> rows;
+  final List<String> columns;
+
+  /// Keyed on the two axis values. Sparse on purpose: a seller who stocks
+  /// eight colours but only three of them in XL leaves those cells empty, and
+  /// the grid has to draw the hole rather than invent a SKU to fill it.
+  final Map<(String, String), ProductVariant> cells;
+
+  ProductVariant? at(String row, String column) => cells[(row, column)];
+
+  bool get isEmpty => rows.isEmpty || columns.isEmpty;
+
+  /// Every SKU the grid can actually sell.
+  Iterable<ProductVariant> get buyable => cells.values.where((v) => v.inStock);
+
+  /// True when the SKUs are not all the same price, which is what decides
+  /// whether the grid has to show a price per row. Most listings price one
+  /// figure across every combination and a column of identical numbers is
+  /// noise; some charge more for XL, and hiding that until checkout is worse.
+  bool get pricesVary {
+    final prices = cells.values.map((v) => v.price).toSet();
+    return prices.length > 1;
+  }
+
+  /// Pivots [variants], or returns null if they do not form a grid.
+  static VariantMatrix? from(List<ProductVariant> variants) {
+    if (variants.length < 2) return null;
+
+    // All or nothing. A listing where nine SKUs carry two axes and one carries
+    // three is not a grid with a hole in it -- it is a shape this cannot
+    // represent, and half-drawing it would misprice the odd one out.
+    if (variants.any((v) => v.axisValues.length != 2)) return null;
+
+    final rowOrder = <String>[];
+    final rowImages = <String, String>{};
+    final columnOrder = <String>[];
+    final cells = <(String, String), ProductVariant>{};
+
+    for (final variant in variants) {
+      final row = variant.axisValues[0];
+      final column = variant.axisValues[1];
+      if (row.isEmpty || column.isEmpty) return null;
+
+      if (!rowImages.containsKey(row)) {
+        rowOrder.add(row);
+        rowImages[row] = variant.imageUrl;
+      } else if (rowImages[row]!.isEmpty) {
+        rowImages[row] = variant.imageUrl;
+      }
+      if (!columnOrder.contains(column)) columnOrder.add(column);
+
+      // First wins. A duplicated combination is a feed error, and the
+      // alternative -- last wins -- would silently pick a different SKU than
+      // the one the price block above is quoting.
+      cells.putIfAbsent((row, column), () => variant);
+    }
+
+    // A single column is a list wearing a table's clothes, and a single row is
+    // a strip. Both are what the picker already does well.
+    if (rowOrder.length < 2 && columnOrder.length < 2) return null;
+
+    final names = variants.first.axisNames;
+    return VariantMatrix(
+      rowLabel: _axisName(names, 0, 'Option'),
+      columnLabel: _axisName(names, 1, 'Variant'),
+      rows: rowOrder
+          .map((value) => VariantRow(value: value, imageUrl: rowImages[value]!))
+          .toList(growable: false),
+      columns: columnOrder,
+      cells: cells,
+    );
+  }
+
+  static String _axisName(List<String> names, int index, String fallback) {
+    final name = index < names.length ? names[index].trim() : '';
+    if (name.isEmpty) return fallback;
+    // Sellers write these both ways -- "Color" on one listing, "color" on the
+    // next -- and a header that is capitalised on one product and not on the
+    // next reads as a rendering bug.
+    return name[0].toUpperCase() + name.substring(1);
+  }
+}
+
+/// A column header short enough to be one.
+///
+/// Sizes arrive from the feed carrying their own fitting guide:
+/// `S【 40-50kg 】`, `M【 50.5-57.5kg 】`. Set in full they make a column three
+/// times wider than the input box under it, and the part that distinguishes one
+/// from another is the first two characters. The full text is not thrown away
+/// -- the grid shows it on long press and the cart line carries it -- this is
+/// only what fits above the boxes.
+String shortVariantLabel(String value) {
+  final trimmed = value.trim();
+  // Bracketed asides, in both the Latin and the full-width forms the feed
+  // mixes within a single listing.
+  final cut = trimmed.split(RegExp(r'[【（(\[]')).first.trim();
+  if (cut.isEmpty) return trimmed;
+  return cut;
 }
 
 /// One row of the specification table.
@@ -138,6 +295,8 @@ class ProductDetail {
     this.reviews = const [],
     this.similar = const [],
     this.ratingSummary,
+    this.detailImages = const [],
+    this.videoUrl,
     this.isPreview = false,
   });
 
@@ -157,6 +316,19 @@ class ProductDetail {
   final double rating;
   final int reviewCount;
   final List<String> images;
+
+  /// The seller's long-form photography, below the gallery: close-ups, size
+  /// charts, fabric shots. Empty for plenty of listings, and drawn only where
+  /// it is not -- see [_detailImages] for where these actually come from.
+  final List<String> detailImages;
+
+  /// The seller's video, when the listing has one.
+  ///
+  /// Null is the ordinary case and is what keeps an empty player off the page:
+  /// roughly four listings in ten carry one, measured across the discover feed.
+  /// The gallery adds a slide only when this is set.
+  final String? videoUrl;
+
   final List<ProductVariant> variants;
   final List<ProductSpec> specs;
   final String description;
@@ -224,33 +396,38 @@ class ProductDetail {
   }
 
   ProductDetail copyWith({List<ProductItem>? similar}) => ProductDetail(
-        numIid: numIid,
-        title: title,
-        price: price,
-        rating: rating,
-        reviewCount: reviewCount,
-        images: images,
-        variants: variants,
-        specs: specs,
-        description: description,
-        listPrice: listPrice,
-        minOrder: minOrder,
-        category: category,
-        categoryCid: categoryCid,
-        soldCount: soldCount,
-        freeDelivery: freeDelivery,
-        unitLabel: unitLabel,
-        variantLabel: variantLabel,
-        sellerName: sellerName,
-        location: location,
-        tiers: tiers,
-        highlights: highlights,
-        assurances: assurances,
-        reviews: reviews,
-        similar: similar ?? this.similar,
-        ratingSummary: ratingSummary,
-        isPreview: isPreview,
-      );
+    numIid: numIid,
+    title: title,
+    price: price,
+    rating: rating,
+    reviewCount: reviewCount,
+    images: images,
+    variants: variants,
+    specs: specs,
+    description: description,
+    listPrice: listPrice,
+    minOrder: minOrder,
+    category: category,
+    categoryCid: categoryCid,
+    soldCount: soldCount,
+    freeDelivery: freeDelivery,
+    unitLabel: unitLabel,
+    variantLabel: variantLabel,
+    sellerName: sellerName,
+    location: location,
+    tiers: tiers,
+    highlights: highlights,
+    assurances: assurances,
+    reviews: reviews,
+    similar: similar ?? this.similar,
+    ratingSummary: ratingSummary,
+    // Both media fields carried through. They were not, and while nothing
+    // calls this today, a copy that silently drops the seller's photography
+    // and video is a bug lying in wait for the first caller.
+    detailImages: detailImages,
+    videoUrl: videoUrl,
+    isPreview: isPreview,
+  );
 
   /// What the page can draw from the card that was tapped, before the detail
   /// request has answered.
@@ -259,22 +436,22 @@ class ProductDetail {
   /// photograph are already on screen in the rail, and re-showing them beats a
   /// blank page for a second and a half.
   factory ProductDetail.fromProduct(Product product) => ProductDetail(
-        numIid: product.numIid,
-        title: product.title,
-        price: product.displayPrice ?? 0,
-        rating: product.rating ?? 0,
-        reviewCount: 0,
-        images: product.imageUrl == null ? const [] : [product.imageUrl!],
-        variants: const [],
-        specs: const [],
-        description: '',
-        minOrder: product.minOrder,
-        category: product.categoryName,
-        categoryCid: product.categoryCid,
-        soldCount: product.sales,
-        assurances: storeAssurances,
-        isPreview: true,
-      );
+    numIid: product.numIid,
+    title: product.title,
+    price: product.displayPrice ?? 0,
+    rating: product.rating ?? 0,
+    reviewCount: 0,
+    images: product.imageUrl == null ? const [] : [product.imageUrl!],
+    variants: const [],
+    specs: const [],
+    description: '',
+    minOrder: product.minOrder,
+    category: product.categoryName,
+    categoryCid: product.categoryCid,
+    soldCount: product.sales,
+    assurances: storeAssurances,
+    isPreview: true,
+  );
 
   /// The full record.
   ///
@@ -301,6 +478,8 @@ class ProductDetail {
     if (images.isEmpty && fallback?.imageUrl != null) {
       images.add(fallback!.imageUrl!);
     }
+    final detailImages = _detailImages(item, images);
+    final videoUrl = _videoUrl(item);
 
     final skus = _skus(item);
     final variants = _variants(skus, pricing);
@@ -322,6 +501,8 @@ class ProductDetail {
       rating: 0,
       reviewCount: 0,
       images: images,
+      detailImages: detailImages,
+      videoUrl: videoUrl,
       variants: variants,
       specs: specs,
       description: blurb == null ? '' : stripHtml(blurb),
@@ -331,7 +512,8 @@ class ProductDetail {
       soldCount: asInt(item['total_sold']) ?? fallback?.sales,
       unitLabel: _unit(asString(item['sell_unit']) ?? asString(item['unit'])),
       variantLabel: _axisLabel(skus),
-      sellerName: asString(seller['shop_name']) ??
+      sellerName:
+          asString(seller['shop_name']) ??
           asString(seller['nick']) ??
           asString(item['seller_nick']),
       location: asString(item['location']),
@@ -340,38 +522,106 @@ class ProductDetail {
       // before reading anything else.
       highlights: specs.take(6).toList(growable: false),
       assurances: storeAssurances,
-      );
+    );
   }
+}
+
+/// The seller's long-form photography: the close-ups, the size chart, the
+/// fabric shots that sit below the fold on the web storefront.
+///
+/// Two sources, in order, and both are the server's:
+///
+///   1. **`desc_images`**, which is the field meant for exactly this. It was
+///      measured **empty on every product sampled**, so it cannot be relied on
+///      alone -- but it is the right field, and if the service starts filling
+///      it this picks it up with no change here.
+///   2. **the description HTML**, where the images actually are. One live
+///      listing carries 21 of them in `<img src="...">` tags inside the very
+///      blurb this page already renders as text, throwing the pictures away.
+///
+/// Anything already in the main gallery is dropped, so the strip does not
+/// repeat the five photographs shown directly above it.
+List<String> _detailImages(Map<String, dynamic> item, List<String> gallery) {
+  final found = <String>[];
+
+  void take(String? url) {
+    if (url == null || url.isEmpty) return;
+    if (!url.startsWith('http')) return;
+    if (gallery.contains(url) || found.contains(url)) return;
+    found.add(url);
+  }
+
+  final published = item['desc_images'];
+  if (published is List) {
+    for (final url in published) {
+      take(asString(url));
+    }
+  }
+  if (found.isNotEmpty) return found;
+
+  final html = asString(item['description']);
+  if (html == null) return const [];
+  for (final match in _imgSrc.allMatches(html)) {
+    take(match.group(1));
+  }
+  return found;
+}
+
+/// `src="https://…"` in the seller's own markup. Deliberately not an HTML
+/// parser: this is one attribute in a blob of vendor markup, and a parser
+/// would be a dependency and a new class of failure for one regular
+/// expression's worth of work.
+final _imgSrc = RegExp(r'''src\s*=\s*["'](https?://[^"']+)["']''');
+
+/// The listing's video, or null.
+///
+/// Both halves are required. `has_video` is the server saying there is one and
+/// `video_url` is where it lives, and a listing carrying the flag without the
+/// address is a slide that could only fail -- so the flag alone is not enough.
+///
+/// The `http` guard is the same one every other URL on this page goes through:
+/// the field has been seen holding placeholder text, and a player pointed at
+/// something that is not an address fails slowly and with a black rectangle,
+/// which is the worst of both.
+String? _videoUrl(Map<String, dynamic> item) {
+  if (!asBool(item['has_video'])) return null;
+  final url = asString(item['video_url']);
+  if (url == null || !url.startsWith('http')) return null;
+  return url;
 }
 
 /// One purchasable combination.
 List<_Sku> _skus(Map<String, dynamic> item) {
   final raw = item['skus'];
   if (raw is! List) return const [];
-  return raw.whereType<Map>().map((s) {
-    final sku = s.cast<String, dynamic>();
-    final parts = sku['variant_parts'];
-    return _Sku(
-      skuId: asString(sku['sku_id']) ?? '',
-      specId: asString(sku['spec_id']),
-      quantity: asInt(sku['quantity']),
-      imageUrl: asString(sku['image_url']),
-      values: parts is! List
-          ? const []
-          : parts
-              .whereType<Map>()
-              .map((p) => asString(p['value']))
-              .whereType<String>()
-              .toList(growable: false),
-      names: parts is! List
-          ? const []
-          : parts
-              .whereType<Map>()
-              .map((p) => asString(p['name']))
-              .whereType<String>()
-              .toList(growable: false),
-    );
-  }).where((s) => s.skuId.isNotEmpty && s.values.isNotEmpty).toList();
+  return raw
+      .whereType<Map>()
+      .map((s) {
+        final sku = s.cast<String, dynamic>();
+        final parts = sku['variant_parts'];
+        return _Sku(
+          skuId: asString(sku['sku_id']) ?? '',
+          specId: asString(sku['spec_id']),
+          quantity: asInt(sku['quantity']),
+          imageUrl: asString(sku['image_url']),
+          values: parts is! List
+              ? const []
+              : parts
+                    .whereType<Map>()
+                    .map((p) => asString(p['value']))
+                    .whereType<String>()
+                    .toList(growable: false),
+          names: parts is! List
+              ? const []
+              : parts
+                    .whereType<Map>()
+                    .map((p) => asString(p['name']))
+                    .whereType<String>()
+                    .toList(growable: false),
+        );
+      })
+      .where((s) => s.skuId.isNotEmpty && s.values.isNotEmpty)
+      .toList();
 }
 
 class _Sku {
@@ -417,19 +667,24 @@ List<ProductVariant> _variants(List<_Sku> skus, Map<String, dynamic> pricing) {
   if (skus.isEmpty) return const [];
   final prices = asMap(pricing['skuPrices']);
 
-  return skus.map((sku) {
-    final raw = prices[sku.skuId];
-    final price = raw is Map ? asNum(raw['displayPrice']) : asNum(raw);
-    return ProductVariant(
-      label: sku.values.join(' / '),
-      imageUrl: sku.imageUrl ?? '',
-      // Null stock means the seller did not say, which is not the same as none.
-      inStock: sku.quantity == null || sku.quantity! > 0,
-      skuId: sku.skuId,
-      specId: sku.specId,
-      price: price,
-    );
-  }).toList(growable: false);
+  return skus
+      .map((sku) {
+        final raw = prices[sku.skuId];
+        final price = raw is Map ? asNum(raw['displayPrice']) : asNum(raw);
+        return ProductVariant(
+          label: sku.values.join(' / '),
+          imageUrl: sku.imageUrl ?? '',
+          // Null stock means the seller did not say, which is not the same as none.
+          inStock: sku.quantity == null || sku.quantity! > 0,
+          skuId: sku.skuId,
+          specId: sku.specId,
+          price: price,
+          stock: sku.quantity,
+          axisNames: sku.names,
+          axisValues: sku.values,
+        );
+      })
+      .toList(growable: false);
 }
 
 List<ProductSpec> _specs(Map<String, dynamic> item) {
@@ -450,18 +705,21 @@ List<ProductSpec> _specs(Map<String, dynamic> item) {
 List<QuantityTier> _tiers(Map<String, dynamic> pricing) {
   final raw = pricing['quantityTiers'];
   if (raw is! List) return const [];
-  final tiers = raw
-      .whereType<Map>()
-      .map((t) => QuantityTier(
-            minQuantity: asInt(t['min_quantity']) ?? 0,
-            price: asNum(t['displayPrice']),
-          ))
-      .where((t) => t.minQuantity > 0 && t.price != null)
-      .toList()
-    ..sort((a, b) {
-      final byQty = a.minQuantity.compareTo(b.minQuantity);
-      return byQty != 0 ? byQty : a.price!.compareTo(b.price!);
-    });
+  final tiers =
+      raw
+          .whereType<Map>()
+          .map(
+            (t) => QuantityTier(
+              minQuantity: asInt(t['min_quantity']) ?? 0,
+              price: asNum(t['displayPrice']),
+            ),
+          )
+          .where((t) => t.minQuantity > 0 && t.price != null)
+          .toList()
+        ..sort((a, b) {
+          final byQty = a.minQuantity.compareTo(b.minQuantity);
+          return byQty != 0 ? byQty : a.price!.compareTo(b.price!);
+        });
 
   final seen = <int>{};
   return tiers.where((t) => seen.add(t.minQuantity)).toList(growable: false);
@@ -487,14 +745,43 @@ String _unit(String? raw) {
 }
 
 const Map<String, String> _unitMap = {
-  '件': 'pcs', '个': 'pcs', '只': 'pcs', '枚': 'pcs', '片': 'pcs', '粒': 'pcs',
-  '条': 'pcs', '根': 'pcs', '支': 'pcs', '把': 'pcs', '张': 'sheets',
-  '双': 'pairs', '对': 'pairs', '套': 'sets', '组': 'sets',
-  '包': 'packs', '袋': 'bags', '箱': 'boxes', '盒': 'boxes', '桶': 'barrels',
-  '瓶': 'bottles', '罐': 'cans', '管': 'tubes', '卷': 'rolls', '匹': 'rolls',
-  '米': 'm', '厘米': 'cm', '毫米': 'mm', '千克': 'kg', '公斤': 'kg', '克': 'g',
-  '斤': 'jin (500g)', '吨': 'tons', '升': 'L', '毫升': 'ml',
-  '平方米': 'sqm', '立方米': 'cbm',
+  '件': 'pcs',
+  '个': 'pcs',
+  '只': 'pcs',
+  '枚': 'pcs',
+  '片': 'pcs',
+  '粒': 'pcs',
+  '条': 'pcs',
+  '根': 'pcs',
+  '支': 'pcs',
+  '把': 'pcs',
+  '张': 'sheets',
+  '双': 'pairs',
+  '对': 'pairs',
+  '套': 'sets',
+  '组': 'sets',
+  '包': 'packs',
+  '袋': 'bags',
+  '箱': 'boxes',
+  '盒': 'boxes',
+  '桶': 'barrels',
+  '瓶': 'bottles',
+  '罐': 'cans',
+  '管': 'tubes',
+  '卷': 'rolls',
+  '匹': 'rolls',
+  '米': 'm',
+  '厘米': 'cm',
+  '毫米': 'mm',
+  '千克': 'kg',
+  '公斤': 'kg',
+  '克': 'g',
+  '斤': 'jin (500g)',
+  '吨': 'tons',
+  '升': 'L',
+  '毫升': 'ml',
+  '平方米': 'sqm',
+  '立方米': 'cbm',
 };
 
 /// What GtradeA promises on every order.
@@ -505,19 +792,22 @@ const storeAssurances = [
   Assurance(
     label: '7-day returns',
     icon: Icons.assignment_return_outlined,
-    detail: 'Send it back within 7 days of delivery for a full refund, as long '
+    detail:
+        'Send it back within 7 days of delivery for a full refund, as long '
         'as tags are attached and it is unused.',
   ),
   Assurance(
     label: 'Cash on delivery',
     icon: Icons.payments_outlined,
-    detail: 'Pay the courier when it arrives, or pay online with Khalti, '
+    detail:
+        'Pay the courier when it arrives, or pay online with Khalti, '
         'eSewa, ConnectIPS or Fonepay.',
   ),
   Assurance(
     label: 'Quality checked',
     icon: Icons.verified_outlined,
-    detail: 'Inspected before dispatch. Anything damaged or mismatched is '
+    detail:
+        'Inspected before dispatch. Anything damaged or mismatched is '
         'replaced at no cost.',
   ),
 ];

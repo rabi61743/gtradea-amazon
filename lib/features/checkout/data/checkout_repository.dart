@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_error.dart';
 import '../../../core/network/json.dart';
+import '../../cart/data/cart_store.dart';
 import 'checkout_models.dart';
 
 /// What delivery will cost, as quoted for a district.
@@ -82,18 +83,18 @@ class ServerPromo {
   final int usedCount;
 
   factory ServerPromo.fromJson(Map<String, dynamic> json) => ServerPromo(
-        code: (asString(json['code']) ?? '').toUpperCase(),
-        discountType: asString(json['discount_type']) ?? 'fixed',
-        discountValue: asNum(json['discount_value']) ?? 0,
-        maxDiscountAmount: asNum(json['max_discount_amount']),
-        minPurchaseAmount: asNum(json['min_purchase_amount']) ?? 0,
-        freeShipping: asBool(json['free_shipping']),
-        isActive: asBool(json['is_active'], orElse: true),
-        validFrom: asDate(json['valid_from']),
-        validUntil: asDate(json['valid_until']),
-        usageLimit: asInt(json['usage_limit']) ?? 0,
-        usedCount: asInt(json['used_count']) ?? 0,
-      );
+    code: (asString(json['code']) ?? '').toUpperCase(),
+    discountType: asString(json['discount_type']) ?? 'fixed',
+    discountValue: asNum(json['discount_value']) ?? 0,
+    maxDiscountAmount: asNum(json['max_discount_amount']),
+    minPurchaseAmount: asNum(json['min_purchase_amount']) ?? 0,
+    freeShipping: asBool(json['free_shipping']),
+    isActive: asBool(json['is_active'], orElse: true),
+    validFrom: asDate(json['valid_from']),
+    validUntil: asDate(json['valid_until']),
+    usageLimit: asInt(json['usage_limit']) ?? 0,
+    usedCount: asInt(json['used_count']) ?? 0,
+  );
 }
 
 /// Placing orders, quoting delivery, and checking promo codes.
@@ -138,11 +139,10 @@ class CheckoutRepository {
   Future<Map<String, dynamic>> confirmPayment(
     String path,
     Map<String, dynamic> body,
-  ) =>
-      guarded(() async {
-        final res = await _dio.post(path, data: body);
-        return asMap(res.data);
-      });
+  ) => guarded(() async {
+    final res = await _dio.post(path, data: body);
+    return asMap(res.data);
+  });
 
   /// What delivery costs for a district.
   ///
@@ -152,14 +152,36 @@ class CheckoutRepository {
     required String district,
     required String shippingMode,
     List<String> selectedCartItemIds = const [],
+    List<CartLine> guestLines = const [],
   }) async {
     try {
-      final res = await _dio.post('/checkout/delivery-charge', data: {
-        'district': district,
-        'shippingMode': shippingMode,
-        if (selectedCartItemIds.isNotEmpty)
-          'selectedCartItemIds': selectedCartItemIds,
-      });
+      final res = await _dio.post(
+        '/checkout/delivery-charge',
+        data: {
+          'district': district,
+          'shippingMode': shippingMode,
+          if (selectedCartItemIds.isNotEmpty)
+            'selectedCartItemIds': selectedCartItemIds,
+          // Only for a basket the server does not hold. A signed-in shopper's
+          // cart is the server's own, and sending a copy of it from here would
+          // be asking the server to price the prices this app happens to have.
+          if (guestLines.isNotEmpty)
+            'guestCartItems': [
+              for (final line in guestLines)
+                {
+                  'id': line.serverId ?? line.productId,
+                  'product_name': line.title,
+                  'quantity': line.quantity,
+                  'price': line.unitPrice,
+                  'source': line.source,
+                  // What the freight table is looked up by: the upstream
+                  // catalogue id, which is where weight and dimensions live.
+                  if (line.source != 'local')
+                    'source_product_id': line.productId,
+                },
+            ],
+        },
+      );
       return DeliveryQuote.fromJson(asMap(res.data));
     } catch (_) {
       return null;

@@ -82,13 +82,14 @@ class Product {
       minOrder: moq > 0 ? moq : 1,
       sellerIdentities: identities is List
           ? identities
-              .map(asString)
-              .whereType<String>()
-              .where(_meaningfulBadges.contains)
-              .toList(growable: false)
+                .map(asString)
+                .whereType<String>()
+                .where(_meaningfulBadges.contains)
+                .toList(growable: false)
           : const [],
-      repurchaseRate:
-          repurchase == null || repurchase.startsWith('0%') ? null : repurchase,
+      repurchaseRate: repurchase == null || repurchase.startsWith('0%')
+          ? null
+          : repurchase,
       tradeScore: asString(json['trade_score']),
     );
   }
@@ -136,20 +137,20 @@ class Product {
 /// would cost far more than it saves.
 extension ProductCache on Product {
   Map<String, dynamic> toJson() => {
-        'num_iid': numIid,
-        'title': title,
-        'pic_url': imageUrl,
-        'display_price': displayPrice,
-        'sales': sales,
-        'rating': rating,
-        'category_cid': categoryCid,
-        'category_name': categoryName,
-        'parent_category_name': parentCategoryName,
-        'min_order': minOrder,
-        'seller_identities': sellerIdentities,
-        'repurchase_rate': repurchaseRate,
-        'trade_score': tradeScore,
-      };
+    'num_iid': numIid,
+    'title': title,
+    'pic_url': imageUrl,
+    'display_price': displayPrice,
+    'sales': sales,
+    'rating': rating,
+    'category_cid': categoryCid,
+    'category_name': categoryName,
+    'parent_category_name': parentCategoryName,
+    'min_order': minOrder,
+    'seller_identities': sellerIdentities,
+    'repurchase_rate': repurchaseRate,
+    'trade_score': tradeScore,
+  };
 }
 
 /// Round-trips a product list through the cache.
@@ -158,9 +159,9 @@ List<Map<String, dynamic>> encodeProducts(List<Product> products) =>
 
 List<Product> decodeProducts(Object json) => json is List
     ? json
-        .whereType<Map>()
-        .map((m) => Product.fromJson(m.cast<String, dynamic>()))
-        .toList(growable: false)
+          .whereType<Map>()
+          .map((m) => Product.fromJson(m.cast<String, dynamic>()))
+          .toList(growable: false)
     : const [];
 
 /// The little that a saved or recently-viewed entry remembers, as a catalogue
@@ -173,10 +174,9 @@ Product productStub({
   required String title,
   String? imageUrl,
   num? displayPrice,
-}) =>
-    Product(
-      numIid: numIid,
-      title: title,
-      imageUrl: imageUrl,
-      displayPrice: displayPrice,
-    );
+}) => Product(
+  numIid: numIid,
+  title: title,
+  imageUrl: imageUrl,
+  displayPrice: displayPrice,
+);

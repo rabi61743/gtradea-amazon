@@ -27,10 +27,12 @@ void signInForTest({
   );
 
   final parts = (name ?? '').trim().split(RegExp(r'\s+'));
-  AuthStore.instance.adoptForTest(Account(
-    id: id,
-    email: email,
-    firstName: parts.first.isEmpty ? null : parts.first,
-    lastName: parts.length > 1 ? parts.sublist(1).join(' ') : null,
-  ));
+  AuthStore.instance.adoptForTest(
+    Account(
+      id: id,
+      email: email,
+      firstName: parts.first.isEmpty ? null : parts.first,
+      lastName: parts.length > 1 ? parts.sublist(1).join(' ') : null,
+    ),
+  );
 }

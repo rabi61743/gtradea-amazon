@@ -26,20 +26,30 @@ class FakeApi implements HttpClientAdapter {
     int status = 200,
     Map<String, List<String>>? headers,
   }) {
-    _routes['${method.toUpperCase()} $path'] =
-        (_) => FakeReply(status: status, body: body, headers: headers);
+    // Keyed by path whether the caller wrote a path or a full URL, matching
+    // the same normalisation applied to incoming requests below. Several
+    // services sit outside the versioned API and are registered -- and called
+    // -- with an absolute URL.
+    _routes['${method.toUpperCase()} ${_pathOf(path)}'] = (_) =>
+        FakeReply(status: status, body: body, headers: headers);
   }
 
   /// For answers that depend on the request, or that change between calls (a
   /// 401 first and a 200 after a refresh, say).
   void onCall(String method, String path, FakeHandler handler) {
-    _routes['${method.toUpperCase()} $path'] = handler;
+    _routes['${method.toUpperCase()} ${_pathOf(path)}'] = handler;
   }
 
   Dio dio({String baseUrl = 'https://test.local/api/v1'}) {
-    final dio = Dio(BaseOptions(baseUrl: baseUrl, contentType: 'application/json'))
-      ..httpClientAdapter = this;
+    final dio = Dio(
+      BaseOptions(baseUrl: baseUrl, contentType: 'application/json'),
+    )..httpClientAdapter = this;
     return dio;
+  }
+
+  static String _pathOf(String pathOrUrl) {
+    if (!pathOrUrl.startsWith('http')) return pathOrUrl;
+    return Uri.tryParse(pathOrUrl)?.path ?? pathOrUrl;
   }
 
   @override
@@ -50,7 +60,12 @@ class FakeApi implements HttpClientAdapter {
   ) async {
     final call = RecordedCall(
       method: options.method.toUpperCase(),
-      path: options.path,
+      // Absolute URLs are reduced to their path, so a route registered as
+      // '/api/1688/image-search' matches whether the caller used a path or a
+      // full URL. Some services sit outside the versioned API and are called
+      // with an absolute URL to override the Dio base; without this they miss
+      // every route and look like a missing endpoint.
+      path: _pathOf(options.path),
       query: Map<String, dynamic>.from(options.queryParameters),
       body: options.data,
       headers: Map<String, dynamic>.from(options.headers),
@@ -67,6 +82,46 @@ class FakeApi implements HttpClientAdapter {
     }
 
     final reply = handler(call);
+
+    // A reply that takes time, and a caller that can give up on it.
+    //
+    // Both are needed to test anything about latency: the typeahead's two
+    // endpoints differ by more than a second in production, and the whole point
+    // of splitting them is that the fast one is not held behind the slow one.
+    // Without a delay here every stub answers in the same microtask and that
+    // difference cannot be expressed.
+    final delay = reply.delay;
+    if (delay != null) {
+      // A timer that is actually cancelled, not a `Future.any` race.
+      //
+      // `Future.any` abandons the loser but leaves it running, so a cancelled
+      // request left its delay ticking and every test that ended before it
+      // fired failed with "pending timers" -- a harness artefact reported as a
+      // leak in the app.
+      //
+      // `cancelFuture` is dio's own signal, completed when the caller's
+      // CancelToken fires, so this behaves the way the real client does rather
+      // than approximating it.
+      final settled = Completer<bool>();
+      final timer = Timer(delay, () {
+        if (!settled.isCompleted) settled.complete(false);
+      });
+      unawaited(
+        cancelFuture?.then((_) {
+          if (settled.isCompleted) return;
+          timer.cancel();
+          settled.complete(true);
+        }),
+      );
+
+      if (await settled.future) {
+        throw DioException.requestCancelled(
+          requestOptions: options,
+          reason: 'cancelled',
+        );
+      }
+    }
+
     return ResponseBody.fromString(
       reply.body == null ? '' : jsonEncode(reply.body),
       reply.status,
@@ -85,16 +140,20 @@ class FakeApi implements HttpClientAdapter {
 typedef FakeHandler = FakeReply Function(RecordedCall call);
 
 class FakeReply {
-  const FakeReply({required this.status, this.body, this.headers});
+  const FakeReply({required this.status, this.body, this.headers, this.delay});
 
   final int status;
   final Object? body;
   final Map<String, List<String>>? headers;
+
+  /// How long the server takes to answer. Null answers immediately, which is
+  /// what almost every test wants.
+  final Duration? delay;
 }
 
 /// A reply built inside an [FakeApi.onCall] handler.
-FakeReply reply(Object? body, {int status = 200}) =>
-    FakeReply(status: status, body: body);
+FakeReply reply(Object? body, {int status = 200, Duration? delay}) =>
+    FakeReply(status: status, body: body, delay: delay);
 
 class RecordedCall {
   RecordedCall({

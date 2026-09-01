@@ -15,6 +15,10 @@ FakeApi stubCatalog({
   int departments = 7,
   int childrenEach = 3,
   int products = 6,
+
+  /// False serves subcategories with no artwork, which the real catalogue does
+  /// for a few of them. The tiles must still render.
+  bool childImages = true,
 }) {
   final api = FakeApi();
 
@@ -41,7 +45,9 @@ FakeApi stubCatalog({
             'cid': 'dept-$i-child-$c',
             'parent_cid': 'dept-$i',
             'name': '${_departmentNames[i % _departmentNames.length]} item $c',
-            'image_url': 'https://example.invalid/child-$i-$c.jpg',
+            'image_url': childImages
+                ? 'https://example.invalid/child-$i-$c.jpg'
+                : null,
             'sort_order': c,
             'is_leaf': true,
           },
@@ -56,10 +62,49 @@ FakeApi stubCatalog({
   api.on('GET', '/feed/discover', body: feedRows(products));
   api.on('GET', '/feed/trending-products', body: feedRows(products));
   api.on('GET', '/search/products', body: feedRows(products));
+  // A plain keyword search goes to the live 1688 catalogue instead, because
+  // that one ranks by keyword and /search/products does not. Same rows, and
+  // wrapped in the envelope that endpoint actually returns.
+  api.on('GET', '/api/1688/search', body: {'items': feedRows(products)});
   api.on('GET', '/hero-banners', body: const []);
 
   useStubbedApi(api);
   return api;
+}
+
+/// The two endpoints a product search can go to.
+///
+/// A plain keyword search goes to the live 1688 catalogue, which ranks by
+/// keyword; anything with a filter or a chosen sort goes to `/search/products`,
+/// which is the only one that honours them. A test asserting on "the search
+/// that went out" should not have to care which, so it asks for both.
+const kSearchPaths = ['/search/products', '/api/1688/search'];
+
+bool isSearchCall(RecordedCall call) => kSearchPaths.contains(call.path);
+
+/// Answers both search endpoints with the same rows.
+///
+/// Stubbing only one leaves the other on the default stub, so a test meaning
+/// "search finds nothing" gets six products from whichever endpoint it forgot --
+/// and passes or fails for a reason that has nothing to do with what it is
+/// about.
+void stubSearch(FakeApi api, List<Map<String, dynamic>> rows, {int? status}) {
+  api.on('GET', '/search/products', body: rows, status: status ?? 200);
+  api.on(
+    'GET',
+    '/api/1688/search',
+    body: {'items': rows},
+    status: status ?? 200,
+  );
+}
+
+/// The same, for a search whose answer depends on what was asked.
+void stubSearchWith(
+  FakeApi api,
+  List<Map<String, dynamic>> Function(RecordedCall) rows,
+) {
+  api.onCall('GET', '/search/products', (call) => reply(rows(call)));
+  api.onCall('GET', '/api/1688/search', (call) => reply({'items': rows(call)}));
 }
 
 /// Points the shared client at a fake and clears anything already loaded.
@@ -98,6 +143,5 @@ const _departmentNames = [
 /// The department names the stub serves, in order. Index-based assertions in
 /// the browse tests key on this rather than on a copy of it.
 List<String> stubDepartmentNames(int count) => [
-      for (var i = 0; i < count; i++)
-        _departmentNames[i % _departmentNames.length],
-    ];
+  for (var i = 0; i < count; i++) _departmentNames[i % _departmentNames.length],
+];

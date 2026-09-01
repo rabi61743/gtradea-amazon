@@ -18,8 +18,10 @@ class Env {
   /// GoTrue lives beside the gateway rather than behind its prefix, so it needs
   /// its own base. Overridable on its own for the case where auth is pointed at
   /// production while the API is local.
-  static const String _authBaseOverride =
-      String.fromEnvironment('GOTRUE_URL', defaultValue: '');
+  static const String _authBaseOverride = String.fromEnvironment(
+    'GOTRUE_URL',
+    defaultValue: '',
+  );
 
   static String get authBaseUrl =>
       _authBaseOverride.isNotEmpty ? _authBaseOverride : '$apiBaseUrl/auth/v1';

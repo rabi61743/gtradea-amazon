@@ -60,15 +60,18 @@ class ProductRepository {
     String? priceLabel,
   }) async {
     try {
-      await _dio.post('/product-views', data: {
-        'source': '1688',
-        'source_product_id': numIid,
-        'product_data': {
-          'name': ?name,
-          'image_url': ?imageUrl,
-          'price_label': ?priceLabel,
+      await _dio.post(
+        '/product-views',
+        data: {
+          'source': '1688',
+          'source_product_id': numIid,
+          'product_data': {
+            'name': ?name,
+            'image_url': ?imageUrl,
+            'price_label': ?priceLabel,
+          },
         },
-      });
+      );
     } catch (_) {
       // Signed out, offline, or the server said no. None of those are worth
       // interrupting a shopper over.

@@ -20,8 +20,22 @@ class CartSummary extends StatelessWidget {
     final theme = Theme.of(context);
     final items = totals.itemCount;
 
+    // The goods, split into what they cost before tax and the tax inside them.
+    // Both are read off CartTotals, which back-solves the VAT out of what is
+    // actually charged rather than adding it on top -- the displayed prices
+    // already include it, and adding it again would double-charge.
+    final vat = totals.vatIncluded.round();
+    final goods = totals.subtotal - totals.discount;
+
     return Column(
       children: [
+        _SummaryRow(
+          label: 'Product price (excl. VAT)',
+          value: formatRupees(goods - vat),
+        ),
+        const SizedBox(height: 8),
+        _SummaryRow(label: 'Product VAT (13%)', value: formatRupees(vat)),
+        const SizedBox(height: 8),
         _SummaryRow(
           label: 'Subtotal ($items ${items == 1 ? 'item' : 'items'})',
           value: formatRupees(totals.subtotal),
@@ -31,7 +45,7 @@ class CartSummary extends StatelessWidget {
           _SummaryRow(
             label: 'You save',
             value: '-${formatRupees(totals.savings)}',
-            valueColor: AppColors.success,
+            valueColor: AppColors.successInk,
           ),
         ],
         if (totals.discount > 0) ...[
@@ -43,14 +57,26 @@ class CartSummary extends StatelessWidget {
                 ? 'Coupon'
                 : 'Coupon ${totals.couponCode}',
             value: '-${formatRupees(totals.discount)}',
-            valueColor: AppColors.success,
+            valueColor: AppColors.successInk,
           ),
         ],
         const SizedBox(height: 8),
+        // Three states, and the difference between the first two is the whole
+        // point: a delivery of zero that nobody has quoted is not free, it is
+        // unpriced. Freight is quoted by the server against the basket and its
+        // destination, so a cart with no address yet has no figure to show --
+        // and rendering that as "Free" would promise something checkout then
+        // takes back.
         _SummaryRow(
-          label: 'Delivery',
-          value: totals.delivery == 0 ? 'Free' : formatRupees(totals.delivery),
-          valueColor: totals.delivery == 0 ? AppColors.success : null,
+          label: 'Delivery fee',
+          value: !totals.deliveryQuoted
+              ? 'Calculated at checkout'
+              : totals.delivery == 0
+              ? 'Free'
+              : formatRupees(totals.delivery),
+          valueColor: totals.deliveryQuoted && totals.delivery == 0
+              ? AppColors.successInk
+              : null,
         ),
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 10),
@@ -104,8 +130,9 @@ class _SummaryRow extends StatelessWidget {
           child: Text(
             label,
             style: emphasised
-                ? theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700)
+                ? theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  )
                 : theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

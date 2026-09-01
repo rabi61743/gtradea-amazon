@@ -72,9 +72,7 @@ class AppBottomNav extends StatelessWidget {
           icon: Icon(
             isSignedIn ? Icons.account_circle_outlined : Icons.person_outline,
           ),
-          selectedIcon: Icon(
-            isSignedIn ? Icons.account_circle : Icons.person,
-          ),
+          selectedIcon: Icon(isSignedIn ? Icons.account_circle : Icons.person),
           label: isSignedIn ? t.account : t.signIn,
         ),
         NavigationDestination(

@@ -67,4 +67,3 @@ class FilterGroup {
   final String label;
   final List<String> options;
 }
-

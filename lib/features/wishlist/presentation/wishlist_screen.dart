@@ -49,9 +49,8 @@ class _WishlistScreenState extends State<WishlistScreen> {
   }
 
   void _openCart() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const CartScreen()),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const CartScreen()));
   }
 
   /// Opens the product. The saved entry paints the page immediately and the
@@ -72,18 +71,18 @@ class _WishlistScreenState extends State<WishlistScreen> {
   }
 
   CartLine _lineFor(SavedProduct product, num price) => CartLine(
-        productId: product.id,
-        title: product.title,
-        unitPrice: price,
-        listPrice: product.listPrice,
-        imageUrl: product.imageUrl,
-        // The seller's floor, not one. Adding a single unit of a listing that
-        // sells in tens is a refusal waiting to happen.
-        quantity: product.minOrder,
-        minOrder: product.minOrder,
-        category: product.category,
-        source: '1688',
-      );
+    productId: product.id,
+    title: product.title,
+    unitPrice: price,
+    listPrice: product.listPrice,
+    imageUrl: product.imageUrl,
+    // The seller's floor, not one. Adding a single unit of a listing that
+    // sells in tens is a refusal waiting to happen.
+    quantity: product.minOrder,
+    minOrder: product.minOrder,
+    category: product.category,
+    source: '1688',
+  );
 
   /// What this product costs, asking the catalogue if the saved copy does not
   /// know.
@@ -176,7 +175,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
       '${moved.length} ${moved.length == 1 ? 'item' : 'items'} moved to your '
       'cart.'
       '${unpriced.isEmpty ? '' : ' ${unpriced.length} had no price and stayed '
-          'here.'}',
+                'here.'}',
       action: SnackBarAction(
         label: 'Undo',
         onPressed: () {
@@ -234,8 +233,10 @@ class _WishlistScreenState extends State<WishlistScreen> {
     final theme = Theme.of(context);
 
     return ListenableBuilder(
-      listenable:
-          Listenable.merge([WishlistStore.instance, CartStore.instance]),
+      listenable: Listenable.merge([
+        WishlistStore.instance,
+        CartStore.instance,
+      ]),
       builder: (context, _) {
         final store = WishlistStore.instance;
         final items = store.items;
@@ -338,8 +339,9 @@ class _SummaryCard extends StatelessWidget {
               children: [
                 Text(
                   '$count ${count == 1 ? 'item' : 'items'} saved',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -643,8 +645,9 @@ class _KeepShoppingCard extends StatelessWidget {
               children: [
                 Text(
                   'Looking for more?',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -690,8 +693,9 @@ class _EmptyWishlist extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'Nothing saved yet',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 4),
             Text(

@@ -72,11 +72,11 @@ class _CardFormSheetState extends State<CardFormSheet> {
   CardBrand get _brand => CardBrand.of(_digits);
 
   CardErrors get _errors => validateCard(
-        number: _number.text,
-        holder: _holder.text,
-        expiry: _expiry.text,
-        cvv: _cvv.text,
-      );
+    number: _number.text,
+    holder: _holder.text,
+    expiry: _expiry.text,
+    cvv: _cvv.text,
+  );
 
   void _submit() {
     setState(() => _submitted = true);
@@ -120,8 +120,9 @@ class _CardFormSheetState extends State<CardFormSheet> {
                 Expanded(
                   child: Text(
                     _brand == CardBrand.unknown ? strings.title : _brand.label,
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 Icon(

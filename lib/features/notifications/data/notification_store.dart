@@ -4,7 +4,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/network/api_error.dart';
 import '../../auth/data/auth_store.dart';
+import 'notification_repository.dart';
+import 'device_notifications.dart';
+import 'notification_sound.dart';
 import '../../orders/data/order_store.dart';
 
 /// What a notification is about.
@@ -23,7 +27,11 @@ enum NotificationCategory {
   orderReturned('Return and refund', NotificationGroup.orders),
   payment('Payment update', NotificationGroup.payment),
   promotion('Promotions and offers', NotificationGroup.promotions),
-  account('Account update', NotificationGroup.account);
+  account('Account update', NotificationGroup.account),
+  // Raised by the server, not worked out here: a seller answering a quote and
+  // support replying to a ticket are things only the shop knows about.
+  quote('Quote update', NotificationGroup.quotes),
+  support('Support reply', NotificationGroup.support);
 
   const NotificationCategory(this.label, this.group);
   final String label;
@@ -40,7 +48,9 @@ enum NotificationGroup {
   orders('Order updates', 'Placed, packed, shipped and delivered'),
   payment('Payment updates', 'Charges, refunds and failures'),
   promotions('Promotions and offers', 'Sales, discounts and seasonal deals'),
-  account('Account updates', 'Sign-ins and changes to your account');
+  account('Account updates', 'Sign-ins and changes to your account'),
+  quotes('Quote requests', 'Prices and replies from sellers'),
+  support('Support replies', 'Answers to the messages you send us');
 
   const NotificationGroup(this.label, this.detail);
   final String label;
@@ -57,6 +67,8 @@ class AppNotification {
     required this.createdAt,
     this.read = false,
     this.orderId,
+    this.targetId,
+    this.fromServer = false,
   });
 
   /// Stable and derived from what the notification is about, never random:
@@ -72,25 +84,34 @@ class AppNotification {
   /// Set on order notifications, so tapping one can open that order.
   final String? orderId;
 
+  /// The quote request or support ticket this is about, when it is about one.
+  final String? targetId;
+
+  /// True when the shop raised this rather than the device working it out.
+  ///
+  /// It decides where a read goes: marking a server notification read has to
+  /// reach the server, or it comes back unread on the next sync.
+  final bool fromServer;
+
   AppNotification copyWith({bool? read}) => AppNotification(
-        id: id,
-        category: category,
-        title: title,
-        body: body,
-        createdAt: createdAt,
-        read: read ?? this.read,
-        orderId: orderId,
-      );
+    id: id,
+    category: category,
+    title: title,
+    body: body,
+    createdAt: createdAt,
+    read: read ?? this.read,
+    orderId: orderId,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'category': category.name,
-        'title': title,
-        'body': body,
-        'createdAt': createdAt.millisecondsSinceEpoch,
-        'read': read,
-        'orderId': orderId,
-      };
+    'id': id,
+    'category': category.name,
+    'title': title,
+    'body': body,
+    'createdAt': createdAt.millisecondsSinceEpoch,
+    'read': read,
+    'orderId': orderId,
+  };
 
   static AppNotification? fromJson(Map<String, dynamic> json) {
     final id = json['id'];
@@ -215,6 +236,20 @@ class NotificationStore extends ChangeNotifier {
   /// because their group was muted or the shopper deleted them.
   final Set<String> _delivered = {};
 
+  /// The server notifications this device has already chimed for.
+  ///
+  /// Separate from [_delivered], which is about what has been *shown*: a
+  /// notification can legitimately be shown again after a reinstall, and it
+  /// must not sound again for it.
+  final Set<String> _announced = {};
+
+  /// True once a sync has completed, so the first one -- which is every
+  /// notification the account already had -- is silent.
+  bool _syncedOnce = false;
+
+  /// The most device notifications one batch may post.
+  static const _maxPosted = 5;
+
   String? _scope;
   bool _loaded = false;
   bool _bound = false;
@@ -238,8 +273,37 @@ class NotificationStore extends ChangeNotifier {
     (auth ?? AuthStore.instance).addListener(_onIdentityChanged);
   }
 
+  /// Tells the shopper that something arrived: on the device, or failing that
+  /// with a chime.
+  ///
+  /// **Exactly one sound per batch.** A posted device notification already
+  /// carries the platform's own tone -- the one the shopper chose, at the
+  /// notification volume, silenced by Do Not Disturb -- so playing the in-app
+  /// chime on top of it made two sounds for one event. The chime is the
+  /// fallback for when nothing was posted: permission refused, no notification
+  /// service, or the post failed.
+  ///
+  /// One device notification per arrival rather than one per batch: the shade
+  /// is a list, and collapsing four events into a single line would lose
+  /// three. Capped, because a shopper returning after a fortnight should not
+  /// have forty pushed at them at once. [_announced] is what stops the same
+  /// event being posted twice.
+  Future<void> _announce(List<AppNotification> arrived) async {
+    var anyPosted = false;
+    for (final row in arrived.take(_maxPosted)) {
+      if (await DeviceNotifications.instance.show(row)) anyPosted = true;
+    }
+    if (!anyPosted) await NotificationSound.instance.play();
+  }
+
+  /// Reads the list, and refreshes the shop's half of it.
+  ///
+  /// Called on a cold start, on pull-to-refresh, and by the live event that
+  /// says something arrived. It used to return immediately once loaded, which
+  /// meant a realtime notification event refreshed nothing at all -- the one
+  /// path that most needed to reach the server was the one that never did.
   Future<void> load() {
-    if (_loaded) return Future<void>.value();
+    if (_loaded) return syncFromServer();
     return _loading ??= _load();
   }
 
@@ -249,6 +313,76 @@ class NotificationStore extends ChangeNotifier {
     _loaded = true;
     _loading = null;
     notifyListeners();
+    // The device's own copy is on screen first, then the shop's. Waiting on a
+    // request before showing anything would leave the bell empty on every cold
+    // start.
+    await syncFromServer();
+  }
+
+  /// Merges the shop's notifications into the list.
+  ///
+  /// **This is what was missing.** Everything a server raises -- a seller
+  /// answering a quote, support replying to a ticket -- lives in the shop's
+  /// notifications table, and this store only ever read what the device could
+  /// work out for itself. A live event arrived, called [load], and reloaded
+  /// local storage.
+  ///
+  /// Server rows win where the ids collide, because the server is the
+  /// authority on whether one has been read. Locally-derived notifications --
+  /// the order announcements this app has always made -- are left alone.
+  ///
+  /// Failures are swallowed: a notification list that empties itself because
+  /// the network blinked is worse than one that is briefly out of date.
+  Future<void> syncFromServer() async {
+    if (!AuthStore.instance.isSignedIn) return;
+    List<AppNotification> rows;
+    try {
+      rows = await NotificationRepository.instance.list();
+    } on ApiError {
+      return;
+    }
+    // A successful read counts as a sync even when it changes nothing, or the
+    // next one would be treated as the first and stay silent for something
+    // that genuinely just arrived.
+    final first = !_syncedOnce;
+    _syncedOnce = true;
+
+    if (rows.isEmpty && _items.every((item) => !item.fromServer)) return;
+
+    final byId = {for (final item in _items) item.id: item};
+    for (final row in rows) {
+      // A row removed on this device stays removed rather than reappearing.
+      if (_delivered.contains(row.id) && !byId.containsKey(row.id)) continue;
+      byId[row.id] = row;
+    }
+    // Anything the server no longer has is gone from the server's half only.
+    final serverIds = {for (final row in rows) row.id};
+    byId.removeWhere((id, item) => item.fromServer && !serverIds.contains(id));
+
+    // What is genuinely new: on the server, unread, and not chimed for
+    // before. Worked out before the list is replaced, because afterwards there
+    // is nothing left to compare against.
+    final arrived = [
+      for (final row in rows)
+        if (!row.read && !_announced.contains(row.id)) row,
+    ];
+    _announced.addAll(rows.map((row) => row.id));
+
+    _items
+      ..clear()
+      ..addAll(byId.values);
+    _sortAndTrim();
+    notifyListeners();
+    unawaited(_persist());
+
+    // Silent on the first sync: everything the account already had is not
+    // news, and a chime on opening the app is exactly the "plays on load"
+    // nobody wants.
+    if (!first && arrived.isNotEmpty) {
+      // Awaited: posting is a handful of quick platform calls, and letting the
+      // sync finish first made the order of a batch depend on scheduling.
+      await _announce(arrived);
+    }
   }
 
   void _onIdentityChanged() {
@@ -264,6 +398,10 @@ class NotificationStore extends ChangeNotifier {
     // re-announcing this account's is what the sync is for.
     _items.clear();
     _delivered.clear();
+    // A different account starts over: its first sync is silent, and nothing
+    // the previous one chimed for counts as announced here.
+    _announced.clear();
+    _syncedOnce = false;
     await _readInto(storageKeyFor(email));
     _loaded = true;
     notifyListeners();
@@ -424,32 +562,49 @@ class NotificationStore extends ChangeNotifier {
 
     if (!NotificationSettings.instance.isEnabled(category.group)) return 0;
 
-    _items.add(AppNotification(
-      id: id,
-      category: category,
-      title: title,
-      body: body,
-      createdAt: createdAt,
-      orderId: orderId,
-    ));
+    _items.add(
+      AppNotification(
+        id: id,
+        category: category,
+        title: title,
+        body: body,
+        createdAt: createdAt,
+        orderId: orderId,
+      ),
+    );
     return 1;
   }
 
   void markRead(String id) {
     final index = _items.indexWhere((item) => item.id == id);
     if (index == -1 || _items[index].read) return;
-    _items[index] = _items[index].copyWith(read: true);
+    final item = _items[index];
+    _items[index] = item.copyWith(read: true);
     notifyListeners();
     unawaited(_persist());
+    // Or it comes back unread on the next sync, and the badge counts it again.
+    // Best effort: the shopper has read it either way, and a failed request is
+    // not a reason to show it as unread on the device it was read on.
+    if (item.fromServer) {
+      unawaited(
+        NotificationRepository.instance.markRead(id).catchError((_) {}),
+      );
+    }
   }
 
   void markAllRead() {
     if (!hasUnread) return;
+    final anyFromServer = _items.any((item) => !item.read && item.fromServer);
     for (var i = 0; i < _items.length; i++) {
       if (!_items[i].read) _items[i] = _items[i].copyWith(read: true);
     }
     notifyListeners();
     unawaited(_persist());
+    if (anyFromServer) {
+      unawaited(
+        NotificationRepository.instance.markAllRead().catchError((_) {}),
+      );
+    }
   }
 
   /// Removes one notification for good. It stays in [_delivered], so the next
@@ -482,34 +637,34 @@ class NotificationStore extends ChangeNotifier {
   void resetForTest() {
     _items.clear();
     _delivered.clear();
+    _announced.clear();
+    _syncedOnce = false;
     _scope = null;
     _loaded = false;
     _bound = false;
     _loading = null;
   }
 
-  static NotificationCategory _categoryFor(OrderStage stage) =>
-      switch (stage) {
-        OrderStage.placed => NotificationCategory.orderPlaced,
-        OrderStage.confirmed => NotificationCategory.orderConfirmed,
-        OrderStage.packed => NotificationCategory.orderPacked,
-        OrderStage.shipped => NotificationCategory.orderShipped,
-        OrderStage.outForDelivery => NotificationCategory.orderOutForDelivery,
-        OrderStage.delivered => NotificationCategory.orderDelivered,
-      };
+  static NotificationCategory _categoryFor(OrderStage stage) => switch (stage) {
+    OrderStage.placed => NotificationCategory.orderPlaced,
+    OrderStage.confirmed => NotificationCategory.orderConfirmed,
+    OrderStage.packed => NotificationCategory.orderPacked,
+    OrderStage.shipped => NotificationCategory.orderShipped,
+    OrderStage.outForDelivery => NotificationCategory.orderOutForDelivery,
+    OrderStage.delivered => NotificationCategory.orderDelivered,
+  };
 
   static String _bodyFor(OrderStage stage, Order order) => switch (stage) {
-        OrderStage.placed =>
-          'We have got your order ${order.id}. We will confirm it shortly.',
-        OrderStage.confirmed =>
-          '${order.id} is confirmed and going to the warehouse.',
-        OrderStage.packed => '${order.id} has been packed and is ready to go.',
-        OrderStage.shipped =>
-          '${order.id} is on its way with ${order.courier}.',
-        OrderStage.outForDelivery =>
-          '${order.id} is out for delivery today. Keep your phone nearby.',
-        OrderStage.delivered => '${order.id} has been delivered. Enjoy it.',
-      };
+    OrderStage.placed =>
+      'We have got your order ${order.id}. We will confirm it shortly.',
+    OrderStage.confirmed =>
+      '${order.id} is confirmed and going to the warehouse.',
+    OrderStage.packed => '${order.id} has been packed and is ready to go.',
+    OrderStage.shipped => '${order.id} is on its way with ${order.courier}.',
+    OrderStage.outForDelivery =>
+      '${order.id} is out for delivery today. Keep your phone nearby.',
+    OrderStage.delivered => '${order.id} has been delivered. Enjoy it.',
+  };
 
   /// Rupees without importing the storefront's formatter into the data layer.
   static String _money(num amount) {

@@ -47,16 +47,16 @@ class SavedProduct {
   final int minOrder;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'price': price,
-        'listPrice': listPrice,
-        'imageUrl': imageUrl,
-        'sellerBadge': sellerBadge,
-        'salesLabel': salesLabel,
-        'category': category,
-        'minOrder': minOrder,
-      };
+    'id': id,
+    'title': title,
+    'price': price,
+    'listPrice': listPrice,
+    'imageUrl': imageUrl,
+    'sellerBadge': sellerBadge,
+    'salesLabel': salesLabel,
+    'category': category,
+    'minOrder': minOrder,
+  };
 
   /// Tolerant: a blob written by an older build may be missing fields, and a
   /// half-readable entry beats dropping the whole list.
@@ -70,10 +70,12 @@ class SavedProduct {
       price: json['price'] is num ? json['price'] as num : 0,
       listPrice: json['listPrice'] is num ? json['listPrice'] as num : null,
       imageUrl: json['imageUrl'] is String ? json['imageUrl'] as String : null,
-      sellerBadge:
-          json['sellerBadge'] is String ? json['sellerBadge'] as String : null,
-      salesLabel:
-          json['salesLabel'] is String ? json['salesLabel'] as String : null,
+      sellerBadge: json['sellerBadge'] is String
+          ? json['sellerBadge'] as String
+          : null,
+      salesLabel: json['salesLabel'] is String
+          ? json['salesLabel'] as String
+          : null,
       category: json['category'] is String ? json['category'] as String : null,
       minOrder: json['minOrder'] is int && (json['minOrder'] as int) >= 1
           ? json['minOrder'] as int
@@ -195,4 +197,3 @@ class WishlistStore extends ChangeNotifier {
     }
   }
 }
-

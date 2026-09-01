@@ -51,6 +51,30 @@ dependencies:
   flutter_secure_storage: ^10.3.1
   web_socket_channel: ^3.0.3
   webview_flutter: ^4.14.1
+  # Voice search. Uses the platform recogniser -- Android's SpeechRecognizer,
+  # iOS's SFSpeechRecognizer -- so this app never handles or transmits audio
+  # itself, and a device with no recogniser installed reports that rather than
+  # failing silently.
+  speech_to_text: ^7.3.0
+  # Visual search: the camera and the system photo picker.
+  image_picker: ^1.2.0
+  # Support attachments: the system file picker, which unlike image_picker
+  # can hand back the PDFs and Word documents the support bucket accepts.
+  file_picker: ^8.3.7
+  # Somewhere durable to keep the thumbnails of past visual searches. The
+  # picker hands back a file in a cache directory the OS is free to delete.
+  path_provider: ^2.1.5
+  # The brand mark. Vector rather than a set of PNGs so it stays sharp at any
+  # size on any density, and so the asset stays the storefront's own path data
+  # rather than a rasterisation of it.
+  flutter_svg: ^2.2.1
+  cached_network_image: ^3.4.1
+  video_player: ^2.14.0
+
+  # Posts the notification the shop raised to the device itself, so it
+  # reaches the notification centre and the lock screen rather than living
+  # only inside the app.
+  flutter_local_notifications: ^19.4.2
 
 dev_dependencies:
   flutter_test:
@@ -62,6 +86,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  video_player_platform_interface: ^6.9.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -74,10 +99,9 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/brand/
+    - assets/sounds/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

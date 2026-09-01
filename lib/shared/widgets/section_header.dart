@@ -24,18 +24,37 @@ class SectionHeader extends StatelessWidget {
   final VoidCallback? onSeeAll;
   final String actionLabel;
 
+  /// The page's vertical rhythm, named here because this is the widget that
+  /// sets it.
+  ///
+  /// Blocks that draw their own heading -- the sale panel -- space themselves
+  /// by these rather than by numbers of their own, which is how the gap between
+  /// sections came to vary between 4 and 20 points down one page.
+  static const gapAbove = 20.0;
+  static const gapBelow = 10.0;
+
+  /// The page margin. The heading sits on it like everything else.
+  static const edge = 16.0;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final icon = leadingIcon;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 8, 10),
+      // The same margin on both sides. It used to be 8 on the right to absorb
+      // the button's own padding, which put "See All" half a step past the
+      // margin every other block lines up on.
+      padding: const EdgeInsets.fromLTRB(edge, gapAbove, edge, gapBelow),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 18, color: titleColor ?? theme.colorScheme.primary),
+            Icon(
+              icon,
+              size: 18,
+              color: titleColor ?? theme.colorScheme.primary,
+            ),
             const SizedBox(width: 8),
           ],
           Expanded(
@@ -57,8 +76,9 @@ class SectionHeader extends StatelessWidget {
                     subtitle!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
               ],
             ),
@@ -66,6 +86,15 @@ class SectionHeader extends StatelessWidget {
           if (onSeeAll != null)
             TextButton(
               onPressed: onSeeAll,
+              // Zero padding and a shrink-wrapped target so moving the row onto
+              // the page margin does not also move the label a step inside it.
+              // The row is already 40pt tall, which is the tap target the
+              // button would otherwise pad its way to.
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

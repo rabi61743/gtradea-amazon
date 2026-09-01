@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+
 import 'support/catalog.dart';
+
 import 'package:gtradea_amazon/core/network/api_error.dart';
 import 'package:gtradea_amazon/core/network/session_store.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_repository.dart';
@@ -9,8 +11,10 @@ import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/account/presentation/account_screen.dart';
 import 'package:gtradea_amazon/features/account/data/recently_viewed_store.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+
 import 'support/auth.dart';
 import 'support/fake_api.dart';
+
 import 'package:gtradea_amazon/features/auth/presentation/auth_screen.dart';
 import 'package:gtradea_amazon/features/product/presentation/product_detail_screen.dart';
 import 'package:gtradea_amazon/features/wishlist/data/wishlist_store.dart';
@@ -43,57 +47,70 @@ void main() {
       String access = 'access-1',
       String refresh = 'refresh-1',
       Map<String, dynamic>? user,
-    }) =>
-        {
-          'access_token': access,
-          'refresh_token': refresh,
-          'expires_in': 7200,
-          'user': user ??
-              {
-                'id': 'user-1',
-                'email': 'rabi@example.com',
-                'user_metadata': {'first_name': 'Rabi', 'last_name': 'Yadav'},
-              },
-        };
+    }) => {
+      'access_token': access,
+      'refresh_token': refresh,
+      'expires_in': 7200,
+      'user':
+          user ??
+          {
+            'id': 'user-1',
+            'email': 'rabi@example.com',
+            'user_metadata': {'first_name': 'Rabi', 'last_name': 'Yadav'},
+          },
+    };
 
     AuthRepository repoOver(FakeApi api) => AuthRepository(
-          sessions: SessionStore.instance,
-          dio: api.dio(baseUrl: 'https://test.local/auth/v1'),
+      sessions: SessionStore.instance,
+      dio: api.dio(baseUrl: 'https://test.local/auth/v1'),
+    );
+
+    test(
+      'signing in sends the password grant and adopts the session',
+      () async {
+        final api = FakeApi()..on('POST', '/token', body: sessionBody());
+        AuthStore.instance.repositoryForTest = repoOver(api);
+
+        await AuthStore.instance.signIn(
+          email: '  rabi@example.com ',
+          password: 'correct-horse',
         );
 
-    test('signing in sends the password grant and adopts the session',
-        () async {
-      final api = FakeApi()..on('POST', '/token', body: sessionBody());
-      AuthStore.instance.repositoryForTest = repoOver(api);
+        expect(api.calls.single.query['grant_type'], 'password');
+        // Trimmed: a keyboard's trailing space is not part of the address, and
+        // the server would reject it as a different one.
+        expect(api.calls.single.json['email'], 'rabi@example.com');
+        expect(AuthStore.instance.isSignedIn, isTrue);
+        expect(AuthStore.instance.account?.email, 'rabi@example.com');
+        expect(AuthStore.instance.account?.id, 'user-1');
+      },
+    );
 
-      await AuthStore.instance.signIn(
-        email: '  rabi@example.com ',
-        password: 'correct-horse',
-      );
+    test(
+      'a refused sign-in keeps the server wording and stays signed out',
+      () async {
+        final api = FakeApi()
+          ..on(
+            'POST',
+            '/token',
+            status: 400,
+            body: {'error': 'Invalid login credentials'},
+          );
+        AuthStore.instance.repositoryForTest = repoOver(api);
 
-      expect(api.calls.single.query['grant_type'], 'password');
-      // Trimmed: a keyboard's trailing space is not part of the address, and
-      // the server would reject it as a different one.
-      expect(api.calls.single.json['email'], 'rabi@example.com');
-      expect(AuthStore.instance.isSignedIn, isTrue);
-      expect(AuthStore.instance.account?.email, 'rabi@example.com');
-      expect(AuthStore.instance.account?.id, 'user-1');
-    });
-
-    test('a refused sign-in keeps the server wording and stays signed out',
-        () async {
-      final api = FakeApi()
-        ..on('POST', '/token',
-            status: 400, body: {'error': 'Invalid login credentials'});
-      AuthStore.instance.repositoryForTest = repoOver(api);
-
-      await expectLater(
-        AuthStore.instance.signIn(email: 'a@b.com', password: 'wrong-guess'),
-        throwsA(isA<ApiError>()
-            .having((e) => e.message, 'message', 'Invalid login credentials')),
-      );
-      expect(AuthStore.instance.isSignedIn, isFalse);
-    });
+        await expectLater(
+          AuthStore.instance.signIn(email: 'a@b.com', password: 'wrong-guess'),
+          throwsA(
+            isA<ApiError>().having(
+              (e) => e.message,
+              'message',
+              'Invalid login credentials',
+            ),
+          ),
+        );
+        expect(AuthStore.instance.isSignedIn, isFalse);
+      },
+    );
 
     test('a sign-up needing confirmation does not sign anyone in', () async {
       // GoTrue answers a created-but-unconfirmed account with a user and no
@@ -180,8 +197,7 @@ void main() {
       expect(AuthStore.instance.isSignedIn, isFalse);
     });
 
-    test('a dead refresh token signs the app out instead of wedging it',
-        () async {
+    test('a dead refresh token signs the app out instead of wedging it', () async {
       final api = FakeApi()..on('POST', '/token', body: sessionBody());
       AuthStore.instance.repositoryForTest = repoOver(api);
       await AuthStore.instance.signIn(
@@ -201,8 +217,9 @@ void main() {
     });
 
     test('a corrupt stored session degrades to signed out', () async {
-      FlutterSecureStorage.setMockInitialValues(
-          {'gtradea-go-auth-session': 'not json'});
+      FlutterSecureStorage.setMockInitialValues({
+        'gtradea-go-auth-session': 'not json',
+      });
       SessionStore.instance.resetForTest();
       AuthStore.instance.resetForTest();
 
@@ -227,8 +244,11 @@ void main() {
     test('an expiry in the past is expired, a missing one is not', () {
       final past = DateTime.now().millisecondsSinceEpoch ~/ 1000 - 60;
       expect(
-        AuthSession(accessToken: 'a', refreshToken: 'b', expiresAt: past)
-            .isExpired,
+        AuthSession(
+          accessToken: 'a',
+          refreshToken: 'b',
+          expiresAt: past,
+        ).isExpired,
         isTrue,
       );
       // No expiry means the server did not say, and guessing "expired" would
@@ -306,8 +326,9 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
-    testWidgets('flips to "Account" the moment the store changes',
-        (tester) async {
+    testWidgets('flips to "Account" the moment the store changes', (
+      tester,
+    ) async {
       // The dynamic requirement: no navigation, no rebuild trigger other than
       // the store itself.
       await tester.pumpWidget(const GtradeaAmazonApp());
@@ -329,8 +350,9 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
-    testWidgets('opens the account page without stealing the nav selection',
-        (tester) async {
+    testWidgets('opens the account page without stealing the nav selection', (
+      tester,
+    ) async {
       await tester.pumpWidget(const GtradeaAmazonApp());
       await tester.pumpAndSettle();
 
@@ -360,8 +382,9 @@ void main() {
       expect(find.text('Sign out'), findsNothing);
     });
 
-    testWidgets('a guest tapping Orders is asked to sign in, not fobbed off',
-        (tester) async {
+    testWidgets('a guest tapping Orders is asked to sign in, not fobbed off', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       await tester.pumpWidget(_wrap(const AccountScreen()));
       await tester.pumpAndSettle();
@@ -374,8 +397,9 @@ void main() {
       expect(find.byType(AuthScreen), findsOneWidget);
     });
 
-    testWidgets('settings and information are grouped under headings',
-        (tester) async {
+    testWidgets('settings and information are grouped under headings', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       await tester.pumpWidget(_wrap(const AccountScreen()));
       await tester.pumpAndSettle();
@@ -403,8 +427,9 @@ void main() {
       expect(find.text('Welcome to GtradeA'), findsNothing);
     });
 
-    testWidgets('signing out asks first, and backing out keeps the session',
-        (tester) async {
+    testWidgets('signing out asks first, and backing out keeps the session', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       signInForTest(email: 'rabi@example.com', name: 'Rabi');
       await tester.pumpWidget(_wrap(const AccountScreen()));
@@ -443,7 +468,11 @@ void main() {
       title: 'Ice silk jacket',
       price: 1130,
     );
-    const dress = SavedProduct(id: 'dress', title: 'Suspender dress', price: 1808);
+    const dress = SavedProduct(
+      id: 'dress',
+      title: 'Suspender dress',
+      price: 1808,
+    );
 
     test('records newest first and does not duplicate a repeat visit', () {
       final store = RecentlyViewedStore.instance
@@ -484,11 +513,15 @@ void main() {
 
       RecentlyViewedStore.instance.resetForTest();
       await RecentlyViewedStore.instance.load();
-      expect(RecentlyViewedStore.instance.items.single.title, 'Ice silk jacket');
+      expect(
+        RecentlyViewedStore.instance.items.single.title,
+        'Ice silk jacket',
+      );
     });
 
-    testWidgets('the rail is absent until something has been viewed',
-        (tester) async {
+    testWidgets('the rail is absent until something has been viewed', (
+      tester,
+    ) async {
       _useTallWindow(tester);
       await tester.pumpWidget(_wrap(const AccountScreen()));
       await tester.pumpAndSettle();
@@ -504,24 +537,38 @@ void main() {
 
     testWidgets('opening a product records the visit', (tester) async {
       _useTallWindow(tester);
-      await tester.pumpWidget(_wrap(ProductDetailScreen(product: sampleProduct, detail: sampleDetail)));
-      await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        _wrap(
+          ProductDetailScreen(product: sampleProduct, detail: sampleDetail),
+        ),
+      );
+      // Pumped rather than settled: the gallery rotates its photographs on a
+      // timer now, so this page never comes to rest and pumpAndSettle would
+      // wait out its ten minutes.
+      await tester.pump(const Duration(milliseconds: 300));
 
-      expect(RecentlyViewedStore.instance.items.single.title,
-          'Phosphorus Paper for Matches, Large Sheets, Wholesale');
+      expect(
+        RecentlyViewedStore.instance.items.single.title,
+        'Phosphorus Paper for Matches, Large Sheets, Wholesale',
+      );
     });
   });
 
   group('AuthScreen', () {
-    testWidgets('rejects a malformed email and a short password',
-        (tester) async {
+    testWidgets('rejects a malformed email and a short password', (
+      tester,
+    ) async {
       await tester.pumpWidget(_wrap(const AuthScreen()));
       await tester.pumpAndSettle();
 
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Email'), 'not-an-email');
+        find.widgetWithText(TextFormField, 'Email'),
+        'not-an-email',
+      );
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Password'), 'short');
+        find.widgetWithText(TextFormField, 'Password'),
+        'short',
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
       await tester.pumpAndSettle();
 
@@ -529,35 +576,41 @@ void main() {
       expect(find.text('Use at least 8 characters'), findsOneWidget);
       expect(AuthStore.instance.isSignedIn, isFalse);
     });
+
     /// The screen is the only place a password is typed, so these drive it the
     /// way a shopper does and check what actually left the device.
     FakeApi wireGoTrue({int status = 200, Object? body}) {
       final api = FakeApi()
-        ..on('POST', '/token',
-            status: status,
-            body: body ??
-                {
-                  'access_token': 'access-1',
-                  'refresh_token': 'refresh-1',
-                  'expires_in': 7200,
-                  'user': {'id': 'user-1', 'email': 'rabi@example.com'},
-                })
-        ..on('POST', '/signup',
-            status: status,
-            body: body ??
-                {
-                  'access_token': 'access-1',
-                  'refresh_token': 'refresh-1',
-                  'expires_in': 7200,
-                  'user': {
-                    'id': 'user-1',
-                    'email': 'rabi@example.com',
-                    'user_metadata': {
-                      'first_name': 'Rabi',
-                      'last_name': 'Yadav',
-                    },
-                  },
-                });
+        ..on(
+          'POST',
+          '/token',
+          status: status,
+          body:
+              body ??
+              {
+                'access_token': 'access-1',
+                'refresh_token': 'refresh-1',
+                'expires_in': 7200,
+                'user': {'id': 'user-1', 'email': 'rabi@example.com'},
+              },
+        )
+        ..on(
+          'POST',
+          '/signup',
+          status: status,
+          body:
+              body ??
+              {
+                'access_token': 'access-1',
+                'refresh_token': 'refresh-1',
+                'expires_in': 7200,
+                'user': {
+                  'id': 'user-1',
+                  'email': 'rabi@example.com',
+                  'user_metadata': {'first_name': 'Rabi', 'last_name': 'Yadav'},
+                },
+              },
+        );
       AuthStore.instance.repositoryForTest = AuthRepository(
         sessions: SessionStore.instance,
         dio: api.dio(baseUrl: 'https://test.local/auth/v1'),
@@ -565,16 +618,21 @@ void main() {
       return api;
     }
 
-    testWidgets('a valid sign-in sends the password and updates the store',
-        (tester) async {
+    testWidgets('a valid sign-in sends the password and updates the store', (
+      tester,
+    ) async {
       final api = wireGoTrue();
       await tester.pumpWidget(_wrap(const AuthScreen()));
       await tester.pumpAndSettle();
 
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Email'), 'rabi@example.com');
+        find.widgetWithText(TextFormField, 'Email'),
+        'rabi@example.com',
+      );
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Password'), 'correct-horse');
+        find.widgetWithText(TextFormField, 'Password'),
+        'correct-horse',
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
       await tester.pumpAndSettle();
 
@@ -583,16 +641,21 @@ void main() {
       expect(AuthStore.instance.account?.email, 'rabi@example.com');
     });
 
-    testWidgets('a refusal is shown on the screen, not swallowed',
-        (tester) async {
+    testWidgets('a refusal is shown on the screen, not swallowed', (
+      tester,
+    ) async {
       wireGoTrue(status: 400, body: {'error': 'Invalid login credentials'});
       await tester.pumpWidget(_wrap(const AuthScreen()));
       await tester.pumpAndSettle();
 
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Email'), 'rabi@example.com');
+        find.widgetWithText(TextFormField, 'Email'),
+        'rabi@example.com',
+      );
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Password'), 'wrong-guess-here');
+        find.widgetWithText(TextFormField, 'Password'),
+        'wrong-guess-here',
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
       await tester.pumpAndSettle();
 
@@ -605,44 +668,62 @@ void main() {
       expect(AuthStore.instance.isSignedIn, isFalse);
     });
 
-    testWidgets('sign-up splits the name into what the server stores',
-        (tester) async {
+    testWidgets('sign-up splits the name into what the server stores', (
+      tester,
+    ) async {
       final api = wireGoTrue();
-      await tester
-          .pumpWidget(_wrap(const AuthScreen(initialMode: AuthMode.signUp)));
+      await tester.pumpWidget(
+        _wrap(const AuthScreen(initialMode: AuthMode.signUp)),
+      );
       await tester.pumpAndSettle();
 
       expect(find.widgetWithText(TextFormField, 'Full name'), findsOneWidget);
 
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Full name'), 'Rabi Yadav');
+        find.widgetWithText(TextFormField, 'Full name'),
+        'Rabi Yadav',
+      );
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Email'), 'rabi@example.com');
+        find.widgetWithText(TextFormField, 'Email'),
+        'rabi@example.com',
+      );
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Password'), 'correct-horse');
+        find.widgetWithText(TextFormField, 'Password'),
+        'correct-horse',
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
       await tester.pumpAndSettle();
 
-      expect(api.calls.single.json['data'],
-          {'first_name': 'Rabi', 'last_name': 'Yadav'});
+      expect(api.calls.single.json['data'], {
+        'first_name': 'Rabi',
+        'last_name': 'Yadav',
+      });
       expect(AuthStore.instance.account?.displayName, 'Rabi Yadav');
     });
 
-    testWidgets('a sign-up that needs confirming says so instead of leaving',
-        (tester) async {
+    testWidgets('a sign-up that needs confirming says so instead of leaving', (
+      tester,
+    ) async {
       // The account was created. Popping back to a signed-out account page
       // would read as a failure, which is the opposite of what happened.
       wireGoTrue(body: {'id': 'user-9', 'email': 'rabi@example.com'});
-      await tester
-          .pumpWidget(_wrap(const AuthScreen(initialMode: AuthMode.signUp)));
+      await tester.pumpWidget(
+        _wrap(const AuthScreen(initialMode: AuthMode.signUp)),
+      );
       await tester.pumpAndSettle();
 
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Full name'), 'Rabi');
+        find.widgetWithText(TextFormField, 'Full name'),
+        'Rabi',
+      );
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Email'), 'rabi@example.com');
+        find.widgetWithText(TextFormField, 'Email'),
+        'rabi@example.com',
+      );
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Password'), 'correct-horse');
+        find.widgetWithText(TextFormField, 'Password'),
+        'correct-horse',
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
       await tester.pumpAndSettle();
 
@@ -657,7 +738,9 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(
-          find.widgetWithText(TextFormField, 'Email'), 'rabi@example.com');
+        find.widgetWithText(TextFormField, 'Email'),
+        'rabi@example.com',
+      );
       await tester.tap(find.text('Sign Up'));
       await tester.pumpAndSettle();
 

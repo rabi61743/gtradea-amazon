@@ -21,6 +21,7 @@ class Department {
     required this.tagline,
     required this.groups,
     this.imageUrl,
+    this.onOpen,
   });
 
   final String label;
@@ -33,9 +34,14 @@ class Department {
 
   final List<CatalogGroup> groups;
 
-  /// The one photograph in a department's block. Null falls back to the
-  /// tinted glyph, which is what the tiles below use anyway.
+  /// The photograph in a department's block. Null falls back to the tinted
+  /// glyph, the same as the tiles below.
   final String? imageUrl;
+
+  /// Opens the department itself. Needed because a department can legitimately
+  /// have no subcategories, and its section then has nothing else to tap --
+  /// searching its name as text would be a different query from browsing it.
+  final VoidCallback? onOpen;
 
   int get entryCount =>
       groups.fold(0, (sum, group) => sum + group.entries.length);
@@ -66,30 +72,33 @@ List<Department> departmentsFrom(
   required void Function(Category category) onOpen,
 }) {
   return categories
-      .map((department) => Department(
-            label: department.name,
-            icon: iconForCategory(department.name),
-            tint: tintForCategory(department.cid),
-            imageUrl: department.imageUrl,
-            tagline: _tagline(department),
-            groups: department.children.isEmpty
-                ? const []
-                : [
-                    CatalogGroup(
-                      title: 'Browse ${department.name}',
-                      entries: [
-                        for (final child in department.children)
-                          CategoryEntry(
-                            label: child.name,
-                            icon: iconForCategory(child.name),
-                            tint: tintForCategory(child.cid),
-                            imageUrl: child.imageUrl,
-                            onTap: () => onOpen(child),
-                          ),
-                      ],
-                    ),
-                  ],
-          ))
+      .map(
+        (department) => Department(
+          label: department.name,
+          icon: iconForCategory(department.name),
+          tint: tintForCategory(department.cid),
+          imageUrl: department.imageUrl,
+          onOpen: () => onOpen(department),
+          tagline: _tagline(department),
+          groups: department.children.isEmpty
+              ? const []
+              : [
+                  CatalogGroup(
+                    title: 'Browse ${department.name}',
+                    entries: [
+                      for (final child in department.children)
+                        CategoryEntry(
+                          label: child.name,
+                          icon: iconForCategory(child.name),
+                          tint: tintForCategory(child.cid),
+                          imageUrl: child.imageUrl,
+                          onTap: () => onOpen(child),
+                        ),
+                    ],
+                  ),
+                ],
+        ),
+      )
       .toList(growable: false);
 }
 

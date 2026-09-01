@@ -17,8 +17,11 @@ void main() {
     OrderStore.instance.resetForTest();
     api = stubCatalog();
     api.on('GET', '/orders', body: [orderJson()]);
-    api.on('GET', '/orders/order-1/tracking',
-        body: trackingJson(reached: OrderStage.shipped));
+    api.on(
+      'GET',
+      '/orders/order-1/tracking',
+      body: trackingJson(reached: OrderStage.shipped),
+    );
   });
 
   group('classifying an event', () {
@@ -47,8 +50,9 @@ void main() {
 
       final before = api.calls.where((c) => c.path == '/orders').length;
 
-      RealtimeService.instance
-          .emitForTest(const RealtimeEvent(name: 'order.shipped'));
+      RealtimeService.instance.emitForTest(
+        const RealtimeEvent(name: 'order.shipped'),
+      );
       await tester.pumpAndSettle();
 
       expect(
@@ -57,8 +61,9 @@ void main() {
       );
     });
 
-    testWidgets('an event naming an order also refetches its tracking',
-        (tester) async {
+    testWidgets('an event naming an order also refetches its tracking', (
+      tester,
+    ) async {
       // The sibling app refreshes only the list, so a shopper watching a
       // tracking screen sees it sit still while the list behind it updates.
       signInForTest();
@@ -87,8 +92,9 @@ void main() {
 
       final before = api.calls.where((c) => c.path == '/orders').length;
 
-      RealtimeService.instance
-          .emitForTest(const RealtimeEvent(name: 'something.new'));
+      RealtimeService.instance.emitForTest(
+        const RealtimeEvent(name: 'something.new'),
+      );
       await tester.pumpAndSettle();
 
       expect(
@@ -104,8 +110,9 @@ void main() {
 
       final before = api.calls.where((c) => c.path == '/orders').length;
 
-      RealtimeService.instance
-          .emitForTest(const RealtimeEvent(name: 'notification.created'));
+      RealtimeService.instance.emitForTest(
+        const RealtimeEvent(name: 'notification.created'),
+      );
       await tester.pumpAndSettle();
 
       expect(api.calls.where((c) => c.path == '/orders').length, before);

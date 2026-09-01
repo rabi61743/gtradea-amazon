@@ -55,11 +55,9 @@ void main() {
     test('saving the same product twice does not duplicate it', () {
       final store = WishlistStore.instance..toggle(_jacket);
       // Same id, different price -- identity is the id, not the payload.
-      store.toggle(const SavedProduct(
-        id: 'jacket',
-        title: 'Ice silk jacket',
-        price: 999,
-      ));
+      store.toggle(
+        const SavedProduct(id: 'jacket', title: 'Ice silk jacket', price: 999),
+      );
       expect(store.count, 0, reason: 'second toggle removes it');
     });
 
@@ -84,8 +82,7 @@ void main() {
 
     test('entries missing an id are skipped, not fatal', () async {
       SharedPreferences.setMockInitialValues({
-        'gtradea_wishlist':
-            '[{"title":"no id","price":1},{"id":"ok","title":"Fine","price":2}]',
+        'gtradea_wishlist': '[{"title":"no id","price":1},{"id":"ok","title":"Fine","price":2}]',
       });
       WishlistStore.instance.resetForTest();
       await WishlistStore.instance.load();
@@ -111,8 +108,9 @@ void main() {
     expect(find.text('Rs. 1,568'), findsOneWidget);
   });
 
-  testWidgets('removing one offers an undo that really restores it',
-      (tester) async {
+  testWidgets('removing one offers an undo that really restores it', (
+    tester,
+  ) async {
     WishlistStore.instance.toggle(_jacket);
     await tester.pumpWidget(_wrap(const WishlistScreen()));
     await tester.pumpAndSettle();
@@ -145,12 +143,19 @@ void main() {
     expect(WishlistStore.instance.count, 2);
   });
 
-  testWidgets('the image viewer shows a page counter and closes', (tester) async {
-    await tester.pumpWidget(_wrap(
-      const ImageViewerScreen(
-        images: ['https://example.invalid/1.jpg', 'https://example.invalid/2.jpg'],
+  testWidgets('the image viewer shows a page counter and closes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _wrap(
+        const ImageViewerScreen(
+          images: [
+            'https://example.invalid/1.jpg',
+            'https://example.invalid/2.jpg',
+          ],
+        ),
       ),
-    ));
+    );
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('1/2'), findsOneWidget);
@@ -183,8 +188,9 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('shows what the catalogue actually knows about a product',
-        (tester) async {
+    testWidgets('shows what the catalogue actually knows about a product', (
+      tester,
+    ) async {
       WishlistStore.instance.toggle(wholesale);
       await pump(tester);
 
@@ -207,8 +213,9 @@ void main() {
       expect(find.textContaining('In Stock'), findsNothing);
     });
 
-    testWidgets('moving one puts it in the cart at the seller minimum',
-        (tester) async {
+    testWidgets('moving one puts it in the cart at the seller minimum', (
+      tester,
+    ) async {
       // One of a listing that sells in tens is a refusal waiting to happen.
       WishlistStore.instance.toggle(wholesale);
       await pump(tester);
@@ -233,8 +240,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(WishlistStore.instance.contains(_dress.id), isFalse);
-      expect(WishlistStore.instance.contains('polo'), isTrue,
-          reason: 'the other one is untouched');
+      expect(
+        WishlistStore.instance.contains('polo'),
+        isTrue,
+        reason: 'the other one is untouched',
+      );
       expect(find.text('1 item saved'), findsOneWidget);
     });
 
@@ -254,14 +264,19 @@ void main() {
       expect(WishlistStore.instance.contains('polo'), isTrue);
     });
 
-    testWidgets('a saved row with no price gets one from the catalogue',
-        (tester) async {
+    testWidgets('a saved row with no price gets one from the catalogue', (
+      tester,
+    ) async {
       // A row can be saved before the pricing engine has worked one out. Asking
       // for the price is what lets every item move rather than most of them.
-      api.on('GET', 'https://gtradea.com/api/1688/product', body: {
-        'item': {'num_iid': 'mystery', 'title': 'Display rack'},
-        'pricing': {'displayPrice': 4200},
-      });
+      api.on(
+        'GET',
+        'https://gtradea.com/api/1688/product',
+        body: {
+          'item': {'num_iid': 'mystery', 'title': 'Display rack'},
+          'pricing': {'displayPrice': 4200},
+        },
+      );
       WishlistStore.instance.toggle(unpriced);
       await pump(tester);
 
@@ -272,11 +287,16 @@ void main() {
       expect(WishlistStore.instance.contains('mystery'), isFalse);
     });
 
-    testWidgets('a product the catalogue cannot price stays saved',
-        (tester) async {
+    testWidgets('a product the catalogue cannot price stays saved', (
+      tester,
+    ) async {
       // Adding it at nothing would put Rs. 0 in the cart for something real.
-      api.on('GET', 'https://gtradea.com/api/1688/product',
-          status: 404, body: const {'error': 'gone'});
+      api.on(
+        'GET',
+        'https://gtradea.com/api/1688/product',
+        status: 404,
+        body: const {'error': 'gone'},
+      );
       WishlistStore.instance.toggle(unpriced);
       await pump(tester);
 
@@ -289,10 +309,14 @@ void main() {
     });
 
     testWidgets('Move all empties the list into the cart', (tester) async {
-      api.on('GET', 'https://gtradea.com/api/1688/product', body: {
-        'item': {'num_iid': 'mystery', 'title': 'Display rack'},
-        'pricing': {'displayPrice': 4200},
-      });
+      api.on(
+        'GET',
+        'https://gtradea.com/api/1688/product',
+        body: {
+          'item': {'num_iid': 'mystery', 'title': 'Display rack'},
+          'pricing': {'displayPrice': 4200},
+        },
+      );
       WishlistStore.instance
         ..toggle(wholesale)
         ..toggle(unpriced)
@@ -307,10 +331,15 @@ void main() {
       expect(find.text('Nothing saved yet'), findsOneWidget);
     });
 
-    testWidgets('Move all leaves behind only what it could not price',
-        (tester) async {
-      api.on('GET', 'https://gtradea.com/api/1688/product',
-          status: 404, body: const {'error': 'gone'});
+    testWidgets('Move all leaves behind only what it could not price', (
+      tester,
+    ) async {
+      api.on(
+        'GET',
+        'https://gtradea.com/api/1688/product',
+        status: 404,
+        body: const {'error': 'gone'},
+      );
       WishlistStore.instance
         ..toggle(wholesale)
         ..toggle(unpriced);
@@ -339,18 +368,23 @@ void main() {
       WishlistStore.instance.toggle(wholesale);
       await pump(tester);
 
-      expect(find.descendant(of: find.byType(Badge), matching: find.text('10')),
-          findsNothing);
+      expect(
+        find.descendant(of: find.byType(Badge), matching: find.text('10')),
+        findsNothing,
+      );
 
       await tester.tap(find.text('Add to cart'));
       await tester.pump();
 
-      expect(find.descendant(of: find.byType(Badge), matching: find.text('10')),
-          findsOneWidget);
+      expect(
+        find.descendant(of: find.byType(Badge), matching: find.text('10')),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('the summary counts the list and offers one action',
-        (tester) async {
+    testWidgets('the summary counts the list and offers one action', (
+      tester,
+    ) async {
       WishlistStore.instance
         ..toggle(wholesale)
         ..toggle(_dress);
@@ -360,8 +394,9 @@ void main() {
       expect(find.text('Move all'), findsOneWidget);
     });
 
-    testWidgets('an empty list explains itself and offers no bulk action',
-        (tester) async {
+    testWidgets('an empty list explains itself and offers no bulk action', (
+      tester,
+    ) async {
       await pump(tester);
 
       expect(find.text('Nothing saved yet'), findsOneWidget);

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
 import 'support/catalog.dart';
+
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/product/data/product_detail_content.dart';
 import 'package:gtradea_amazon/features/product/presentation/product_detail_screen.dart';
@@ -15,11 +17,13 @@ Future<void> _pumpDetail(WidgetTester tester, {ProductDetail? product}) async {
   tester.view.physicalSize = const Size(1080, 2400);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(_wrap(
-    product == null
-        ? ProductDetailScreen(product: sampleProduct, detail: sampleDetail)
-        : ProductDetailScreen(product: sampleProduct, detail: product),
-  ));
+  await tester.pumpWidget(
+    _wrap(
+      product == null
+          ? ProductDetailScreen(product: sampleProduct, detail: sampleDetail)
+          : ProductDetailScreen(product: sampleProduct, detail: product),
+    ),
+  );
   await tester.pump(const Duration(milliseconds: 300));
 }
 
@@ -114,15 +118,17 @@ void main() {
     expect(find.textContaining('%'), findsNothing);
   });
 
-  testWidgets('names the selected option rather than only highlighting it',
-      (tester) async {
+  testWidgets('names the selected option rather than only highlighting it', (
+    tester,
+  ) async {
     await _pumpDetail(tester);
 
     expect(find.text('Red'), findsWidgets);
   });
 
-  testWidgets('an out-of-stock variant stays visible but is not selectable',
-      (tester) async {
+  testWidgets('an out-of-stock variant stays visible but is not selectable', (
+    tester,
+  ) async {
     await _pumpDetail(tester, product: _base);
 
     expect(find.text('Sold out'), findsOneWidget);
@@ -134,8 +140,79 @@ void main() {
     expect(find.text('Red'), findsOneWidget);
   });
 
-  testWidgets('the buy bar tracks quantity so the total is never a surprise',
-      (tester) async {
+  testWidgets('a listing with no price asks for one instead of saying Rs. 0', (
+    tester,
+  ) async {
+    // A catalogue row that carries no price seeds the preview record with
+    // zero, and the page used to print that as "Rs. 0" -- telling the shopper
+    // the product was free. Nothing in this catalogue is free, so zero means
+    // the price is not known yet.
+    const priceless = ProductDetail(
+      numIid: 'test-product',
+      title: 'Test product',
+      price: 0,
+      rating: 4,
+      reviewCount: 10,
+      images: ['https://example.invalid/a.jpg'],
+      variants: [
+        ProductVariant(label: 'Red', imageUrl: 'https://example.invalid/r.jpg'),
+      ],
+      specs: [],
+      description: '',
+    );
+
+    await _pumpDetail(tester, product: priceless);
+
+    expect(find.text('Rs. 0'), findsNothing);
+    expect(find.textContaining('Buy · Rs. 0'), findsNothing);
+    expect(find.text('Select an option'), findsWidgets);
+  });
+
+  testWidgets('a priceless listing cannot be added to the cart', (
+    tester,
+  ) async {
+    // The displayed price and the price charged have to be the same number.
+    // Letting a Rs. 0 line through would be charged as free at checkout.
+    const priceless = ProductDetail(
+      numIid: 'test-product',
+      title: 'Test product',
+      price: 0,
+      rating: 4,
+      reviewCount: 10,
+      images: ['https://example.invalid/a.jpg'],
+      variants: [
+        ProductVariant(label: 'Red', imageUrl: 'https://example.invalid/r.jpg'),
+      ],
+      specs: [],
+      description: '',
+    );
+
+    await _pumpDetail(tester, product: priceless);
+
+    final addToCart = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Add to cart'),
+    );
+    expect(addToCart.onPressed, isNull, reason: 'nothing priced to add');
+  });
+
+  testWidgets('a priced listing still shows its price and can be bought', (
+    tester,
+  ) async {
+    // The guard above must not catch an ordinary listing.
+    await _pumpDetail(tester);
+
+    expect(find.text('Buy · Rs. 776'), findsOneWidget);
+    expect(find.text('Select an option'), findsNothing);
+
+    final addToCart = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Add to cart'),
+    );
+    expect(addToCart.onPressed, isNotNull);
+  });
+
+  testWidgets('the buy bar tracks quantity so the total is never a surprise', (
+    tester,
+  ) async {
     await _pumpDetail(tester);
 
     // Two, because the listing has a minimum order of two -- opening below it
@@ -144,8 +221,11 @@ void main() {
 
     // The stepper sits low enough to fall under the pinned buy bar, where
     // a tap lands on the bar instead.
-    await tester.scrollUntilVisible(find.text('Quantity'), 200,
-        scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      find.text('Quantity'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('More'));
@@ -160,9 +240,15 @@ void main() {
 
     // The stepper sits low enough to fall under the pinned buy bar, where
     // a tap lands on the bar instead.
-    await tester.scrollUntilVisible(find.text('Quantity'), 200,
-        scrollable: find.byType(Scrollable).first);
-    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Quantity'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    // Pumped rather than settled: the gallery rotates its photographs on a
+    // timer now, so this page never comes to rest and pumpAndSettle would wait
+    // out its ten-minute limit.
+    await tester.pump(const Duration(milliseconds: 300));
 
     // byTooltip resolves to the tooltip wrapper, not the button inside it.
     final fewer = tester.widget<IconButton>(
@@ -174,8 +260,11 @@ void main() {
   testWidgets('the description expands on request', (tester) async {
     await _pumpDetail(tester);
 
-    await tester.scrollUntilVisible(find.text('Read more'), 300,
-        scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      find.text('Read more'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Read more'), findsOneWidget);
@@ -184,8 +273,9 @@ void main() {
     expect(find.text('Show less'), findsOneWidget);
   });
 
-  testWidgets('Save and Share live in the app bar, not on the photo',
-      (tester) async {
+  testWidgets('Save and Share live in the app bar, not on the photo', (
+    tester,
+  ) async {
     // They used to float on the gallery, which is the reference app pattern
     // and made them invisible against a white-background product shot.
     await _pumpDetail(tester);
@@ -206,13 +296,18 @@ void main() {
     );
   });
 
-  testWidgets('the app bar stays pinned, so Save survives a scroll',
-      (tester) async {
+  testWidgets('the app bar stays pinned, so Save survives a scroll', (
+    tester,
+  ) async {
     await _pumpDetail(tester);
 
-    await tester.scrollUntilVisible(find.text('Specifications'), 400,
-        scrollable: find.byType(Scrollable).first);
-    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Specifications'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
+    // Pumped rather than settled, for the same reason as above.
+    await tester.pump(const Duration(milliseconds: 300));
 
     // Deep in the page, the actions are still there -- the whole point of
     // pinning rather than letting the bar scroll away.
@@ -227,26 +322,35 @@ void main() {
     expect(find.text('Yiwu Match Factory'), findsOneWidget);
   });
 
-  testWidgets('a product with no options renders without a picker',
-      (tester) async {
+  testWidgets('a product with no options renders without a picker', (
+    tester,
+  ) async {
     // The page opens on the tapped card's data, which has no SKUs yet, and
     // plenty of listings sell one thing in one form. Indexing the empty option
     // list crashed the whole screen.
-    await _pumpDetail(tester, product: sampleDetail.copyWith(similar: const []));
+    await _pumpDetail(
+      tester,
+      product: sampleDetail.copyWith(similar: const []),
+    );
     expect(tester.takeException(), isNull);
 
-    await tester.pumpWidget(_wrap(ProductDetailScreen(
-      product: sampleProduct,
-      detail: ProductDetail.fromProduct(sampleProduct),
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        ProductDetailScreen(
+          product: sampleProduct,
+          detail: ProductDetail.fromProduct(sampleProduct),
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(tester.takeException(), isNull);
     expect(find.text('Add to cart'), findsOneWidget);
   });
 
-  testWidgets('an unrated product shows no stars rather than zero stars',
-      (tester) async {
+  testWidgets('an unrated product shows no stars rather than zero stars', (
+    tester,
+  ) async {
     // Nothing in this catalogue carries a rating. "0.0 (0)" beside a title
     // reads as rated badly, which is the opposite of the truth.
     await _pumpDetail(tester);

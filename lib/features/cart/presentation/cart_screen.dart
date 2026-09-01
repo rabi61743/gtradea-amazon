@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../address/data/address_store.dart';
 import '../../../shared/widgets/artwork_panel.dart';
+import '../../catalog/data/product.dart' show productStub;
+import '../../catalog/presentation/catalog_visuals.dart' show openProduct;
 import '../../checkout/presentation/checkout_screen.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../../shared/widgets/loadable_view.dart';
@@ -24,6 +29,21 @@ class _CartScreenState extends State<CartScreen> {
     super.initState();
     CartStore.instance.load();
     CouponStore.instance.load();
+    unawaited(_quoteDelivery());
+  }
+
+  /// Asks the server what delivery costs for this basket.
+  ///
+  /// Freight is priced on the weight and volume of what is in the cart and
+  /// where it is going, so it needs a destination: the shopper's default
+  /// address. Without one there is nothing to quote against, and the summary
+  /// says the charge is worked out at checkout rather than showing a figure.
+  Future<void> _quoteDelivery() async {
+    await AddressStore.instance.load();
+    if (!mounted) return;
+    await CartStore.instance.refreshDeliveryQuote(
+      district: AddressStore.instance.defaultAddress?.city,
+    );
   }
 
   void _snack(String message) {
@@ -34,6 +54,23 @@ class _CartScreenState extends State<CartScreen> {
 
   /// Removal is undoable rather than confirmed, matching the saved list: one
   /// line is cheap to put back and expensive to interrupt for.
+  /// Opens the product this line was added from.
+  ///
+  /// The line remembers the catalogue id it was built with, so this is the
+  /// exact listing rather than a search for one that looks like it. The stub
+  /// paints the first frame from what the line already knows -- title, photo
+  /// and the price actually charged -- and the page fetches the full record,
+  /// with its variants and images, against that same id.
+  void _openProduct(CartLine line) => openProduct(
+    context,
+    productStub(
+      numIid: line.productId,
+      title: line.title,
+      imageUrl: line.imageUrl,
+      displayPrice: line.unitPrice,
+    ),
+  );
+
   void _removeWithUndo(CartLine line) {
     final store = CartStore.instance;
     final index = store.indexOf(line.key);
@@ -86,10 +123,8 @@ class _CartScreenState extends State<CartScreen> {
       MaterialPageRoute(
         // The order is passed by value, not read back off the singleton: what
         // is being paid for is what was on screen at the moment of the tap.
-        builder: (_) => CheckoutScreen(
-          lines: store.lines,
-          totals: store.totals,
-        ),
+        builder: (_) =>
+            CheckoutScreen(lines: store.lines, totals: store.totals),
       ),
     );
   }
@@ -100,10 +135,7 @@ class _CartScreenState extends State<CartScreen> {
       // Both stores: the coupon changes the total as surely as adding a line
       // does, and listening to only one leaves the summary showing a price the
       // shopper has already been told they are not paying.
-      listenable: Listenable.merge([
-        CartStore.instance,
-        CouponStore.instance,
-      ]),
+      listenable: Listenable.merge([CartStore.instance, CouponStore.instance]),
       builder: (context, _) {
         final store = CartStore.instance;
         final lines = store.lines;
@@ -155,15 +187,16 @@ class _CartScreenState extends State<CartScreen> {
                             // that before relying on it.
                             message: store.syncError!.isNetwork
                                 ? 'Saved on this device only - no connection '
-                                    'to your account.'
+                                      'to your account.'
                                 : 'Not saved to your account: '
-                                    '${store.syncError!.message}',
+                                      '${store.syncError!.message}',
                             onRetry: store.retrySync,
                           ),
                         ),
                       for (final line in lines)
                         _CartTile(
                           line: line,
+                          onOpen: () => _openProduct(line),
                           onIncrement: () => store.increment(line.key),
                           onDecrement: () => store.decrement(line.key),
                           onRemove: () => _removeWithUndo(line),
@@ -180,8 +213,9 @@ class _CartScreenState extends State<CartScreen> {
                     ],
                   ),
                 ),
-          bottomNavigationBar:
-              lines.isEmpty ? null : _CheckoutBar(totals: totals, onCheckout: _checkout),
+          bottomNavigationBar: lines.isEmpty
+              ? null
+              : _CheckoutBar(totals: totals, onCheckout: _checkout),
         );
       },
     );
@@ -192,12 +226,17 @@ class _CartScreenState extends State<CartScreen> {
 class _CartTile extends StatelessWidget {
   const _CartTile({
     required this.line,
+    required this.onOpen,
     required this.onIncrement,
     required this.onDecrement,
     required this.onRemove,
   });
 
   final CartLine line;
+
+  /// Back to the product this line was added from.
+  final VoidCallback onOpen;
+
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
   final VoidCallback onRemove;
@@ -217,14 +256,21 @@ class _CartTile extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // The photo is a way back to the listing. Ink rather than a
+                // bare gesture so the tap is felt, and so a pointer turns to a
+                // hand over it -- otherwise nothing says it can be tapped.
                 SizedBox(
                   width: 76,
                   height: 76,
-                  child: ArtworkPanel(
-                    icon: Icons.checkroom,
-                    tint: theme.colorScheme.primary,
-                    imageUrl: line.imageUrl,
-                    iconScale: 0.4,
+                  child: InkWell(
+                    onTap: onOpen,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+                    child: ArtworkPanel(
+                      icon: Icons.checkroom,
+                      tint: theme.colorScheme.primary,
+                      imageUrl: line.imageUrl,
+                      iconScale: 0.4,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -232,26 +278,41 @@ class _CartTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        line.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          height: 1.25,
-                          fontWeight: FontWeight.w500,
+                      // Title and chosen option together are one link back
+                      // to the listing: a shopper who wants another look taps
+                      // the name, which is where they would tap anywhere else.
+                      // Wrapped as one region rather than two so the gap
+                      // between them is not a dead strip.
+                      InkWell(
+                        onTap: onOpen,
+                        borderRadius: BorderRadius.circular(4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              line.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                height: 1.25,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            if (line.variantLabel != null) ...[
+                              const SizedBox(height: 3),
+                              // The chosen option is spelled out: two lines of
+                              // the same product are otherwise
+                              // indistinguishable.
+                              Text(
+                                line.variantLabel!,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                      if (line.variantLabel != null) ...[
-                        const SizedBox(height: 3),
-                        // The chosen option is spelled out: two lines of the
-                        // same product are otherwise indistinguishable.
-                        Text(
-                          line.variantLabel!,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
                       const SizedBox(height: 6),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -456,15 +517,17 @@ class _EmptyCart extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'Your cart is empty',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               'Add something from a product page and it will wait for you here.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 16),
             FilledButton(

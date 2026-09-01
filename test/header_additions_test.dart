@@ -1,0 +1,590 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:gtradea_amazon/core/theme/app_theme.dart';
+import 'package:gtradea_amazon/features/address/data/address_store.dart';
+import 'package:gtradea_amazon/features/address/presentation/address_picker_sheet.dart';
+import 'package:gtradea_amazon/features/address/presentation/delivery_location_button.dart';
+import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+import 'package:gtradea_amazon/features/auth/presentation/auth_screen.dart';
+import 'package:gtradea_amazon/core/theme/colors.dart';
+import 'package:gtradea_amazon/features/home/widgets/department_tabs.dart';
+import 'package:gtradea_amazon/features/home/widgets/search_header.dart';
+import 'package:gtradea_amazon/features/notifications/presentation/notifications_screen.dart';
+import 'package:gtradea_amazon/features/orders/presentation/order_tracker_button.dart';
+import 'package:gtradea_amazon/features/support/data/support_repository.dart';
+import 'package:gtradea_amazon/features/support/presentation/support_button.dart';
+import 'package:gtradea_amazon/features/support/presentation/support_tickets_screen.dart';
+import 'package:gtradea_amazon/features/support/presentation/ticket_detail_screen.dart';
+import 'package:gtradea_amazon/main.dart';
+import 'package:gtradea_amazon/shared/widgets/brand_wordmark.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/api.dart';
+import 'support/auth.dart';
+import 'support/fake_api.dart';
+
+late FakeApi api;
+
+/// A default address that reads as the reference's "Lalitpur, Nepal".
+///
+/// Added through the store's own API rather than a test-only seeder, so the
+/// path the app uses is the path the header then reads back.
+void _seedLalitpur() {
+  AddressStore.instance.add(
+    label: AddressLabel.home,
+    fullName: 'Rabi',
+    phone: '9800000000',
+    province: 'Nepal',
+    city: 'Lalitpur',
+    area: '',
+    makeDefault: true,
+  );
+}
+
+Widget _wrap(Widget child) => MaterialApp(
+  theme: AppTheme.light,
+  home: Scaffold(body: child),
+);
+
+/// Tall enough to build the whole shell without the hero banner's copy column
+/// overflowing, which it does at 360x667 for reasons that predate the band and
+/// have nothing to do with it.
+void _tallPhone(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1100, 4400);
+  tester.view.devicePixelRatio = 2.0;
+  addTearDown(tester.view.reset);
+}
+
+void _phone(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1080, 2000);
+  tester.view.devicePixelRatio = 3.0;
+  addTearDown(tester.view.reset);
+}
+
+Map<String, dynamic> _ticketJson({
+  String id = 'ticket-1',
+  String status = 'open',
+  String subject = 'Parcel arrived damaged',
+}) => {
+  'id': id,
+  'ticket_number': 'TK-100',
+  'subject': subject,
+  'description': 'The box was torn open.',
+  'status': status,
+  'category': 'shipping',
+  'created_at': '2026-08-20T10:00:00Z',
+  'updated_at': '2026-08-21T10:00:00Z',
+};
+
+void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    api = stubCatalog();
+    AuthStore.instance.resetForTest();
+    AddressStore.instance.resetForTest();
+  });
+
+  group('the band', () {
+    testWidgets('is one gradient behind the header and the strip', (
+      tester,
+    ) async {
+      // The whole point of painting it in the shell rather than in each of
+      // them. Two top-to-bottom gradients stacked would run the ramp twice and
+      // snap back to the dark end at the join -- the seam this header has
+      // already had removed once, reintroduced as a gradient.
+      _tallPhone(tester);
+      await tester.pumpWidget(const GtradeaAmazonApp());
+      await tester.pumpAndSettle();
+
+      final bands = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((d) => d.decoration)
+          .whereType<BoxDecoration>()
+          .where((d) => d.gradient == AppColors.brandBand);
+
+      expect(bands, hasLength(1));
+    });
+
+    testWidgets('neither child paints a background of its own', (tester) async {
+      // If one of them starts doing so again, it covers its slice of the ramp
+      // with a flat colour and the band goes back to being two-tone.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      final flat = tester
+          .widgetList<DecoratedBox>(
+            find.descendant(
+              of: find.byType(SearchHeader),
+              matching: find.byType(DecoratedBox),
+            ),
+          )
+          .map((d) => d.decoration)
+          .whereType<BoxDecoration>()
+          .where(
+            (d) =>
+                d.color == AppColors.trustBlueDeep ||
+                d.color == AppColors.trustBlue ||
+                d.color == AppColors.brandBandTop,
+          );
+
+      expect(flat, isEmpty);
+    });
+
+    testWidgets('runs behind the status bar, not up to it', (tester) async {
+      // The band absorbs the status bar inset itself rather than sitting under
+      // a SafeArea, so the teal reaches the top of the screen. A gradient that
+      // started below it would leave a white strip above the dark end.
+      _tallPhone(tester);
+      await tester.pumpWidget(const GtradeaAmazonApp());
+      await tester.pumpAndSettle();
+
+      final band = find
+          .byWidgetPredicate(
+            (w) =>
+                w is DecoratedBox &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).gradient == AppColors.brandBand,
+          )
+          .first;
+
+      expect(tester.getRect(band).top, 0);
+    });
+  });
+
+  group('the header still holds its shape', () {
+    testWidgets('the logo has not moved or changed size', (tester) async {
+      // The whole constraint on this change: add two things, move nothing.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      final logo = tester.getRect(find.byType(BrandWordmark));
+      expect(logo.left, 16, reason: 'same inset as before');
+
+      // The drawn height, not the box: the widget fills the row's 48pt either
+      // way, and it is the mark inside that must not have been resized.
+      final mark = tester.widget<BrandWordmark>(find.byType(BrandWordmark));
+      expect(mark.height, 30);
+    });
+
+    testWidgets('the bell still ends on the same margin', (tester) async {
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      final width =
+          tester.view.physicalSize.width / tester.view.devicePixelRatio;
+      final bell = tester.getRect(
+        find.descendant(
+          of: find.byType(NotificationBell),
+          matching: find.byIcon(Icons.notifications_none),
+        ),
+      );
+
+      // Still exactly on the margin after the icons shrank. This assertion is
+      // what caught the drift: the header's right inset used to be a hardcoded
+      // 12, which was half of (48 - 24) and silently assumed a 24pt glyph, so
+      // a 21pt one pushed the bell 1.5pt past its margin.
+      expect(bell.right, width - 16);
+    });
+
+    testWidgets('the search pill is untouched', (tester) async {
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      final width =
+          tester.view.physicalSize.width / tester.view.devicePixelRatio;
+      final pill = tester.getRect(find.byKey(SearchHeader.pillKey));
+
+      expect(pill.left, 16);
+      expect(pill.right, width - 16);
+      // 44: the smallest a comfortable tap target goes, and the row above it
+      // was trimmed too, so the saving is not borrowed from the one control
+      // everybody on this screen presses.
+      expect(pill.height, 44);
+    });
+
+    testWidgets('the icons keep their order: chat, tracker, bell', (
+      tester,
+    ) async {
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      final chat = tester.getRect(find.byType(SupportButton));
+      final tracker = tester.getRect(find.byType(OrderTrackerButton));
+      final bell = tester.getRect(find.byType(NotificationBell));
+
+      expect(chat.right, lessThanOrEqualTo(tracker.left));
+      expect(tracker.right, lessThanOrEqualTo(bell.left));
+    });
+
+    testWidgets('nothing overflows once both are added', (tester) async {
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the three icons are one size, and it is the smaller one', (
+      tester,
+    ) async {
+      // They have to agree with each other and with the header's right inset,
+      // which is derived from the same number. Three buttons each carrying
+      // their own default is how the bell wandered off its margin.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      final chat = tester.widget<SupportButton>(find.byType(SupportButton));
+      final tracker = tester.widget<OrderTrackerButton>(
+        find.byType(OrderTrackerButton),
+      );
+      final bell = tester.widget<NotificationBell>(
+        find.byType(NotificationBell),
+      );
+
+      expect(chat.size, tracker.size);
+      expect(tracker.size, bell.size);
+      expect(chat.size, lessThan(24), reason: 'smaller than Material default');
+    });
+
+    testWidgets('the glyphs are drawn at the size the row asks for', (
+      tester,
+    ) async {
+      // The size passed to the button and the size actually rendered are two
+      // different claims. An IconButton that ignored the parameter would leave
+      // this passing on the widget's field while the header looked unchanged.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      final bell = tester.widget<NotificationBell>(
+        find.byType(NotificationBell),
+      );
+      final glyph = tester.widget<Icon>(
+        find.descendant(
+          of: find.byType(NotificationBell),
+          matching: find.byIcon(Icons.notifications_none),
+        ),
+      );
+
+      expect(glyph.size, bell.size);
+    });
+
+    testWidgets('and the location control shrank with them', (tester) async {
+      // Asked for in the same breath as the three above, so it moves with them
+      // rather than being left a size larger and looking like the odd one out.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      final pin = tester.widget<Icon>(find.byIcon(Icons.location_on_outlined));
+      final chevron = tester.widget<Icon>(
+        find.byIcon(Icons.keyboard_arrow_down),
+      );
+      final bell = tester.widget<NotificationBell>(
+        find.byType(NotificationBell),
+      );
+
+      // Smaller than the header icons: it sits inside a labelled control
+      // rather than standing alone, so it reads at a smaller size than they do.
+      expect(pin.size, lessThan(bell.size));
+      // The two ends of one control, kept a step apart as they were.
+      expect(chevron.size, lessThan(pin.size as num));
+    });
+
+    testWidgets('but every tap target is still a full 48', (tester) async {
+      // The row got tighter. The things people have to hit did not.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      for (final button in [
+        SupportButton,
+        OrderTrackerButton,
+        NotificationBell,
+      ]) {
+        final box = tester.getSize(
+          find.descendant(
+            of: find.byType(button),
+            matching: find.byType(IconButton),
+          ),
+        );
+        expect(box.width, greaterThanOrEqualTo(48), reason: '$button');
+        expect(box.height, greaterThanOrEqualTo(48), reason: '$button');
+      }
+    });
+  });
+
+  group('the delivery line', () {
+    testWidgets('asks for a location when none is set', (tester) async {
+      // Never a guess. Naming a city nobody chose would be worse than asking.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(const DeliveryLocationButton()));
+      await tester.pump();
+
+      expect(find.text('Set delivery location'), findsOneWidget);
+      expect(find.text('Deliver to'), findsNothing);
+    });
+
+    testWidgets('names the default address once there is one', (tester) async {
+      _phone(tester);
+      _seedLalitpur();
+
+      await tester.pumpWidget(_wrap(const DeliveryLocationButton()));
+      await tester.pump();
+
+      expect(find.text('Deliver to'), findsOneWidget);
+      expect(find.text('Lalitpur, Nepal'), findsOneWidget);
+    });
+
+    testWidgets('opens the address picker', (tester) async {
+      _phone(tester);
+      await tester.pumpWidget(_wrap(const DeliveryLocationButton()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(DeliveryLocationButton));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AddressPickerSheet), findsOneWidget);
+    });
+
+    testWidgets('reads as one control to a screen reader', (tester) async {
+      // Not "location pin, Deliver to, Lalitpur, Nepal, arrow" as four nodes.
+      _phone(tester);
+      final handle = tester.ensureSemantics();
+      _seedLalitpur();
+
+      await tester.pumpWidget(_wrap(const DeliveryLocationButton()));
+      await tester.pump();
+
+      expect(
+        find.bySemanticsLabel(
+          'Delivering to Lalitpur, Nepal. Change delivery location.',
+        ),
+        findsOneWidget,
+      );
+
+      handle.dispose();
+    });
+  });
+
+  group('the chat icon', () {
+    testWidgets('opens the conversations for a signed-in shopper', (
+      tester,
+    ) async {
+      signInForTest();
+      api.on('GET', '/support/tickets', body: [_ticketJson()]);
+
+      _phone(tester);
+      await tester.pumpWidget(_wrap(const SupportButton()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(SupportButton));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SupportTicketsScreen), findsOneWidget);
+      expect(find.text('Parcel arrived damaged'), findsOneWidget);
+    });
+
+    testWidgets('sends a guest to sign in rather than to a 401', (
+      tester,
+    ) async {
+      // The tickets endpoint answers 401 to a guest, so opening the list would
+      // show an error where a conversation should be.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(const SupportButton()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(SupportButton));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AuthScreen), findsOneWidget);
+      expect(find.byType(SupportTicketsScreen), findsNothing);
+    });
+
+    testWidgets('carries no badge it cannot compute', (tester) async {
+      // The bell and the tracker each badge a real count. This endpoint gives
+      // no unread figure, and a dot invented from nothing would claim someone
+      // is waiting when nobody knows.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(const SupportButton()));
+      await tester.pump();
+
+      expect(find.byType(Badge), findsNothing);
+    });
+  });
+
+  group('a conversation', () {
+    setUp(() {
+      signInForTest();
+      api.on('GET', '/support/tickets/ticket-1', body: _ticketJson());
+    });
+
+    testWidgets('shows the thread, mine and theirs', (tester) async {
+      api.on(
+        'GET',
+        '/support/tickets/ticket-1/messages',
+        body: [
+          {
+            'id': 'm1',
+            'sender_type': 'user',
+            'message': 'Any update on this?',
+            'created_at': '2026-08-21T09:00:00Z',
+          },
+          {
+            'id': 'm2',
+            'sender_type': 'support',
+            'message': 'Refunding today.',
+            'created_at': '2026-08-21T10:00:00Z',
+          },
+        ],
+      );
+
+      _phone(tester);
+      await tester.pumpWidget(
+        _wrap(
+          TicketDetailScreen(ticket: SupportTicket.fromJson(_ticketJson())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The ticket's own description opens the thread -- the server does not
+      // repeat it as a message.
+      expect(find.text('The box was torn open.'), findsOneWidget);
+      expect(find.text('Any update on this?'), findsOneWidget);
+      expect(find.text('Refunding today.'), findsOneWidget);
+    });
+
+    testWidgets('sends a reply and reloads the thread', (tester) async {
+      var sent = 0;
+      api.on('GET', '/support/tickets/ticket-1/messages', body: const []);
+      api.onCall('POST', '/support/tickets/ticket-1/messages', (call) {
+        sent++;
+        return reply({'ok': true});
+      });
+
+      _phone(tester);
+      await tester.pumpWidget(
+        _wrap(
+          TicketDetailScreen(ticket: SupportTicket.fromJson(_ticketJson())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'Still waiting');
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+
+      expect(sent, 1);
+      final body = api.calls
+          .lastWhere(
+            (c) =>
+                c.path == '/support/tickets/ticket-1/messages' &&
+                c.method == 'POST',
+          )
+          .json;
+      expect(body['message'], 'Still waiting');
+    });
+
+    testWidgets('offers no composer on a closed thread', (tester) async {
+      // The server rejects a reply to a closed ticket, so a box here would be
+      // an invitation to write something that goes nowhere.
+      api.on(
+        'GET',
+        '/support/tickets/ticket-1',
+        body: _ticketJson(status: 'closed'),
+      );
+      api.on('GET', '/support/tickets/ticket-1/messages', body: const []);
+
+      _phone(tester);
+      await tester.pumpWidget(
+        _wrap(
+          TicketDetailScreen(
+            ticket: SupportTicket.fromJson(_ticketJson(status: 'closed')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TextField), findsNothing);
+      expect(
+        find.textContaining('This conversation is closed'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('says awaiting your reply in the shoppers own terms', (
+      tester,
+    ) async {
+      // The raw enum is written from support's side and reads backwards.
+      expect(
+        customerTicketStatusLabel('waiting_customer'),
+        'Awaiting your reply',
+      );
+      expect(customerTicketStatusLabel('in_progress'), 'In progress');
+    });
+  });
+
+  group('the header is one surface', () {
+    testWidgets('the header paints no band colour of its own', (tester) async {
+      // These two used to assert that every surface in here was the same flat
+      // teal, because the band had briefly been two tones and the join read as
+      // a seam. The band is a gradient now, painted once by the shell -- so the
+      // rule that keeps the seam away is the opposite one: nothing in here
+      // paints a band colour at all. A flat patch on a ramp is the same seam
+      // wearing a different hat.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      final painted = tester
+          .widgetList<Container>(
+            find.descendant(
+              of: find.byType(SearchHeader),
+              matching: find.byType(Container),
+            ),
+          )
+          .map((c) => c.color)
+          .whereType<Color>()
+          .toSet();
+
+      expect(painted, isNot(contains(AppColors.trustBlueDeep)));
+      expect(painted, isNot(contains(AppColors.trustBlue)));
+      expect(painted, isNot(contains(AppColors.brandBandTop)));
+    });
+
+    testWidgets('nor does the department strip', (tester) async {
+      // The strip is a separate widget drawn under the header, on the same
+      // band. If it painted its own colour the ramp would stop at the join.
+      _phone(tester);
+      await tester.pumpWidget(
+        _wrap(
+          DepartmentTabs(
+            categories: const [],
+            selectedCid: null,
+            onSelected: (_) {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final painted = tester
+          .widgetList<Container>(
+            find.descendant(
+              of: find.byType(DepartmentTabs),
+              matching: find.byType(Container),
+            ),
+          )
+          .map((c) => c.color)
+          .whereType<Color>();
+
+      expect(painted, isNot(contains(AppColors.trustBlueDeep)));
+      expect(painted, isNot(contains(AppColors.trustBlue)));
+    });
+  });
+}

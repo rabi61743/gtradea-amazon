@@ -37,19 +37,18 @@ class ServerOrderItem {
 
   num get lineTotal => (unitPrice ?? 0) * quantity;
 
-  factory ServerOrderItem.fromJson(Map<String, dynamic> json) =>
-      ServerOrderItem(
-        id: asString(json['id']) ?? '',
-        name: asString(json['product_name']) ??
-            asString(json['name']) ??
-            'Item',
-        quantity: asInt(json['quantity']) ?? 1,
-        unitPrice: asNum(json['unit_price']) ?? asNum(json['price']),
-        imageUrl: asString(json['product_image']) ?? asString(json['image_url']),
-        variantLabel: asString(json['variant_label']),
-        productId: asString(json['product_id']),
-        sourceProductId: asString(json['source_product_id']),
-      );
+  factory ServerOrderItem.fromJson(
+    Map<String, dynamic> json,
+  ) => ServerOrderItem(
+    id: asString(json['id']) ?? '',
+    name: asString(json['product_name']) ?? asString(json['name']) ?? 'Item',
+    quantity: asInt(json['quantity']) ?? 1,
+    unitPrice: asNum(json['unit_price']) ?? asNum(json['price']),
+    imageUrl: asString(json['product_image']) ?? asString(json['image_url']),
+    variantLabel: asString(json['variant_label']),
+    productId: asString(json['product_id']),
+    sourceProductId: asString(json['source_product_id']),
+  );
 }
 
 /// An order as the server holds it.
@@ -106,20 +105,20 @@ class ServerOrder {
   bool get paymentFailed => paymentStatus.contains('fail');
 
   factory ServerOrder.fromJson(Map<String, dynamic> json) => ServerOrder(
-        id: asString(json['id']) ?? '',
-        orderNumber: asString(json['order_number']) ?? '',
-        status: (asString(json['status']) ?? '').toLowerCase(),
-        paymentStatus: (asString(json['payment_status']) ?? '').toLowerCase(),
-        placedAt: asDate(json['created_at']) ?? asDate(json['placed_at']),
-        totalAmount: asNum(json['total_amount']),
-        advanceAmount: asNum(json['advance_amount']),
-        remainingAmount: asNum(json['remaining_amount']),
-        paymentMethod: asString(json['payment_method']),
-        shippingAddress: asMap(json['shipping_address']),
-        items: asRows(json['items'] ?? json['order_items'])
-            .map(ServerOrderItem.fromJson)
-            .toList(growable: false),
-      );
+    id: asString(json['id']) ?? '',
+    orderNumber: asString(json['order_number']) ?? '',
+    status: (asString(json['status']) ?? '').toLowerCase(),
+    paymentStatus: (asString(json['payment_status']) ?? '').toLowerCase(),
+    placedAt: asDate(json['created_at']) ?? asDate(json['placed_at']),
+    totalAmount: asNum(json['total_amount']),
+    advanceAmount: asNum(json['advance_amount']),
+    remainingAmount: asNum(json['remaining_amount']),
+    paymentMethod: asString(json['payment_method']),
+    shippingAddress: asMap(json['shipping_address']),
+    items: asRows(json['items'] ?? json['order_items'])
+        .map(ServerOrderItem.fromJson)
+        .toList(growable: false),
+  );
 }
 
 /// Where one step of the journey has got to.
@@ -168,11 +167,11 @@ class TrackingStep {
   bool get isDelivery => stage.toUpperCase().contains('DELIVER');
 
   factory TrackingStep.fromJson(Map<String, dynamic> json) => TrackingStep(
-        stage: asString(json['stage']) ?? '',
-        label: asString(json['label']) ?? '',
-        state: TrackingStepState.parse(json['status']),
-        reachedAt: asDate(json['reachedAt']),
-      );
+    stage: asString(json['stage']) ?? '',
+    label: asString(json['label']) ?? '',
+    state: TrackingStepState.parse(json['status']),
+    reachedAt: asDate(json['reachedAt']),
+  );
 }
 
 /// A parcel, and where it has got to.
@@ -301,10 +300,10 @@ class TrackingUpdate {
   final String type;
 
   factory TrackingUpdate.fromJson(Map<String, dynamic> json) => TrackingUpdate(
-        title: asString(json['title']) ?? '',
-        at: asDate(json['at']),
-        type: asString(json['type']) ?? '',
-      );
+    title: asString(json['title']) ?? '',
+    at: asDate(json['at']),
+    type: asString(json['type']) ?? '',
+  );
 }
 
 /// A cancellation or return the shopper has asked for.
@@ -328,18 +327,18 @@ class OrderRequest {
   factory OrderRequest.fromJson(
     Map<String, dynamic> json, {
     required bool isReturn,
-  }) =>
-      OrderRequest(
-        id: asString(json['id']) ?? '',
-        // Two endpoints, two names for the same thing.
-        number: asString(json['return_number']) ??
-            asString(json['request_number']) ??
-            '',
-        status: (asString(json['status']) ?? 'pending').toLowerCase(),
-        reason: asString(json['reason']) ?? '',
-        isReturn: isReturn,
-        createdAt: asDate(json['created_at']),
-      );
+  }) => OrderRequest(
+    id: asString(json['id']) ?? '',
+    // Two endpoints, two names for the same thing.
+    number:
+        asString(json['return_number']) ??
+        asString(json['request_number']) ??
+        '',
+    status: (asString(json['status']) ?? 'pending').toLowerCase(),
+    reason: asString(json['reason']) ?? '',
+    isReturn: isReturn,
+    createdAt: asDate(json['created_at']),
+  );
 }
 
 /// Orders, their tracking, and the requests raised against them.
@@ -356,41 +355,42 @@ class OrdersRepository {
   /// indistinguishable from having no orders -- so the rows are read through
   /// the same tolerant helper as everything else.
   Future<List<ServerOrder>> list() => guarded(() async {
-        final res = await _dio.get('/orders');
-        return asRows(res.data, key: 'orders')
-            .map(ServerOrder.fromJson)
-            .where((order) => order.id.isNotEmpty)
-            .toList(growable: false);
-      });
+    final res = await _dio.get('/orders');
+    return asRows(res.data, key: 'orders')
+        .map(ServerOrder.fromJson)
+        .where((order) => order.id.isNotEmpty)
+        .toList(growable: false);
+  });
 
   Future<ServerOrder> byId(String id) => guarded(() async {
-        final res = await _dio.get('/orders/${Uri.encodeComponent(id)}');
-        return ServerOrder.fromJson(asMap(res.data));
-      });
+    final res = await _dio.get('/orders/${Uri.encodeComponent(id)}');
+    return ServerOrder.fromJson(asMap(res.data));
+  });
 
   Future<OrderTracking> tracking(String id) => guarded(() async {
-        final res =
-            await _dio.get('/orders/${Uri.encodeComponent(id)}/tracking');
-        return OrderTracking.fromJson(asMap(res.data));
-      });
+    final res = await _dio.get('/orders/${Uri.encodeComponent(id)}/tracking');
+    return OrderTracking.fromJson(asMap(res.data));
+  });
 
   /// Asks to cancel. The server decides; this only raises the request.
   Future<void> requestCancellation({
     required String orderId,
     required String reason,
     String? details,
-  }) =>
-      guarded(() async {
-        await _dio.post('/order-cancellations', data: {
-          'order_id': orderId,
-          'reason': reason,
-          // Omitted rather than sent empty: the two mean different things to
-          // the server, and an empty string is not "no details given".
-          'reason_details': ?(details != null && details.isNotEmpty
-              ? details
-              : null),
-        });
-      });
+  }) => guarded(() async {
+    await _dio.post(
+      '/order-cancellations',
+      data: {
+        'order_id': orderId,
+        'reason': reason,
+        // Omitted rather than sent empty: the two mean different things to
+        // the server, and an empty string is not "no details given".
+        'reason_details': ?(details != null && details.isNotEmpty
+            ? details
+            : null),
+      },
+    );
+  });
 
   Future<void> requestReturn({
     required String orderId,
@@ -398,30 +398,32 @@ class OrdersRepository {
     required List<({String orderItemId, int quantity})> items,
     String refundMethod = 'original_payment',
     String? details,
-  }) =>
-      guarded(() async {
-        await _dio.post('/returns', data: {
-          'order_id': orderId,
-          'reason': reason,
-          'refund_method': refundMethod,
-          'reason_details': ?(details != null && details.isNotEmpty
-              ? details
-              : null),
-          'items': [
-            for (final item in items)
-              {'order_item_id': item.orderItemId, 'quantity': item.quantity},
-          ],
-        });
-      });
+  }) => guarded(() async {
+    await _dio.post(
+      '/returns',
+      data: {
+        'order_id': orderId,
+        'reason': reason,
+        'refund_method': refundMethod,
+        'reason_details': ?(details != null && details.isNotEmpty
+            ? details
+            : null),
+        'items': [
+          for (final item in items)
+            {'order_item_id': item.orderItemId, 'quantity': item.quantity},
+        ],
+      },
+    );
+  });
 
   /// Both kinds of request, in one list.
   Future<List<OrderRequest>> requests() => guarded(() async {
-        final results = await Future.wait([
-          _requests('/order-cancellations', 'requests', isReturn: false),
-          _requests('/returns', 'returns', isReturn: true),
-        ]);
-        return [...results[0], ...results[1]];
-      });
+    final results = await Future.wait([
+      _requests('/order-cancellations', 'requests', isReturn: false),
+      _requests('/returns', 'returns', isReturn: true),
+    ]);
+    return [...results[0], ...results[1]];
+  });
 
   Future<List<OrderRequest>> _requests(
     String path,

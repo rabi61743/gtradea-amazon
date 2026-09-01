@@ -55,7 +55,9 @@ Map<String, dynamic> asMap(Object? v) =>
 /// each repository guessing, they say which key to look under and get an empty
 /// list instead of a crash when the server changes its mind.
 List<Map<String, dynamic>> asRows(Object? v, {String? key}) {
-  if (v is List) return v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+  if (v is List) {
+    return v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+  }
   if (v is Map) {
     if (key != null && v[key] is List) return asRows(v[key]);
     // Fall back to the first list-valued key, which covers a wrapper name we

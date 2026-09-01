@@ -73,15 +73,17 @@ class _FilterSheetState extends State<FilterSheet> {
                 Expanded(
                   child: Text(
                     'Filters',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 if (_selectedCount > 0)
                   Text(
                     '$_selectedCount selected',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 const SizedBox(width: 8),
               ],
@@ -97,8 +99,9 @@ class _FilterSheetState extends State<FilterSheet> {
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     child: Text(
                       group.label,
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                   Padding(
@@ -128,8 +131,9 @@ class _FilterSheetState extends State<FilterSheet> {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed:
-                        _selectedCount == 0 ? null : () => setState(_draft.clear),
+                    onPressed: _selectedCount == 0
+                        ? null
+                        : () => setState(_draft.clear),
                     child: const Text('Clear all'),
                   ),
                 ),

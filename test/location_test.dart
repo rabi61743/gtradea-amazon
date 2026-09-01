@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/address/data/address_store.dart';
 import 'package:gtradea_amazon/features/address/data/location_detector.dart';
+import 'package:gtradea_amazon/features/address/presentation/address_form_sheet.dart';
 import 'package:gtradea_amazon/features/address/presentation/address_picker_sheet.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -57,7 +59,10 @@ class _FakeDetector extends LocationDetector {
   }
 }
 
-_FakeDetector _useDetector(List<DetectResult> results, {Completer<void>? gate}) {
+_FakeDetector _useDetector(
+  List<DetectResult> results, {
+  Completer<void>? gate,
+}) {
   final fake = _FakeDetector(results, gate: gate);
   LocationDetector.instance = fake;
   addTearDown(() => LocationDetector.instance = const LocationDetector());
@@ -81,20 +86,27 @@ void main() {
       expect(resolved.city, 'Kathmandu');
       expect(resolved.province, 'Bagmati');
       expect(resolved.distanceKm, lessThan(5));
-      expect(resolved.fromGeocoder, isFalse,
-          reason: 'the offline table is the fallback, not a geocoder');
+      expect(
+        resolved.fromGeocoder,
+        isFalse,
+        reason: 'the offline table is the fallback, not a geocoder',
+      );
       expect(resolved.isApproximate, isFalse);
     });
 
     test('neighbouring cities are told apart', () {
       expect(
-        (LocationDetector.matchPosition(27.6644, 85.3188) as DetectResolved)
-            .city,
+        (LocationDetector.matchPosition(
+          27.6644,
+          85.3188,
+        ) as DetectResolved).city,
         'Lalitpur',
       );
       expect(
-        (LocationDetector.matchPosition(27.6710, 85.4298) as DetectResolved)
-            .city,
+        (LocationDetector.matchPosition(
+          27.6710,
+          85.4298,
+        ) as DetectResolved).city,
         'Bhaktapur',
       );
     });
@@ -103,8 +115,11 @@ void main() {
       final resolved =
           LocationDetector.matchPosition(28.21, 83.58) as DetectResolved;
       expect(resolved.city, 'Pokhara');
-      expect(resolved.isApproximate, isTrue,
-          reason: 'the wording should hedge rather than state');
+      expect(
+        resolved.isApproximate,
+        isTrue,
+        reason: 'the wording should hedge rather than state',
+      );
     });
 
     test('a geocoded result is never approximate', () {
@@ -123,8 +138,10 @@ void main() {
     test('somewhere this shop does not deliver is refused, not guessed', () {
       final result = LocationDetector.matchPosition(51.5072, -0.1276);
       expect(result, isA<DetectOutsideServedArea>());
-      expect((result as DetectOutsideServedArea).distanceKm,
-          greaterThan(kMaxMatchKm));
+      expect(
+        (result as DetectOutsideServedArea).distanceKm,
+        greaterThan(kMaxMatchKm),
+      );
     });
 
     test('every province the detector can produce is one the form offers', () {
@@ -134,25 +151,36 @@ void main() {
         expect(kProvinces, contains(city.province), reason: city.city);
       }
       for (final city in kServedCities) {
-        final resolved =
-            LocationDetector.matchPosition(city.latitude, city.longitude);
-        expect(kProvinces, contains((resolved as DetectResolved).province),
-            reason: city.city);
+        final resolved = LocationDetector.matchPosition(
+          city.latitude,
+          city.longitude,
+        );
+        expect(
+          kProvinces,
+          contains((resolved as DetectResolved).province),
+          reason: city.city,
+        );
       }
     });
 
     test('every served city resolves to itself', () {
       for (final city in kServedCities) {
-        final resolved =
-            LocationDetector.matchPosition(city.latitude, city.longitude);
+        final resolved = LocationDetector.matchPosition(
+          city.latitude,
+          city.longitude,
+        );
         expect(resolved, isA<DetectResolved>(), reason: city.city);
         expect((resolved as DetectResolved).city, city.city, reason: city.city);
       }
     });
 
     test('distance is a real great-circle distance', () {
-      final km =
-          LocationDetector.distanceKm(27.7172, 85.3240, 28.2096, 83.9856);
+      final km = LocationDetector.distanceKm(
+        27.7172,
+        85.3240,
+        28.2096,
+        83.9856,
+      );
       expect(km, greaterThan(120));
       expect(km, lessThan(160));
       expect(LocationDetector.distanceKm(27.7, 85.3, 27.7, 85.3), 0);
@@ -233,9 +261,9 @@ void main() {
     Future<void> pumpPicker(WidgetTester tester) async {
       _useTallWindow(tester);
       // Inside a Scaffold, as it is in the app.
-      await tester.pumpWidget(_wrap(
-        const Scaffold(body: AddressPickerSheet()),
-      ));
+      await tester.pumpWidget(
+        _wrap(const Scaffold(body: AddressPickerSheet())),
+      );
       await tester.pumpAndSettle();
     }
 
@@ -262,8 +290,9 @@ void main() {
       );
     });
 
-    testWidgets('a geocoded result prefills street, city and postal code',
-        (tester) async {
+    testWidgets('a geocoded result prefills street, city and postal code', (
+      tester,
+    ) async {
       _useDetector([
         const DetectResolved(
           city: 'Pokhara',
@@ -279,16 +308,41 @@ void main() {
       await tapDetect(tester);
 
       expect(find.text('New address'), findsOneWidget);
-      expect(find.widgetWithText(TextFormField, 'Pokhara'), findsOneWidget);
+      // The street lands in the one field the shopper reads.
       expect(
         find.widgetWithText(TextFormField, 'Lakeside Road 21, Baidam'),
         findsOneWidget,
       );
-      expect(find.widgetWithText(TextFormField, '33700'), findsOneWidget);
+      // The city and province are carried as the summary, not as fields.
+      // Scoped to the sheet: the picker underneath offers Pokhara as a city
+      // chip, so an unscoped finder matches that as well.
+      expect(
+        find.descendant(
+          of: find.byType(AddressFormSheet),
+          matching: find.textContaining('Pokhara'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(TextFormField, 'City or district'),
+        findsNothing,
+      );
+      // And the postal code is kept without ever being asked for -- it reaches
+      // the saved address, which is the only place it was ever needed.
+      expect(find.widgetWithText(TextFormField, '33700'), findsNothing);
+
+      await tester.tap(find.text('Save address'));
+      await tester.pumpAndSettle();
+
+      final saved = AddressStore.instance.addresses.single;
+      expect(saved.city, 'Pokhara');
+      expect(saved.province, 'Gandaki');
+      expect(saved.postalCode, '33700');
     });
 
-    testWidgets('the shopper can still change what was filled in',
-        (tester) async {
+    testWidgets('the shopper can still change what was filled in', (
+      tester,
+    ) async {
       _useDetector([
         const DetectResolved(
           city: 'Pokhara',
@@ -301,7 +355,12 @@ void main() {
       await pumpPicker(tester);
       await tapDetect(tester);
 
-      // Detection is a starting point, never a verdict.
+      // Detection is a starting point, never a verdict -- so a detected city
+      // has to stay correctable, even though it is a summary line rather than
+      // a field until somebody says otherwise.
+      await tester.tap(find.text('Edit'));
+      await tester.pumpAndSettle();
+
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Pokhara'),
         'Kathmandu',
@@ -310,8 +369,9 @@ void main() {
       expect(find.widgetWithText(TextFormField, 'Kathmandu'), findsOneWidget);
     });
 
-    testWidgets('location switched off offers to open location settings',
-        (tester) async {
+    testWidgets('location switched off offers to open location settings', (
+      tester,
+    ) async {
       final fake = _useDetector([const DetectServiceDisabled()]);
       await pumpPicker(tester);
       await tapDetect(tester);
@@ -325,8 +385,11 @@ void main() {
       await tester.tap(find.text('Enable location'));
       await tester.pumpAndSettle();
       expect(fake.locationSettingsOpened, 1);
-      expect(fake.appSettingsOpened, 0,
-          reason: 'the service is off, not the permission');
+      expect(
+        fake.appSettingsOpened,
+        0,
+        reason: 'the service is off, not the permission',
+      );
     });
 
     testWidgets('coming back from settings retries by itself', (tester) async {
@@ -356,8 +419,9 @@ void main() {
       expect(find.text('Enable location'), findsNothing);
     });
 
-    testWidgets('a resume that was not a settings trip does not retry',
-        (tester) async {
+    testWidgets('a resume that was not a settings trip does not retry', (
+      tester,
+    ) async {
       final fake = _useDetector([const DetectTimeout()]);
       await pumpPicker(tester);
       await tapDetect(tester);
@@ -383,8 +447,11 @@ void main() {
       await tester.tap(find.text('Open settings'));
       await tester.pumpAndSettle();
       expect(fake.appSettingsOpened, 1);
-      expect(fake.locationSettingsOpened, 0,
-          reason: 'the permission is blocked, not the service');
+      expect(
+        fake.locationSettingsOpened,
+        0,
+        reason: 'the permission is blocked, not the service',
+      );
     });
 
     testWidgets('a one-off refusal offers to ask again', (tester) async {
@@ -421,7 +488,9 @@ void main() {
       expect(find.text('Try again'), findsOneWidget);
     });
 
-    testWidgets('a state whose remedy is not retry offers both', (tester) async {
+    testWidgets('a state whose remedy is not retry offers both', (
+      tester,
+    ) async {
       _useDetector([const DetectServiceDisabled()]);
       await pumpPicker(tester);
       await tapDetect(tester);
@@ -430,8 +499,9 @@ void main() {
       expect(find.text('Try again'), findsOneWidget);
     });
 
-    testWidgets('an approximate result hedges on the field it is about',
-        (tester) async {
+    testWidgets('an approximate result hedges on the field it is about', (
+      tester,
+    ) async {
       _useDetector([
         const DetectResolved(
           city: 'Pokhara',
@@ -465,8 +535,9 @@ void main() {
       expect(find.textContaining('We guessed this'), findsNothing);
     });
 
-    testWidgets('an unavailable position offers typing instead',
-        (tester) async {
+    testWidgets('an unavailable position offers typing instead', (
+      tester,
+    ) async {
       _useDetector([const DetectUnavailable()]);
       await pumpPicker(tester);
       await tapDetect(tester);
@@ -477,8 +548,9 @@ void main() {
       );
     });
 
-    testWidgets('being outside the served area names the nearest city',
-        (tester) async {
+    testWidgets('being outside the served area names the nearest city', (
+      tester,
+    ) async {
       _useDetector([const DetectOutsideServedArea(900, 'Dhangadhi')]);
       await pumpPicker(tester);
       await tapDetect(tester);
@@ -525,4 +597,67 @@ void main() {
       expect(find.text('Finding you...'), findsNothing);
     });
   });
+
+  group('how accurate the fix is allowed to be', () {
+    test('the app asks Android for fine location', () {
+      // This is the whole bug. The detector had a real permission flow, real
+      // timeouts and a real geocoder, and still dropped the pin a kilometre
+      // out -- because only ACCESS_COARSE_LOCATION was declared, so Android
+      // handed back a cell-tower fix and the geocoder faithfully named
+      // whatever was at that wrong point.
+      expect(
+        _androidManifest,
+        contains('android.permission.ACCESS_FINE_LOCATION'),
+      );
+      // Coarse stays declared: Android requires both before it will offer the
+      // Precise option in its own dialog.
+      expect(
+        _androidManifest,
+        contains('android.permission.ACCESS_COARSE_LOCATION'),
+      );
+    });
+
+    test('and no manifest comment contains a double hyphen', () {
+      // Learned the hard way. The comment explaining this very change used the
+      // em-dash style the rest of the codebase uses, and a double hyphen is
+      // illegal inside an XML comment. All 728 Dart tests passed; the Android
+      // build then failed with a manifest merge error two minutes later.
+      final comments = RegExp(
+        r'<!--(.*?)-->',
+        dotAll: true,
+      ).allMatches(_androidManifest);
+      expect(comments, isNotEmpty, reason: 'the manifest is commented');
+
+      for (final comment in comments) {
+        expect(
+          comment[1],
+          isNot(contains('--')),
+          reason: 'illegal in XML: ${comment[1]}',
+        );
+      }
+    });
+
+    test('and the manifest no longer argues for coarse', () {
+      // A comment that contradicts the code is worse than no comment, and this
+      // one spelled out the old reasoning in full.
+      expect(_androidManifest, isNot(contains('Coarse only')));
+    });
+
+    test('the fix timeout allows for a real GPS lock', () {
+      // High accuracy is a satellite lock rather than a tower guess, and
+      // indoors it can take twenty seconds. The old fifteen turned a slow
+      // success into a reported failure.
+      expect(LocationDetector.fixTimeout.inSeconds, greaterThanOrEqualTo(25));
+      expect(
+        LocationDetector.fixTimeout,
+        lessThan(LocationDetector.overallTimeout),
+        reason: 'the outer cap has to outlast the inner one',
+      );
+    });
+  });
 }
+
+/// The manifest, read off disk. The permission is not a Dart concern, but it
+/// is the thing that actually decides how accurate a fix can be.
+String get _androidManifest =>
+    File('android/app/src/main/AndroidManifest.xml').readAsStringSync();

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/l10n/app_strings.dart';
@@ -9,6 +11,7 @@ import '../../auth/data/auth_store.dart';
 import '../data/payment_method.dart';
 import '../data/payment_settings_repository.dart';
 import '../data/saved_payment_store.dart';
+import 'add_payment_method_sheet.dart';
 
 /// Saved cards, and what this shop accepts.
 ///
@@ -35,7 +38,33 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
   void initState() {
     super.initState();
     SavedPaymentStore.instance.load();
+    unawaited(_syncCards());
     _loadAccepted();
+  }
+
+  /// The shop's record of this account's cards, over the device copy.
+  ///
+  /// Best effort: the local list is what the screen draws, and a failed sync
+  /// leaves the cards the shopper already had rather than emptying the screen.
+  Future<void> _syncCards() async {
+    try {
+      await SavedPaymentStore.instance.syncFromServer();
+    } on ApiError {
+      // Deliberately swallowed. See above.
+    }
+  }
+
+  Future<void> _add() async {
+    final saved = await AddPaymentMethodSheet.show(context);
+    if (saved != null && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('${saved.brand.label} ending ${saved.last4} saved'),
+          ),
+        );
+    }
   }
 
   Future<void> _loadAccepted() async {
@@ -48,8 +77,9 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
       if (!mounted) return;
       final userId = AuthStore.instance.account?.id;
       setState(() {
-        _accepted =
-            methods.where((m) => m.isVisibleTo(userId)).toList(growable: false);
+        _accepted = methods
+            .where((m) => m.isVisibleTo(userId))
+            .toList(growable: false);
         _loading = false;
       });
     } on ApiError catch (e) {
@@ -81,7 +111,15 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
         ],
       ),
     );
-    if (confirmed ?? false) SavedPaymentStore.instance.remove(card.id);
+    if (!(confirmed ?? false)) return;
+    try {
+      await SavedPaymentStore.instance.removeCard(card);
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   @override
@@ -96,6 +134,11 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
 
         return Scaffold(
           appBar: AppBar(title: Text(_strings.manageTitle)),
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: _add,
+            icon: const Icon(Icons.add_card_outlined),
+            label: const Text('Add card'),
+          ),
           body: RefreshIndicator(
             onRefresh: _loadAccepted,
             child: ListView(
@@ -137,7 +180,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                     compact: true,
                     message: _error!.isNetwork
                         ? 'No connection, so we could not check which payment '
-                            'methods are available.'
+                              'methods are available.'
                         : _error!.message,
                     onRetry: _loadAccepted,
                   )
@@ -203,8 +246,9 @@ class _CardRow extends StatelessWidget {
               children: [
                 Text(
                   '${card.brand.label} ${card.maskedNumber}',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -268,8 +312,9 @@ class _AcceptedGroup extends StatelessWidget {
               ),
               title: Text(
                 methods[i].label,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(fontWeight: FontWeight.w600),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               subtitle: methods[i].description.isEmpty
                   ? null
@@ -314,8 +359,9 @@ class _NoCards extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             'No saved cards',
-            style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 4),
           Text(

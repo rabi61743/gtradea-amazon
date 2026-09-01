@@ -76,7 +76,8 @@ class Address {
   final String? postalCode;
 
   /// One line, for a list row or an order record.
-  String get oneLine => [area, city, province].where((p) => p.isNotEmpty).join(', ');
+  String get oneLine =>
+      [area, city, province].where((p) => p.isNotEmpty).join(', ');
 
   /// The whole thing, for a confirmation screen where being sure matters more
   /// than being brief.
@@ -105,30 +106,29 @@ class Address {
     String? area,
     String? landmark,
     String? postalCode,
-  }) =>
-      Address(
-        id: id,
-        label: label ?? this.label,
-        fullName: fullName ?? this.fullName,
-        phone: phone ?? this.phone,
-        province: province ?? this.province,
-        city: city ?? this.city,
-        area: area ?? this.area,
-        landmark: landmark ?? this.landmark,
-        postalCode: postalCode ?? this.postalCode,
-      );
+  }) => Address(
+    id: id,
+    label: label ?? this.label,
+    fullName: fullName ?? this.fullName,
+    phone: phone ?? this.phone,
+    province: province ?? this.province,
+    city: city ?? this.city,
+    area: area ?? this.area,
+    landmark: landmark ?? this.landmark,
+    postalCode: postalCode ?? this.postalCode,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'label': label.name,
-        'fullName': fullName,
-        'phone': phone,
-        'province': province,
-        'city': city,
-        'area': area,
-        'landmark': landmark,
-        'postalCode': postalCode,
-      };
+    'id': id,
+    'label': label.name,
+    'fullName': fullName,
+    'phone': phone,
+    'province': province,
+    'city': city,
+    'area': area,
+    'landmark': landmark,
+    'postalCode': postalCode,
+  };
 
   /// An address missing the parts a courier needs is not an address. Dropped
   /// rather than shown as a row with blanks in it, which would look like a bug
@@ -152,8 +152,9 @@ class Address {
       city: city,
       area: area,
       landmark: json['landmark'] is String ? json['landmark'] as String : null,
-      postalCode:
-          json['postalCode'] is String ? json['postalCode'] as String : null,
+      postalCode: json['postalCode'] is String
+          ? json['postalCode'] as String
+          : null,
     );
   }
 }
@@ -183,9 +184,8 @@ class AddressStore extends ChangeNotifier {
   bool get isEmpty => _addresses.isEmpty;
   bool get isLoaded => _loaded;
 
-  static String storageKeyFor(String? email) => (email == null || email.isEmpty)
-      ? _guestKey
-      : 'gtradea_addresses_$email';
+  static String storageKeyFor(String? email) =>
+      (email == null || email.isEmpty) ? _guestKey : 'gtradea_addresses_$email';
 
   /// Where an order goes unless the shopper says otherwise.
   ///
@@ -258,7 +258,9 @@ class AddressStore extends ChangeNotifier {
     if (email == _scope) return;
 
     final wasGuest = _scope == null || _scope!.isEmpty;
-    final carried = wasGuest ? List<Address>.from(_addresses) : const <Address>[];
+    final carried = wasGuest
+        ? List<Address>.from(_addresses)
+        : const <Address>[];
     final carriedDefault = wasGuest ? _defaultId : null;
 
     _scope = email;
@@ -305,8 +307,9 @@ class AddressStore extends ChangeNotifier {
       city: city.trim(),
       area: area.trim(),
       landmark: landmark?.trim().isEmpty ?? true ? null : landmark!.trim(),
-      postalCode:
-          postalCode?.trim().isEmpty ?? true ? null : postalCode!.trim(),
+      postalCode: postalCode?.trim().isEmpty ?? true
+          ? null
+          : postalCode!.trim(),
     );
 
     _addresses.add(address);
@@ -321,7 +324,9 @@ class AddressStore extends ChangeNotifier {
   }
 
   void update(Address address) {
-    final index = _addresses.indexWhere((existing) => existing.id == address.id);
+    final index = _addresses.indexWhere(
+      (existing) => existing.id == address.id,
+    );
     if (index == -1) return;
     _addresses[index] = address;
     notifyListeners();
@@ -366,7 +371,8 @@ class AddressStore extends ChangeNotifier {
   }
 
   String _nextId() {
-    var candidate = 'ADDR${DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase()}';
+    var candidate =
+        'ADDR${DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase()}';
     var suffix = 1;
     while (_addresses.any((address) => address.id == candidate)) {
       candidate = '$candidate$suffix';

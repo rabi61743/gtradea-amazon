@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The GtradeA mark, taken from the storefront's own https://gtradea.com/icons/icon.svg.
+
+  The three path definitions below are byte-identical to that file. Nothing has
+  been redrawn, recoloured or reproportioned. Two things from the source are
+  absent, and neither is part of the mark:
+
+    * the white rounded rectangle behind it, which is app-icon backing and
+      would show as a white plate on the teal header band;
+    * the `translate(132.57, 140.53)` that centred the mark inside a 512pt
+      icon canvas. The viewBox is instead set to the mark's own bounds, with
+      two units of margin so no curve can clip, which is what lets the header
+      size the logo itself rather than sizing an icon's worth of empty space.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="36.6 36.2 173.6 158.7">
+  <path fill="#e94724" d="M169.34,126.56v43.61c-13.86,14.04-33,22.72-54.15,22.72-17.96,0-34.47-6.27-47.53-16.76,2.02.17,4.08.26,6.15.26,32.3,0,59.9-20.67,70.89-49.83h24.64Z"/>
+  <polygon fill="#267488" points="208.22 93.95 208.22 192.69 169.34 192.69 169.34 126.56 104.52 126.56 128.57 94 128.6 93.95 208.22 93.95"/>
+  <path fill="#e94724" d="M169.48,38.16v.45l-10.32,13.98-10.57,14.3-20.02,27.11c-40.36,1.22-72.79,31.59-73.62,69.18-10.22-13.15-16.3-29.73-16.3-47.75,0-40.15,30.19-73.15,68.83-76.89,2.41-.25,4.87-.37,7.36-.37h54.65Z"/>
+</svg>

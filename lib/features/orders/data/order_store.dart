@@ -111,11 +111,11 @@ class Order {
   final OrderTracking? tracking;
 
   CartTotals get totals => CartTotals.of(
-        lines,
-        delivery: delivery,
-        discount: discount,
-        couponCode: couponCode,
-      );
+    lines,
+    delivery: delivery,
+    discount: discount,
+    couponCode: couponCode,
+  );
 
   /// Which stage this order has reached.
   ///
@@ -134,7 +134,9 @@ class Order {
         if (step.state == TrackingStepState.upcoming) continue;
         final mapped = _stageFromCode(step.stage) ?? _stageFromText(step.label);
         if (mapped == null) continue;
-        if (furthest == null || mapped.index > furthest.index) furthest = mapped;
+        if (furthest == null || mapped.index > furthest.index) {
+          furthest = mapped;
+        }
       }
       if (furthest != null) return furthest;
     }
@@ -217,13 +219,36 @@ class Order {
   ///
   /// The carrier's own wording wins where there is any: it knows more about
   /// its states than a six-way client-side map does.
+  /// Four sources, in descending order of how much each knows, and only the
+  /// last is this app's own words.
   String statusLabel([DateTime? now]) {
     if (outcome != null) return outcome!.label;
     if (server?.isCancelled ?? false) return OrderOutcome.cancelled.label;
+
+    // The carrier's summary of the whole order.
     final carrier = tracking?.statusLabel;
     if (carrier != null && carrier.isNotEmpty) return carrier;
+
+    // Its name for the stage the order is at.
+    final stageLabel = tracking?.stageLabel;
+    if (stageLabel != null && stageLabel.isNotEmpty) return stageLabel;
+
+    // Failing those, the step it says the parcel is on right now. This is what
+    // stops a carrier state the six-word map cannot classify -- "Held at
+    // customs" -- from being announced as "Order placed", which is what the
+    // chip did before: the map found nothing, and the fallback was a word this
+    // app invented and the server had never used.
+    for (final step in _steps) {
+      if (step.state == TrackingStepState.current && step.label.isNotEmpty) {
+        return step.label;
+      }
+    }
+
     return stage(now).label;
   }
+
+  /// The carrier's steps for the leading parcel, or none.
+  List<TrackingStep> get _steps => tracking?.timeline ?? const [];
 
   /// Cancelling is only honest while the parcel has not left.
   bool canCancel([DateTime? now]) =>
@@ -242,15 +267,22 @@ class Order {
   ///
   /// Never invented. A made-up number that no courier can look up is worse
   /// than no number, because a shopper will spend time trying to use it.
+  /// The [now] parameter is vestigial, as elsewhere on this class.
   String? trackingNumber([DateTime? now]) {
     if (outcome == OrderOutcome.cancelled || outcome == OrderOutcome.failed) {
       return null;
     }
-    // Nothing to track until something was handed to a courier. A shipment
-    // number that exists before dispatch is not one anybody can look up yet.
-    if (stage(now).index < OrderStage.shipped.index) return null;
-    final number = tracking?.shipments.firstOrNull?.shipmentNo;
-    return (number != null && number.isNotEmpty) ? number : null;
+    // The carrier's silence is the gate. There used to be a client-side one
+    // here as well -- nothing shown until the locally-derived stage reached
+    // "shipped" -- which was the app second-guessing the server about whether
+    // its own consignment number was real yet.
+    //
+    // Across every shipment, not just the first: on a split order the second
+    // parcel can be the one with a number.
+    for (final shipment in tracking?.shipments ?? const <TrackingShipment>[]) {
+      if (shipment.shipmentNo.isNotEmpty) return shipment.shipmentNo;
+    }
+    return null;
   }
 
   /// How the parcel is travelling, where the carrier said.
@@ -266,7 +298,8 @@ class Order {
   /// tracking already fetched -- never to override a figure the server sent.
   factory Order.fromServer(ServerOrder row, [Order? cached]) {
     final address = row.shippingAddress;
-    final recipient = asString(address['full_name']) ??
+    final recipient =
+        asString(address['full_name']) ??
         asString(address['name']) ??
         cached?.recipient ??
         '';
@@ -305,21 +338,21 @@ class Order {
   }
 
   Order withTracking(OrderTracking tracking) => Order(
-        id: id,
-        reference: reference,
-        placedAt: placedAt,
-        lines: lines,
-        delivery: delivery,
-        discount: discount,
-        couponCode: couponCode,
-        recipient: recipient,
-        address: address,
-        paymentState: paymentState,
-        outcome: outcome,
-        outcomeAt: outcomeAt,
-        server: server,
-        tracking: tracking,
-      );
+    id: id,
+    reference: reference,
+    placedAt: placedAt,
+    lines: lines,
+    delivery: delivery,
+    discount: discount,
+    couponCode: couponCode,
+    recipient: recipient,
+    address: address,
+    paymentState: paymentState,
+    outcome: outcome,
+    outcomeAt: outcomeAt,
+    server: server,
+    tracking: tracking,
+  );
 
   /// The address on one line, from whichever fields the server filled in.
   static String? _addressLine(Map<String, dynamic> address) {
@@ -346,43 +379,43 @@ class Order {
   }
 
   Order copyWith({OrderOutcome? outcome, DateTime? outcomeAt}) => Order(
-        id: id,
-        reference: reference,
-        server: server,
-        tracking: tracking,
-        placedAt: placedAt,
-        lines: lines,
-        delivery: delivery,
-        discount: discount,
-        couponCode: couponCode,
-        recipient: recipient,
-        address: address,
-        paymentState: outcome == OrderOutcome.failed
-            ? PaymentState.failed
-            : paymentState,
-        outcome: outcome ?? this.outcome,
-        outcomeAt: outcomeAt ?? this.outcomeAt,
-      );
+    id: id,
+    reference: reference,
+    server: server,
+    tracking: tracking,
+    placedAt: placedAt,
+    lines: lines,
+    delivery: delivery,
+    discount: discount,
+    couponCode: couponCode,
+    recipient: recipient,
+    address: address,
+    paymentState: outcome == OrderOutcome.failed
+        ? PaymentState.failed
+        : paymentState,
+    outcome: outcome ?? this.outcome,
+    outcomeAt: outcomeAt ?? this.outcomeAt,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'placedAt': placedAt.millisecondsSinceEpoch,
-        'lines': lines.map((line) => line.toJson()).toList(),
-        'delivery': delivery,
-        'discount': discount,
-        'couponCode': couponCode,
-        'recipient': recipient,
-        'address': address,
-        'paymentState': paymentState.name,
-        'outcome': outcome?.name,
-        'outcomeAt': outcomeAt?.millisecondsSinceEpoch,
-        'reference': reference,
-        // Enough of the server's record to show the right stage offline. The
-        // whole row is not worth caching -- the tracking is fetched again on
-        // open anyway, and a stale carrier timeline is worse than none.
-        'serverStatus': server?.status,
-        'serverPaymentStatus': server?.paymentStatus,
-      };
+    'id': id,
+    'placedAt': placedAt.millisecondsSinceEpoch,
+    'lines': lines.map((line) => line.toJson()).toList(),
+    'delivery': delivery,
+    'discount': discount,
+    'couponCode': couponCode,
+    'recipient': recipient,
+    'address': address,
+    'paymentState': paymentState.name,
+    'outcome': outcome?.name,
+    'outcomeAt': outcomeAt?.millisecondsSinceEpoch,
+    'reference': reference,
+    // Enough of the server's record to show the right stage offline. The
+    // whole row is not worth caching -- the tracking is fetched again on
+    // open anyway, and a stale carrier timeline is worse than none.
+    'serverStatus': server?.status,
+    'serverPaymentStatus': server?.paymentStatus,
+  };
 
   static Order? fromJson(Map<String, dynamic> json) {
     final id = json['id'];
@@ -392,10 +425,10 @@ class Order {
     final rawLines = json['lines'];
     final lines = rawLines is List
         ? rawLines
-            .whereType<Map>()
-            .map((e) => CartLine.fromJson(e.cast<String, dynamic>()))
-            .whereType<CartLine>()
-            .toList()
+              .whereType<Map>()
+              .map((e) => CartLine.fromJson(e.cast<String, dynamic>()))
+              .whereType<CartLine>()
+              .toList()
         : <CartLine>[];
     // An order with no readable lines is not an order; it would render as an
     // empty receipt for a total nobody can check.
@@ -407,8 +440,9 @@ class Order {
       lines: lines,
       delivery: json['delivery'] is num ? json['delivery'] as num : 0,
       discount: json['discount'] is num ? json['discount'] as num : 0,
-      couponCode:
-          json['couponCode'] is String ? json['couponCode'] as String : null,
+      couponCode: json['couponCode'] is String
+          ? json['couponCode'] as String
+          : null,
       recipient: json['recipient'] is String
           ? json['recipient'] as String
           : 'Guest',
@@ -434,8 +468,11 @@ class Order {
     );
   }
 
-  static T _enumByName<T extends Enum>(List<T> values, Object? name, T fallback) =>
-      _enumByNameOrNull(values, name) ?? fallback;
+  static T _enumByName<T extends Enum>(
+    List<T> values,
+    Object? name,
+    T fallback,
+  ) => _enumByNameOrNull(values, name) ?? fallback;
 
   static T? _enumByNameOrNull<T extends Enum>(List<T> values, Object? name) {
     if (name is! String) return null;
@@ -468,6 +505,19 @@ class OrderStore extends ChangeNotifier {
   int get count => _orders.length;
   bool get isEmpty => _orders.isEmpty;
   bool get isLoaded => _loaded;
+
+  /// Orders that have not arrived and were not called off.
+  ///
+  /// The figure the home header badges. Deliberately not [count]: a lifetime
+  /// total only ever grows and stops meaning anything after a few purchases,
+  /// whereas this goes quiet the moment everything has landed.
+  ///
+  /// A method rather than a getter because [Order.isSettled] takes a clock --
+  /// the stage comes from the tracking timeline and, failing that, from how
+  /// long ago the order was placed, so the answer moves with the time and a
+  /// caller that needs a fixed one has to say which.
+  int inFlightCount([DateTime? now]) =>
+      _orders.where((order) => !order.isSettled(now)).length;
 
   static String storageKeyFor(String? email) =>
       (email == null || email.isEmpty) ? _guestKey : 'gtradea_orders_$email';
@@ -519,6 +569,15 @@ class OrderStore extends ChangeNotifier {
     final index = _orders.indexWhere((order) => order.id == orderId);
     if (index == -1) return;
 
+    // An order placed on this device and not yet read back has an id this app
+    // minted. The server has never seen it, so asking would be a guaranteed
+    // 404 on every screen open.
+    if (_orders[index].server == null) return;
+
+    // The list and the detail screen both ask, and a shopper who opens an
+    // order straight from the list has them racing on the same id.
+    if (!_trackingInFlight.add(orderId)) return;
+
     try {
       final tracking = await OrdersRepository.instance.tracking(orderId);
       final at = _orders.indexWhere((order) => order.id == orderId);
@@ -528,6 +587,33 @@ class OrderStore extends ChangeNotifier {
     } on ApiError {
       // The order still renders without it; the screen says tracking is not
       // available rather than failing whole.
+    } finally {
+      _trackingInFlight.remove(orderId);
+    }
+  }
+
+  final _trackingInFlight = <String>{};
+
+  /// Fetches the carrier's view for the orders the list is about to show.
+  ///
+  /// The list showed a status and an arrival date read off the tracking payload
+  /// and then never asked for it, so the arrival line almost never appeared.
+  ///
+  /// Only the unsettled ones: a delivered order's status will not change, and a
+  /// long history would otherwise mean one request per row. Capped for the same
+  /// reason. There is no bulk endpoint to replace this -- `/shipments` and
+  /// `/tracking` are both 404 -- so per-order is the only surface there is.
+  Future<void> loadTrackingForVisible({int limit = 8}) async {
+    if (!AuthStore.instance.isSignedIn) return;
+
+    final wanted = _orders
+        .where((order) => order.server != null && !order.isSettled())
+        .take(limit)
+        .map((order) => order.id)
+        .toList(growable: false);
+
+    for (final id in wanted) {
+      await loadTracking(id);
     }
   }
 
@@ -688,10 +774,12 @@ class OrderStore extends ChangeNotifier {
   /// Human-readable and unique within a millisecond, which is as fine-grained
   /// as two orders can realistically be placed here.
   String _nextId(DateTime when) {
-    var candidate = 'GT${when.millisecondsSinceEpoch.toRadixString(36).toUpperCase()}';
+    var candidate =
+        'GT${when.millisecondsSinceEpoch.toRadixString(36).toUpperCase()}';
     var suffix = 1;
     while (_orders.any((order) => order.id == candidate)) {
-      candidate = 'GT${when.millisecondsSinceEpoch.toRadixString(36).toUpperCase()}$suffix';
+      candidate =
+          'GT${when.millisecondsSinceEpoch.toRadixString(36).toUpperCase()}$suffix';
       suffix++;
     }
     return candidate;
@@ -721,8 +809,10 @@ class OrderStore extends ChangeNotifier {
     if (index == -1) return false;
     if (!allowed(_orders[index])) return false;
 
-    _orders[index] = _orders[index]
-        .copyWith(outcome: outcome, outcomeAt: now ?? DateTime.now());
+    _orders[index] = _orders[index].copyWith(
+      outcome: outcome,
+      outcomeAt: now ?? DateTime.now(),
+    );
     notifyListeners();
     unawaited(_persist());
     return true;

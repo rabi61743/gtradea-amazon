@@ -3,19 +3,18 @@ import '../../../core/network/json.dart';
 import '../../orders/data/orders_repository.dart';
 import 'checkout_models.dart';
 import 'checkout_repository.dart';
+import 'payment_method.dart';
 
 /// What a provider needs opened in the WebView.
 ///
 /// Either a page to visit or a form to post -- never both, and every provider
 /// does exactly one of the two.
 class GatewayLaunch {
-  const GatewayLaunch.redirect(this.url)
-      : actionUrl = null,
-        formFields = null;
+  const GatewayLaunch.redirect(this.url) : actionUrl = null, formFields = null;
 
   const GatewayLaunch.form(String this.actionUrl, Map<String, dynamic> fields)
-      : url = null,
-        formFields = fields;
+    : url = null,
+      formFields = fields;
 
   final String? url;
   final String? actionUrl;
@@ -94,14 +93,23 @@ abstract class PaymentGateway {
     return null;
   }
 
+  /// Whether the app can actually carry this method through to a payment.
+  ///
+  /// The shop switches methods on for the website, which has a handshake for
+  /// several this app does not -- `fonepayintent` today. Offering one means a
+  /// shopper picks it, agrees a total, taps Pay, and is only then told it does
+  /// not work here. Cash on delivery needs no gateway and is always drivable.
+  static bool canComplete(String id) =>
+      forId(id) != null || PaymentKind.of(id) == PaymentKind.cashOnDelivery;
+
   /// Reads a field from the initiate response.
   static String? _str(PlacedOrder order, String key) =>
       asString(order.gateway[key]);
 
   static Never _missing(String what) => throw ApiError(
-        statusCode: null,
-        message: 'The payment provider did not return $what.',
-      );
+    statusCode: null,
+    message: 'The payment provider did not return $what.',
+  );
 }
 
 /// Asks the order itself whether it has been paid.
@@ -164,8 +172,10 @@ class KhaltiGateway extends PaymentGateway {
   }
 
   Future<GatewayVerdict> _lookup(String pidx) async {
-    final body = await CheckoutRepository.instance
-        .confirmPayment('/payments/khalti/lookup', {'pidx': pidx});
+    final body = await CheckoutRepository.instance.confirmPayment(
+      '/payments/khalti/lookup',
+      {'pidx': pidx},
+    );
     final status = asString(body['status']);
     return GatewayVerdict(
       paid: body['success'] == true && status == 'success',
@@ -182,14 +192,30 @@ class EsewaGateway extends PaymentGateway {
   @override
   String get id => 'esewa';
 
+  /// Where the signed form goes when the server names no endpoint of its own.
+  ///
+  /// eSewa's published v2 form URL, and the same constant the storefront falls
+  /// back to. A server-supplied `actionUrl` always wins, so a shop pointed at
+  /// eSewa's test host keeps working.
+  static const _formUrl = 'https://epay.esewa.com.np/api/epay/main/v2/form';
+
   @override
   GatewayLaunch launch(PlacedOrder order) {
-    final action = PaymentGateway._str(order, 'actionUrl');
-    // Two names for the same bag, depending on which server version answered.
-    final fields = asMap(order.gateway['formFields']).isNotEmpty
-        ? asMap(order.gateway['formFields'])
-        : asMap(order.gateway['fields']);
-    if (action == null || fields.isEmpty) PaymentGateway._missing('a form');
+    // `esewaConfig` is what the server actually sends -- the same
+    // `<gateway>Config` shape as connectIPS -- and reading only the other two
+    // names is why this never launched. The rest are older spellings, kept
+    // because a server that answers with one of them still works.
+    final fields = [
+      asMap(order.gateway['esewaConfig']),
+      asMap(order.gateway['formFields']),
+      asMap(order.gateway['fields']),
+    ].firstWhere((bag) => bag.isNotEmpty, orElse: () => const {});
+    // The signed fields are the part only the server can produce; the endpoint
+    // they post to is a constant eSewa publishes, and our server does not
+    // always send it. Failing for want of a well-known URL would strand a
+    // perfectly good signature.
+    final action = PaymentGateway._str(order, 'actionUrl') ?? _formUrl;
+    if (fields.isEmpty) PaymentGateway._missing('a form');
     return GatewayLaunch.form(action, fields);
   }
 
@@ -200,14 +226,20 @@ class EsewaGateway extends PaymentGateway {
   ) async {
     final data = returned['data'];
     if (data == null) {
-      throw const ApiError(
-        statusCode: null,
-        message: 'eSewa did not send the confirmation back.',
-      );
+      // Not a protocol error, which is how this used to read. eSewa carries
+      // the envelope on its success URL only; a shopper who cancels, or a
+      // payment that does not go through, comes back through the failure URL
+      // with nothing attached. Measured against production. Treating it as
+      // abandoned is what nothing-was-charged actually means, and it leaves
+      // the retry offered -- throwing here reported a working cancellation as
+      // "eSewa did not send the confirmation back" and refused a second try.
+      return const GatewayVerdict(paid: false, abandoned: true);
     }
 
-    final body = await CheckoutRepository.instance
-        .confirmPayment('/payments/esewa/verify', {'data': data});
+    final body = await CheckoutRepository.instance.confirmPayment(
+      '/payments/esewa/verify',
+      {'data': data},
+    );
     // Success alone, deliberately. eSewa's verify does not carry a status and
     // requiring one would reject every good payment.
     return GatewayVerdict(
@@ -243,7 +275,8 @@ class ConnectIpsGateway extends PaymentGateway {
   ) {
     // The initiate value wins here, the opposite of Khalti: connectIPS returns
     // to a static URL and appends only TXNID, which can be absent entirely.
-    final txnId = PaymentGateway._str(order, 'txnId') ??
+    final txnId =
+        PaymentGateway._str(order, 'txnId') ??
         returned['TXNID'] ??
         returned['txnId'] ??
         '';
@@ -257,8 +290,10 @@ class ConnectIpsGateway extends PaymentGateway {
   }
 
   Future<GatewayVerdict> _check(String txnId) async {
-    final body = await CheckoutRepository.instance
-        .confirmPayment('/payments/connectips/check-status', {'txnId': txnId});
+    final body = await CheckoutRepository.instance.confirmPayment(
+      '/payments/connectips/check-status',
+      {'txnId': txnId},
+    );
     final status = asString(body['status']);
     return GatewayVerdict(
       paid: body['success'] == true && status == 'success',
@@ -286,8 +321,9 @@ class NpsGateway extends PaymentGateway {
 
   /// The merchant transaction id, which NPS buries inside the signed field bag.
   static String _merchantTxn(PlacedOrder order) =>
-      asString(asMap(asMap(order.gateway['gatewayConfig'])['fields'])
-          ['MerchantTxnId']) ??
+      asString(
+        asMap(asMap(order.gateway['gatewayConfig'])['fields'])['MerchantTxnId'],
+      ) ??
       '';
 
   @override
@@ -310,7 +346,10 @@ class NpsGateway extends PaymentGateway {
     return txn.isEmpty ? null : () => _check(txn, null);
   }
 
-  Future<GatewayVerdict> _check(String merchantTxnId, String? gatewayTxnId) async {
+  Future<GatewayVerdict> _check(
+    String merchantTxnId,
+    String? gatewayTxnId,
+  ) async {
     final body = await CheckoutRepository.instance.confirmPayment(
       '/payments/nps/check-status',
       {
@@ -359,8 +398,10 @@ class FonepayGateway extends PaymentGateway {
       payload['PRN'] = returned['prn'];
     }
 
-    final body = await CheckoutRepository.instance
-        .confirmPayment('/payments/fonepay/verify', payload);
+    final body = await CheckoutRepository.instance.confirmPayment(
+      '/payments/fonepay/verify',
+      payload,
+    );
     final status = asString(body['status']);
     return GatewayVerdict(
       // A negative test, uniquely. Fonepay reports a good payment with a status

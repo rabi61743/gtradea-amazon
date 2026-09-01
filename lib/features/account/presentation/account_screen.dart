@@ -1,7 +1,9 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/artwork_panel.dart';
+import '../../../shared/widgets/brand_wordmark.dart';
 import '../../../core/l10n/app_strings.dart';
 import '../../address/data/address_store.dart';
 import '../../address/presentation/address_list_screen.dart';
@@ -11,12 +13,20 @@ import '../../auth/data/auth_store.dart';
 import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/presentation/cart_screen.dart';
+import '../../help/presentation/contact_screen.dart';
+import '../../help/presentation/help_center_screen.dart';
+import '../../legal/presentation/legal_page_screen.dart';
+import '../../legal/presentation/terms_policies_screen.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../notifications/presentation/notification_settings_screen.dart';
 import '../../orders/data/order_store.dart';
 import '../../orders/presentation/orders_screen.dart';
 import '../../catalog/data/product.dart';
 import '../../product/presentation/product_detail_screen.dart';
+import '../../profile/data/profile_store.dart';
+import '../../profile/presentation/profile_settings_screen.dart';
+import '../../quotes/presentation/quote_requests_screen.dart';
+import 'product_history_screen.dart';
 import '../../settings/presentation/language_screen.dart';
 import '../../wishlist/data/wishlist_store.dart';
 import '../../wishlist/presentation/wishlist_screen.dart';
@@ -41,6 +51,9 @@ class _AccountScreenState extends State<AccountScreen> {
   void initState() {
     super.initState();
     AuthStore.instance.load();
+    // Only does anything for a signed-in shopper, and only once -- it is what
+    // puts their photograph and their saved name on the header card.
+    ProfileStore.instance.load();
     WishlistStore.instance.load();
     CartStore.instance.load();
     RecentlyViewedStore.instance.load();
@@ -56,10 +69,16 @@ class _AccountScreenState extends State<AccountScreen> {
 
   void _openAuth(AuthMode mode) => _push(AuthScreen(initialMode: mode));
 
-  void _todo(String label) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('$label is not built yet')));
+  /// The Support button beside Cart. Contact, not the Help Center: it is the
+  /// page with the address, the number and the way to track an order, which is
+  /// what somebody pressing "Support" is after.
+  void _openContact() => _push(const ContactScreen());
+
+  /// The row was already here, wired to the not-built-yet placeholder. This
+  /// is what it was waiting for.
+  void _openHelpCenter() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const HelpCenterScreen()));
   }
 
   @override
@@ -69,6 +88,7 @@ class _AccountScreenState extends State<AccountScreen> {
       // right the moment the shopper arrives from anywhere else.
       listenable: Listenable.merge([
         AuthStore.instance,
+        ProfileStore.instance,
         WishlistStore.instance,
         CartStore.instance,
         RecentlyViewedStore.instance,
@@ -112,7 +132,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     : () => _push(const OrdersScreen()),
                 onSaved: () => _push(const WishlistScreen()),
                 onCart: () => _push(const CartScreen()),
-                onHelp: () => _todo('Help centre'),
+                onHelp: _openContact,
               ),
 
               if (viewed.isNotEmpty) ...[
@@ -124,14 +144,16 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
                 _RecentlyViewedRail(
                   items: viewed,
-                  onTap: (product) => _push(ProductDetailScreen(
-                    product: productStub(
-                      numIid: product.id,
-                      title: product.title,
-                      imageUrl: product.imageUrl,
-                      displayPrice: product.price,
+                  onTap: (product) => _push(
+                    ProductDetailScreen(
+                      product: productStub(
+                        numIid: product.id,
+                        title: product.title,
+                        imageUrl: product.imageUrl,
+                        displayPrice: product.price,
+                      ),
                     ),
-                  )),
+                  ),
                 ),
               ],
 
@@ -139,6 +161,15 @@ class _AccountScreenState extends State<AccountScreen> {
               const _GroupLabel('Account settings'),
               _RowGroup(
                 rows: [
+                  // Only for a signed-in shopper. Offering it to a guest would
+                  // open a page whose every field is about an account they do
+                  // not have.
+                  if (account != null)
+                    _RowSpec(
+                      icon: Icons.manage_accounts_outlined,
+                      label: 'Profile settings',
+                      onTap: () => _push(const ProfileSettingsScreen()),
+                    ),
                   _RowSpec(
                     icon: Icons.translate,
                     label: LanguageStore.instance.strings.language,
@@ -148,8 +179,7 @@ class _AccountScreenState extends State<AccountScreen> {
                   _RowSpec(
                     icon: Icons.notifications_none,
                     label: 'Notifications',
-                    onTap: () =>
-                        _push(const NotificationSettingsScreen()),
+                    onTap: () => _push(const NotificationSettingsScreen()),
                   ),
                   _RowSpec(
                     icon: Icons.location_on_outlined,
@@ -158,6 +188,16 @@ class _AccountScreenState extends State<AccountScreen> {
                         ? null
                         : '${AddressStore.instance.count}',
                     onTap: () => _push(const AddressListScreen()),
+                  ),
+                  _RowSpec(
+                    icon: Icons.history,
+                    label: 'Product history',
+                    onTap: () => _push(const ProductHistoryScreen()),
+                  ),
+                  _RowSpec(
+                    icon: Icons.request_quote_outlined,
+                    label: 'My quote requests',
+                    onTap: () => _push(const QuoteRequestsScreen()),
                   ),
                   _RowSpec(
                     icon: Icons.payments_outlined,
@@ -179,17 +219,24 @@ class _AccountScreenState extends State<AccountScreen> {
                   _RowSpec(
                     icon: Icons.support_agent,
                     label: 'Help centre',
-                    onTap: () => _todo('Help centre'),
+                    onTap: _openHelpCenter,
                   ),
                   _RowSpec(
                     icon: Icons.description_outlined,
                     label: 'Terms and policies',
-                    onTap: () => _todo('Terms and policies'),
+                    onTap: () => _push(const TermsPoliciesScreen()),
                   ),
                   _RowSpec(
                     icon: Icons.info_outline,
-                    label: 'About GtradeA',
-                    onTap: () => _todo('About'),
+                    label: 'About ${AppBrand.name}',
+                    // The shop's own About page, by the slug it publishes it
+                    // under, rather than a copy pasted into the app.
+                    onTap: () => _push(
+                      const LegalPageScreen(
+                        slug: 'about',
+                        title: 'About ${AppBrand.name}',
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -206,9 +253,8 @@ class _AccountScreenState extends State<AccountScreen> {
                       minimumSize: const Size.fromHeight(48),
                       foregroundColor: Theme.of(context).colorScheme.error,
                       side: BorderSide(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.error.withValues(alpha: 0.4),
+                        color: Theme.of(context).colorScheme.error
+                            .withValues(alpha: 0.4),
                       ),
                     ),
                   ),
@@ -292,7 +338,7 @@ class _GuestCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Welcome to GtradeA',
+                        'Welcome to ${AppBrand.name}',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -321,7 +367,9 @@ class _GuestCard extends StatelessWidget {
               children: [
                 FilledButton(
                   onPressed: onSignIn,
-                  style: FilledButton.styleFrom(minimumSize: const Size(132, 44)),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(132, 44),
+                  ),
                   child: const Text('Sign In'),
                 ),
                 OutlinedButton(
@@ -349,7 +397,11 @@ class _ProfileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final name = account.displayName;
+    // The profile row when it has arrived, the session's copy until then. The
+    // settings page writes the row, so this is what makes a saved name and
+    // photograph show up here the moment they are saved.
+    final name = ProfileStore.instance.displayName ?? account.displayName;
+    final photo = ProfileStore.instance.avatarUrl;
     final initial = name.isEmpty ? '?' : name.characters.first.toUpperCase();
 
     return Padding(
@@ -365,17 +417,7 @@ class _ProfileCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 26,
-              backgroundColor: theme.colorScheme.primary,
-              child: Text(
-                initial,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  color: theme.colorScheme.onPrimary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
+            _AccountAvatar(url: photo, initial: initial),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -403,6 +445,49 @@ class _ProfileCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The header photograph, or the initial when there is none.
+///
+/// Falls back to the initial on a failed load as well as on a missing URL: an
+/// avatar that 404s must not leave a broken-image glyph where a face was.
+class _AccountAvatar extends StatelessWidget {
+  const _AccountAvatar({required this.url, required this.initial});
+
+  final String? url;
+  final String initial;
+
+  static const _radius = 26.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fallback = CircleAvatar(
+      radius: _radius,
+      backgroundColor: theme.colorScheme.primary,
+      child: Text(
+        initial,
+        style: theme.textTheme.titleLarge?.copyWith(
+          color: theme.colorScheme.onPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+
+    final address = url;
+    if (address == null || address.isEmpty) return fallback;
+
+    return ClipOval(
+      child: CachedNetworkImage(
+        imageUrl: address,
+        width: _radius * 2,
+        height: _radius * 2,
+        fit: BoxFit.cover,
+        placeholder: (_, _) => fallback,
+        errorWidget: (_, _, _) => fallback,
       ),
     );
   }

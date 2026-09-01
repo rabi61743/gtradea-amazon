@@ -46,12 +46,24 @@ class AuthSession {
     return value is String && value.isNotEmpty ? value : null;
   }
 
+  /// The same session carrying a newer copy of the user object.
+  ///
+  /// Tokens are untouched: changing a name or an address on GoTrue does not
+  /// issue new ones, and replacing a working access token with anything else
+  /// here would sign the shopper out mid-edit.
+  AuthSession withUser(Map<String, dynamic> user) => AuthSession(
+    accessToken: accessToken,
+    refreshToken: refreshToken,
+    expiresAt: expiresAt,
+    user: user,
+  );
+
   Map<String, dynamic> toJson() => {
-        'access_token': accessToken,
-        'refresh_token': refreshToken,
-        'expires_at': expiresAt,
-        'user': user,
-      };
+    'access_token': accessToken,
+    'refresh_token': refreshToken,
+    'expires_at': expiresAt,
+    'user': user,
+  };
 
   /// Lenient on purpose. The password grant returns `expires_in`, the refresh
   /// grant returns both, and the OAuth fragment returns everything as strings
@@ -95,8 +107,9 @@ class AuthSession {
 class SessionStore {
   SessionStore._(this._storage);
 
-  static final SessionStore instance =
-      SessionStore._(const FlutterSecureStorage());
+  static final SessionStore instance = SessionStore._(
+    const FlutterSecureStorage(),
+  );
 
   /// For tests: an isolated store over a fake backing.
   @visibleForTesting

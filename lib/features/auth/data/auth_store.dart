@@ -16,6 +16,7 @@ class Account {
     required this.email,
     this.firstName,
     this.lastName,
+    this.avatarUrl,
   });
 
   /// The GoTrue user id. Every user-scoped row on the server keys on it.
@@ -23,6 +24,11 @@ class Account {
   final String email;
   final String? firstName;
   final String? lastName;
+
+  /// Whatever the identity provider supplied -- Google puts a photograph here
+  /// on sign-in. The gateway's profile row is the one the shopper edits, and
+  /// it wins when it has one; this is what an account has before that.
+  final String? avatarUrl;
 
   /// What to greet them with. Falls back to the part of the address before the
   /// @, which reads better in a heading than the whole email.
@@ -44,13 +50,17 @@ class Account {
     final id = user['id'] ?? user['sub'];
     final email = user['email'];
     if (id is! String || id.isEmpty) return null;
-    final meta = (user['user_metadata'] as Map?)?.cast<String, dynamic>() ??
+    final meta =
+        (user['user_metadata'] as Map?)?.cast<String, dynamic>() ??
         const <String, dynamic>{};
     return Account(
       id: id,
       email: email is String ? email : '',
       firstName: _str(meta['first_name']) ?? _str(meta['given_name']),
       lastName: _str(meta['last_name']) ?? _str(meta['family_name']),
+      // Both spellings: GoTrue's own metadata uses `avatar_url`, and Google's
+      // OIDC claim arrives as `picture`.
+      avatarUrl: _str(meta['avatar_url']) ?? _str(meta['picture']),
     );
   }
 
@@ -117,12 +127,24 @@ class AuthStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-reads the account from the stored session.
+  ///
+  /// Unlike [load] this always reads, because it exists for the case where the
+  /// session was just rewritten -- changing a name or an email on GoTrue
+  /// updates the user object in secure storage, and without this the header
+  /// would keep showing the old one until the app restarted.
+  Future<void> reloadFromSession() async {
+    final session = await SessionStore.instance.read();
+    final account = Account.fromUser(session?.user);
+    if (account == null) return;
+    _account = account;
+    _loaded = true;
+    notifyListeners();
+  }
+
   /// Throws [ApiError] with the server's own message on a bad password, an
   /// unconfirmed address or a dead connection.
-  Future<void> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<void> signIn({required String email, required String password}) async {
     final session = await _auth.signIn(email, password);
     _adopt(session);
   }

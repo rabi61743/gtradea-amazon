@@ -90,11 +90,75 @@ ProductDetail get sampleDetail =>
 
 /// A feed response: several rows, one of which has no price at all.
 List<Map<String, dynamic>> feedRows(int count) => [
-      for (var i = 0; i < count; i++)
-        {
-          ...feedRowJson,
-          'num_iid': 'iid-$i',
-          'title': 'Catalogue product $i',
-          'display_price': i == 1 ? null : 300 + i,
-        },
-    ];
+  for (var i = 0; i < count; i++)
+    {
+      ...feedRowJson,
+      'num_iid': 'iid-$i',
+      'title': 'Catalogue product $i',
+      'display_price': i == 1 ? null : 300 + i,
+    },
+];
+
+/// A two-axis listing: colourways down, sizes across.
+///
+/// Shaped after what `/api/1688/product` actually returns for apparel, which is
+/// how most of this catalogue is sold -- one live listing carries 21 colours by
+/// 4 sizes. Four things here are in the real feed and all four matter:
+///
+///   * sizes arrive carrying their own fitting guide, in full-width brackets;
+///   * the grid is **sparse** -- Ideal green is not made in XL at all;
+///   * a combination can be stocked and sold out, which is not the same thing;
+///   * XL costs more than M, so the grid has to show a price per row.
+final Map<String, dynamic> gridDetailResponseJson = {
+  'success': true,
+  'item': {
+    'num_iid': '878016491892',
+    'title': 'Cotton Polo Shirt, Short Sleeve, Wholesale',
+    'pic_url': 'https://cbu01.alicdn.com/img/ibank/polo.jpg',
+    'images': ['https://cbu01.alicdn.com/img/ibank/polo.jpg'],
+    'desc_short': '<p>Cotton polo.</p>',
+    'min_order_quantity': 4,
+    'category_id': '10165',
+    'seller_info': {'shop_name': 'Hangzhou Apparel'},
+    'skus': [
+      for (final colour in const ['White', 'Wine red', 'Ideal green'])
+        for (final size in const [
+          'M【 50.5-57.5kg 】',
+          'L【 58-65kg 】',
+          'Xl【 65.5-75kg 】',
+        ])
+          // Ideal green stops at L: the seller never made it in XL.
+          if (!(colour == 'Ideal green' && size.startsWith('Xl')))
+            {
+              'sku_id': 'sku-$colour-${size[0]}',
+              'spec_id': 'spec-$colour-${size[0]}',
+              // Wine red XL is made but gone; White XL is down to five.
+              'quantity': colour == 'Wine red' && size.startsWith('Xl')
+                  ? 0
+                  : colour == 'White' && size.startsWith('Xl')
+                  ? 5
+                  : 900,
+              'image_url':
+                  'https://cbu01.alicdn.com/img/ibank/${colour.toLowerCase()}.jpg',
+              'variant_parts': [
+                {'name': 'Color', 'value': colour},
+                {'name': 'Size', 'value': size},
+              ],
+            },
+    ],
+  },
+  'pricing': {
+    'displayPrice': 250,
+    'skuPrices': {
+      for (final colour in const ['White', 'Wine red', 'Ideal green'])
+        for (final size in const ['M', 'L', 'X'])
+          'sku-$colour-$size': size == 'X' ? 300 : 250,
+    },
+    'quantityTiers': [
+      {'min_quantity': 4, 'displayPrice': 250},
+    ],
+  },
+};
+
+ProductDetail get gridDetail =>
+    ProductDetail.fromApi(gridDetailResponseJson, fallback: sampleProduct);

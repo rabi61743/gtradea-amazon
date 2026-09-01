@@ -101,10 +101,7 @@ class _AddressPickerSheetState extends State<AddressPickerSheet> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([
-        AddressStore.instance,
-        AuthStore.instance,
-      ]),
+      listenable: Listenable.merge([AddressStore.instance, AuthStore.instance]),
       builder: (context, _) {
         final store = AddressStore.instance;
         final matches = store.search(_query);
@@ -115,72 +112,74 @@ class _AddressPickerSheetState extends State<AddressPickerSheet> {
         return Material(
           color: Theme.of(context).colorScheme.surface,
           child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.82,
-          maxChildSize: 0.95,
-          minChildSize: 0.5,
-          builder: (context, controller) => Column(
-            children: [
-              const SizedBox(height: 8),
-              const _Grabber(),
-              _Header(onClose: () => Navigator.of(context).pop()),
-              if (store.count > 2) _SearchField(
-                controller: _search,
-                onChanged: (value) => setState(() => _query = value),
-              ),
-              Expanded(
-                child: ListView(
-                  controller: controller,
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                  children: [
-                    UseMyLocationTile(onDetected: _addNew),
-                    const SizedBox(height: 16),
-                    if (store.isEmpty)
-                      _NoAddresses(
-                        signedIn: signedIn,
-                        quickCities: _quickCities,
-                        onPick: (city, province) => _addNew((
-                              city: city,
-                              province: province,
-                              addressLine: null,
-                              postalCode: null,
-                              approximate: false,
-                            )),
-                      )
-                    else ...[
-                      if (matches.isEmpty)
-                        _NoMatches(query: _query)
-                      else
-                        for (final address in matches)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _AddressCard(
-                              address: address,
-                              isSelected: address.id ==
-                                  (widget.selectedId ?? store.defaultAddress?.id),
-                              isDefault: store.isDefault(address.id),
-                              onTap: () =>
-                                  Navigator.of(context).pop(address),
-                              onEdit: () async {
-                                final edited = await AddressFormSheet.show(
-                                  context,
-                                  existing: address,
-                                );
-                                if (edited != null && context.mounted) {
-                                  Navigator.of(context).pop(edited);
-                                }
-                              },
+            expand: false,
+            initialChildSize: 0.82,
+            maxChildSize: 0.95,
+            minChildSize: 0.5,
+            builder: (context, controller) => Column(
+              children: [
+                const SizedBox(height: 8),
+                const _Grabber(),
+                _Header(onClose: () => Navigator.of(context).pop()),
+                if (store.count > 2)
+                  _SearchField(
+                    controller: _search,
+                    onChanged: (value) => setState(() => _query = value),
+                  ),
+                Expanded(
+                  child: ListView(
+                    controller: controller,
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                    children: [
+                      UseMyLocationTile(onDetected: _addNew),
+                      const SizedBox(height: 16),
+                      if (store.isEmpty)
+                        _NoAddresses(
+                          signedIn: signedIn,
+                          quickCities: _quickCities,
+                          onPick: (city, province) => _addNew((
+                            city: city,
+                            province: province,
+                            addressLine: null,
+                            postalCode: null,
+                            approximate: false,
+                          )),
+                        )
+                      else ...[
+                        if (matches.isEmpty)
+                          _NoMatches(query: _query)
+                        else
+                          for (final address in matches)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _AddressCard(
+                                address: address,
+                                isSelected:
+                                    address.id ==
+                                    (widget.selectedId ??
+                                        store.defaultAddress?.id),
+                                isDefault: store.isDefault(address.id),
+                                onTap: () => Navigator.of(context).pop(address),
+                                onEdit: () async {
+                                  final edited = await AddressFormSheet.show(
+                                    context,
+                                    existing: address,
+                                  );
+                                  if (edited != null && context.mounted) {
+                                    Navigator.of(context).pop(edited);
+                                  }
+                                },
+                              ),
                             ),
-                          ),
-                      const SizedBox(height: 6),
-                      if (!signedIn) const _GuestNote(),
+                        const SizedBox(height: 6),
+                        if (!signedIn) const _GuestNote(),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              _AddButton(onPressed: () => _addNew()),
-            ],
-          ),
+                _AddButton(onPressed: () => _addNew()),
+              ],
+            ),
           ),
         );
       },
@@ -207,8 +206,9 @@ class _Header extends StatelessWidget {
               children: [
                 Text(
                   'Deliver to',
-                  style: theme.textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -331,16 +331,10 @@ class _AddressCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Flexible(
-                        child: Text(
-                          address.fullName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
+                      // No headline. It used to be the name, which the form no
+                      // longer asks for, and swapping the address in printed it
+                      // twice over the full line just below. The tags lead and
+                      // the address speaks for itself.
                       _Tag(text: address.label.title),
                       if (isDefault) ...[
                         const SizedBox(width: 6),
@@ -400,8 +394,10 @@ class _Tag extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: theme.textTheme.labelSmall
-            ?.copyWith(color: colour, fontWeight: FontWeight.w700),
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: colour,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -451,8 +447,9 @@ class _NoAddresses extends StatelessWidget {
                 children: [
                   Text(
                     'No addresses yet',
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w800),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 3),
                   Text(
@@ -579,9 +576,7 @@ class _AddButton extends StatelessWidget {
           onPressed: onPressed,
           icon: const Icon(Icons.add, size: 20),
           label: const Text('Add a new address'),
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-          ),
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
         ),
       ),
     );

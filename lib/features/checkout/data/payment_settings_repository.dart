@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/network/json.dart';
+import 'payment_gateway.dart';
 import 'payment_method.dart';
 
 /// Which ways to pay this storefront currently accepts.
@@ -18,20 +19,26 @@ class PaymentSettingsRepository {
 
   Dio get _dio => ApiClient.http;
 
-  /// The enabled methods, in the shop's own order.
+  /// The methods this app can offer, in the shop's own order.
+  ///
+  /// Filtered to what the app can actually complete, in one place rather than
+  /// per screen, so the checkout page and the payment methods screen cannot
+  /// disagree about what the shop takes.
   Future<List<PaymentMethod>> methods() => guarded(() async {
-        final res = await _dio.get(
-          '/site-settings/active_payment_methods',
-          options: guestCall,
-        );
-        final body = asMap(res.data);
-        // The endpoint answers either the setting row or the value directly.
-        // An unseeded key is a normal state and comes back with a null value.
-        final value = body.containsKey('setting_value')
-            ? body['setting_value']
-            : body;
-        return decodePaymentMethods(value);
-      });
+    final res = await _dio.get(
+      '/site-settings/active_payment_methods',
+      options: guestCall,
+    );
+    final body = asMap(res.data);
+    // The endpoint answers either the setting row or the value directly.
+    // An unseeded key is a normal state and comes back with a null value.
+    final value = body.containsKey('setting_value')
+        ? body['setting_value']
+        : body;
+    return decodePaymentMethods(value)
+        .where((method) => PaymentGateway.canComplete(method.id))
+        .toList(growable: false);
+  });
 
   /// What share of the order the gateway collects up front.
   ///
