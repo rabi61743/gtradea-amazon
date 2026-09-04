@@ -562,14 +562,14 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Email'),
+        find.widgetWithText(TextFormField, 'Email address'),
         'not-an-email',
       );
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Password'),
         'short',
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+      await tester.tap(find.text('Sign in'));
       await tester.pumpAndSettle();
 
       expect(find.text('Enter a valid email address'), findsOneWidget);
@@ -626,17 +626,20 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Email'),
+        find.widgetWithText(TextFormField, 'Email address'),
         'rabi@example.com',
       );
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Password'),
         'correct-horse',
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+      await tester.tap(find.text('Sign in'));
       await tester.pumpAndSettle();
 
-      expect(api.calls.single.json['password'], 'correct-horse');
+      // The sign-in call itself. The screen also asks GoTrue which providers
+      // are configured, which is a second call on the same stub.
+      final signIn = api.calls.firstWhere((c) => c.path.endsWith('/token'));
+      expect(signIn.json['password'], 'correct-horse');
       expect(AuthStore.instance.isSignedIn, isTrue);
       expect(AuthStore.instance.account?.email, 'rabi@example.com');
     });
@@ -649,14 +652,14 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Email'),
+        find.widgetWithText(TextFormField, 'Email address'),
         'rabi@example.com',
       );
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Password'),
         'wrong-guess-here',
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+      await tester.tap(find.text('Sign in'));
       await tester.pumpAndSettle();
 
       // Rephrased, because GoTrue's own wording does not tell a shopper which
@@ -684,20 +687,18 @@ void main() {
         'Rabi Yadav',
       );
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Email'),
+        find.widgetWithText(TextFormField, 'Email address'),
         'rabi@example.com',
       );
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Password'),
         'correct-horse',
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+      await tester.tap(find.text('Create account'));
       await tester.pumpAndSettle();
 
-      expect(api.calls.single.json['data'], {
-        'first_name': 'Rabi',
-        'last_name': 'Yadav',
-      });
+      final signUp = api.calls.firstWhere((c) => c.path.endsWith('/signup'));
+      expect(signUp.json['data'], {'first_name': 'Rabi', 'last_name': 'Yadav'});
       expect(AuthStore.instance.account?.displayName, 'Rabi Yadav');
     });
 
@@ -717,20 +718,20 @@ void main() {
         'Rabi',
       );
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Email'),
+        find.widgetWithText(TextFormField, 'Email address'),
         'rabi@example.com',
       );
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Password'),
         'correct-horse',
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+      await tester.tap(find.text('Create account'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Check rabi@example.com'), findsOneWidget);
       expect(AuthStore.instance.isSignedIn, isFalse);
       // Switched to sign-in, so the next step is the obvious one.
-      expect(find.widgetWithText(FilledButton, 'Sign in'), findsOneWidget);
+      expect(find.text('Sign in'), findsOneWidget);
     });
 
     testWidgets('switching modes keeps what was already typed', (tester) async {
@@ -738,10 +739,13 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Email'),
+        find.widgetWithText(TextFormField, 'Email address'),
         'rabi@example.com',
       );
-      await tester.tap(find.text('Sign Up'));
+      // The link sits below the fold of a 600pt test window.
+      await tester.ensureVisible(find.textContaining('Create an account'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Create an account'));
       await tester.pumpAndSettle();
 
       // The name field appeared, and the email survived the switch.

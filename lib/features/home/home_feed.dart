@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../shared/widgets/loadable_view.dart';
+import '../cart/presentation/cart_screen.dart';
+import '../../../core/ui/action_status.dart';
+import '../../../shared/widgets/loadable_view.dart';
 import '../catalog/data/catalog_repository.dart';
 import '../catalog/data/catalog_store.dart';
 import '../catalog/data/product.dart';
@@ -13,7 +15,10 @@ import 'data/fallback_banners.dart';
 import '../catalog/presentation/browse_screen.dart';
 import '../catalog/presentation/category_screen.dart';
 import 'widgets/department_feed.dart';
-import 'widgets/delivery_banner.dart';
+import '../free_delivery/data/free_delivery_repository.dart';
+import '../corporate_gifts/presentation/corporate_gifts_screen.dart';
+import '../free_delivery/presentation/free_delivery_screen.dart';
+import 'widgets/promo_section.dart';
 import 'widgets/department_grid.dart';
 import 'widgets/hero_banner.dart' as banner;
 import 'widgets/product_carousel.dart';
@@ -47,6 +52,13 @@ class HomeFeed extends StatefulWidget {
 }
 
 class _HomeFeedState extends State<HomeFeed> {
+  /// Asked for once, not on every rebuild: the home feed rebuilds on every
+  /// store notification, and a future recreated in build would refetch each
+  /// time and flicker the line under the headline.
+  final Future<num?> _freeDeliveryThreshold = FreeDeliveryRepository.instance
+      .threshold()
+      .catchError((_) => null);
+
   /// How far down the catalogue the Browse sections reach.
   ///
   /// The head of the tree, which is where the departments a shopper is most
@@ -149,6 +161,37 @@ class _HomeFeedState extends State<HomeFeed> {
 
   /// The department the electronics block draws from.
   static const _electronicsCid = '57';
+
+  // The departments the promo banners open. Measured on the live tree:
+  // /alibaba-categories?parent_cid=null.
+  static const _digitalCid = '7'; // Digital, Computer
+  static const _furnitureCid = '96'; // Home Textile Furniture
+  static const _toysCid = '1813'; // Toys
+  static const _womenCid = '10166'; // Women
+  static const _menCid = '10165'; // Men
+  static const _footwearCid = '1038378'; // Footwear
+  static const _toolsCid = '59'; // Hardware, tools
+  static const _babyCid = '1501'; // Maternal and Infant Supplies
+  static const _beautyCid = '97'; // Beauty Skincare/Makeup
+  static const _bathroomCid = '122384004'; // Bathroom fixtures
+  static const _cleaningCid = '201547901'; // Organize cleaning supplies
+  static const _lightingCid = '58'; // Lighting
+  static const _safetyCid = '70'; // Safety, protection
+  static const _schoolCid = '2111'; // Learn stationery
+  static const _petsCid = '121814002'; // Pets & Supplies
+  static const _industrialCid = '65'; // Machinery and industry equipment
+  static const _agricultureCid = '1'; // Agriculture
+  static const _electricalCid = '5'; // Electrician Electrical
+  static const _machineryCid = '1426'; // Machine tools
+  static const _textilesCid = '4'; // Textiles, Leathers
+  static const _bagsCid = '1042954'; // Bags & Leather
+  static const _decorCid = '127888009'; // Creative Ornaments
+  static const _outdoorLivingCid = '125'; // Garden materials
+  static const _packagingCid = '68'; // Packaging
+  // A subcategory of Sports Outdoors, not the department: the Sports & Fitness
+  // banner already opens that, and this one advertises tents.
+  static const _campingCid = '281904'; // Mountain, Camping Supplies
+  static const _kitchenCid = '201547801'; // Daily Dining Kitchen Utensils
 
   /// The four of its children the block shows, in this order.
   ///
@@ -365,7 +408,7 @@ class _HomeFeedState extends State<HomeFeed> {
   /// claims otherwise.
   void _addProduct(BuildContext context, Product product) {
     if (!product.hasPrice) return;
-    CartStore.instance.add(
+    final inCart = CartStore.instance.add(
       CartLine(
         productId: product.numIid,
         title: product.title,
@@ -377,20 +420,26 @@ class _HomeFeedState extends State<HomeFeed> {
         source: '1688',
       ),
     );
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('${product.title} added to your cart'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    ActionStatus.addedToCart(
+      context,
+      title: product.title,
+      inCart: inCart,
+      onViewCart: () =>
+          Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => const CartScreen())),
+    );
   }
 
-  void _openSearch(BuildContext context, {String query = '', String? cid}) {
+  void _openSearch(
+    BuildContext context, {
+    String query = '',
+    String? cid,
+    ProductSort sort = ProductSort.relevance,
+  }) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SearchResultsScreen(query: query, categoryCid: cid),
+        builder: (_) =>
+            SearchResultsScreen(query: query, categoryCid: cid, sort: sort),
       ),
     );
   }
@@ -524,6 +573,66 @@ class _HomeFeedState extends State<HomeFeed> {
               return FlashSaleCard(sale: sale, onTap: openDeals);
             },
           ),
+          // Directly under the flash sale, as the design places it: the
+          // promotional block in its own colours. Outside any LoadableView,
+          // so a catalogue that fails to load does not take the delivery
+          // promise down with it -- the promise is true either way.
+          FutureBuilder<num?>(
+            future: _freeDeliveryThreshold,
+            builder: (context, snapshot) => PromoSection(
+              threshold: snapshot.data,
+              onFreeDelivery: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const FreeDeliveryScreen()),
+              ),
+              // Each banner opens the department it advertises. The cids are
+              // the shop's own, read off /alibaba-categories: a banner that
+              // said Electronics and opened a search for the word would have
+              // been a guess about what the catalogue calls things.
+              onElectronics: () => _openSearch(context, cid: _digitalCid),
+              onFurniture: () => _openSearch(context, cid: _furnitureCid),
+              onToys: () => _openSearch(context, cid: _toysCid),
+              onKitchen: () => _openSearch(context, cid: _kitchenCid),
+              onWomen: () => _openSearch(context, cid: _womenCid),
+              // The two departments the edit blocks further down already use.
+              onAppliances: () => _openSearch(context, cid: _appliancesCid),
+              onSports: () => _openSearch(context, cid: _sportsCid),
+              onPackaging: () => _openSearch(context, cid: _packagingCid),
+              onCamping: () => _openSearch(context, cid: _campingCid),
+              onMen: () => _openSearch(context, cid: _menCid),
+              onFootwear: () => _openSearch(context, cid: _footwearCid),
+              onTools: () => _openSearch(context, cid: _toolsCid),
+              onBaby: () => _openSearch(context, cid: _babyCid),
+              onBeauty: () => _openSearch(context, cid: _beautyCid),
+              // "Trending now" is this catalogue's best selling: the whole
+              // shop ordered by what is actually moving. There is no separate
+              // trending screen to open, and pointing it at the deals page
+              // would be advertising discounts as popularity.
+              onTrending: () => _openSearch(context, sort: ProductSort.sales),
+              onBathroom: () => _openSearch(context, cid: _bathroomCid),
+              onCleaning: () => _openSearch(context, cid: _cleaningCid),
+              onLighting: () => _openSearch(context, cid: _lightingCid),
+              onSafety: () => _openSearch(context, cid: _safetyCid),
+              onSchool: () => _openSearch(context, cid: _schoolCid),
+              onPets: () => _openSearch(context, cid: _petsCid),
+              onIndustrial: () => _openSearch(context, cid: _industrialCid),
+              onAgriculture: () => _openSearch(context, cid: _agricultureCid),
+              onElectrical: () => _openSearch(context, cid: _electricalCid),
+              onMachinery: () => _openSearch(context, cid: _machineryCid),
+              onTextiles: () => _openSearch(context, cid: _textilesCid),
+              onBags: () => _openSearch(context, cid: _bagsCid),
+              onDecor: () => _openSearch(context, cid: _decorCid),
+              onOutdoorLiving: () =>
+                  _openSearch(context, cid: _outdoorLivingCid),
+              onCorporateGifts: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CorporateGiftsScreen()),
+              ),
+              // "Explore to find your surprise" is the deals page: the shop's
+              // own discounted items, which is the only thing behind this app
+              // that a sale banner can honestly lead to.
+              onOffers: () => Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const DealsScreen())),
+            ),
+          ),
           LoadableView<List<Category>>(
             loadable: store.categories,
             emptyCheck: (categories) => categories.isEmpty,
@@ -551,12 +660,7 @@ class _HomeFeedState extends State<HomeFeed> {
               ],
             ),
           ),
-          // Directly above the recommendations, which is what the design asked
-          // for. Outside their LoadableView, so a feed that fails to load does
-          // not take the delivery promise down with it -- the promise is true
-          // either way.
-          DeliveryBanner(onShop: () => _openSearch(context)),
-          // Directly under the delivery promise, and drawn down the page rather
+          // Drawn down the page rather
           // than along a rail: twenty products are meant to be browsed, and a
           // rail of twenty is nineteen swipes to reach the end of.
           //

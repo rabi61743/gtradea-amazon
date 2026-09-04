@@ -116,12 +116,48 @@ void main() {
             .first,
       );
 
-      // 90 is every inset between the screen edge and the clock: the card's
-      // own 16pt page margin, its 16pt padding, the countdown panel's 12 and
+      // 76 is every inset between the screen edge and the clock: the card's
+      // own 16pt page margin, its 11pt padding, the countdown panel's 10 and
       // that panel's 1pt border, each doubled. So the clock is given every
       // point of the row that is not padding.
-      expect(box.width, closeTo(card.width - 90, 1), reason: '${width}dp');
+      expect(box.width, closeTo(card.width - 76, 1), reason: '${width}dp');
       expect(tester.takeException(), isNull, reason: '${width}dp');
+    }
+  });
+
+  testWidgets('is banner-height, not block-height', (tester) async {
+    // Asked for directly: the card is to read at about the height of the promo
+    // banner further down the page rather than as a block of its own. It was
+    // 201pt on a 412dp handset against that banner's 92, which is what the
+    // request was about.
+    //
+    // Not equal to the banner, and it cannot be: the banner is a picture that
+    // scales with the width, and this card carries a heading, a sentence and
+    // four labelled clock cells whose height is set by the type in them, not by
+    // how wide the phone is. What is pinned here is that it stays in the same
+    // band -- and every one of those parts is still on it, which the tests
+    // above check.
+    for (final width in [360.0, 412.0]) {
+      tester.view.physicalSize = Size(width * 3, 2400);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        _wrap(
+          FlashSaleCard(
+            sale: _sale(now.add(const Duration(hours: 2))),
+            onTap: () {},
+            now: () => now,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final card = tester.getSize(find.byType(FlashSaleCard));
+
+      expect(card.height, lessThan(150), reason: '${width}dp');
+      // The old height, kept as the thing not to go back to.
+      expect(card.height, lessThan(201 * 0.75), reason: '${width}dp');
     }
   });
 

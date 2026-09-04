@@ -168,36 +168,19 @@ class _DepartmentTabsState extends State<DepartmentTabs> {
               ),
               itemCount: shown.length + 1,
               itemBuilder: (context, i) {
-                // if (i == 0) {
-                //   return _Tab(
-                //     label: 'For You',
-                //     icon: Icons.shopping_bag_outlined,
-                //     selected: widget.selectedCid == null,
-                //     onTap: () => widget.onSelected(null),
-                //   );
-                // }
-                if (i == 0) { //Added shadows
-  final selected = widget.selectedCid == null;
-
-  return Container(
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(12),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.25),
-          blurRadius: 0,
-          offset: const Offset(0, 4),
-        ),
-      ],
-    ),
-    child: _Tab(
-      label: 'For You',
-      icon: Icons.shopping_bag_outlined,
-      selected: selected,
-      onTap: () => widget.onSelected(null),
-    ),
-  );
-}
+                // The selected tab's shadow is not drawn here. It used to be
+                // wrapped around this first tab, which meant "For You" carried
+                // it whether or not it was the one chosen -- and no other tab
+                // could ever have it. It is one layer under the strip now, and
+                // it slides. See [_SelectionShadow].
+                if (i == 0) {
+                  return _Tab(
+                    label: 'For You',
+                    icon: Icons.shopping_bag_outlined,
+                    selected: widget.selectedCid == null,
+                    onTap: () => widget.onSelected(null),
+                  );
+                }
                 final category = shown[i - 1];
                 return _Tab(
                   label: category.name,
@@ -208,7 +191,25 @@ class _DepartmentTabsState extends State<DepartmentTabs> {
               },
             );
 
-            if (fits) return strip;
+            // Under the strip, not over it: the tabs are drawn on top of
+            // their own shadow, exactly as they were when it was wrapped
+            // around one of them.
+            final layered = Stack(
+              children: [
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: _SelectionShadow(
+                      slot: _indexOfSelected(),
+                      leading: fits ? (constraints.maxWidth - total) / 2 : 8.0,
+                      controller: _controller,
+                    ),
+                  ),
+                ),
+                strip,
+              ],
+            );
+
+            if (fits) return layered;
 
             // Says there is more without spending a row on a scrollbar: the
             // departments fade out at whichever edge still has more behind it.
@@ -237,11 +238,87 @@ class _DepartmentTabsState extends State<DepartmentTabs> {
                   if (_moreRight) 1.0,
                 ],
               ).createShader(bounds),
-              child: strip,
+              child: layered,
             );
           },
         ),
       ),
+    );
+  }
+}
+
+/// The active tab's shadow, drawn once and moved.
+///
+/// One shadow exists for the whole strip rather than one per tab, which is
+/// what makes "only the current tab is marked" true by construction: there is
+/// nothing to leave behind on the tab you came from.
+///
+/// It travels on two things at once -- the slot it is heading for, and the
+/// strip's own scroll offset -- so it stays under its tab while the strip
+/// scrolls the newly chosen department into view.
+class _SelectionShadow extends StatelessWidget {
+  const _SelectionShadow({
+    required this.slot,
+    required this.leading,
+    required this.controller,
+  });
+
+  /// Which tab is selected: 0 for "For You", or -1 for a department that is
+  /// not among the twelve on the strip.
+  final int slot;
+
+  /// The strip's leading padding, which the first tab starts after.
+  final double leading;
+
+  final ScrollController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    // Nothing to mark. A department chosen from "Shop by category" that did
+    // not make the strip has no tab to sit under, and a shadow parked at the
+    // left edge would claim the wrong one.
+    if (slot < 0) return const SizedBox.shrink();
+
+    return AnimatedBuilder(
+      // Redraws as the strip scrolls, so the shadow keeps its tab rather than
+      // sliding off it.
+      animation: controller,
+      builder: (context, _) {
+        final offset = controller.hasClients ? controller.offset : 0.0;
+
+        return TweenAnimationBuilder<double>(
+          // The slot itself is what animates, so the shadow travels the tabs
+          // between here and there instead of cutting across.
+          tween: Tween<double>(end: slot.toDouble()),
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          builder: (context, position, child) => Stack(
+            children: [
+              Positioned(
+                left: leading + position * DepartmentTabs.itemWidth - offset,
+                top: 0,
+                bottom: 0,
+                width: DepartmentTabs.itemWidth,
+                child: child!,
+              ),
+            ],
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                // The strip's own shadow, unchanged: hard-edged and dropped
+                // straight down, not a soft halo.
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 0,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

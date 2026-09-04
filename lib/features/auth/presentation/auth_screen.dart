@@ -1,8 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/network/api_error.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/brand_wordmark.dart';
 import '../data/auth_store.dart';
+import '../data/remembered_email.dart';
+import 'forgot_password_screen.dart';
+import 'oauth_webview_screen.dart';
 
 /// Which half of the screen opens first.
 enum AuthMode { signIn, signUp }
@@ -34,6 +42,18 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _obscure = true;
   bool _busy = false;
 
+  /// Ticked by default, which is what the design shows. It decides one thing
+  /// and says so: whether this handset fills the address in next time. See
+  /// [RememberedEmail].
+  bool _remember = true;
+
+  /// Whether the server actually has Google configured.
+  ///
+  /// Asked rather than assumed. A provider button that opens a page saying
+  /// "Unsupported provider" is worse than no button, and the answer is a single
+  /// call the sign-in screen can afford to make while somebody types.
+  bool _googleEnabled = false;
+
   /// The server's own words, shown above the button rather than in a snack bar:
   /// a wrong password belongs beside the password, and a message that slides
   /// away while someone is still reading it is no use.
@@ -41,6 +61,28 @@ class _AuthScreenState extends State<AuthScreen> {
   String? _notice;
 
   bool get _isSignUp => _mode == AuthMode.signUp;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreEmail());
+    unawaited(_loadProviders());
+  }
+
+  Future<void> _restoreEmail() async {
+    final remembered = await RememberedEmail.read();
+    if (!mounted || remembered == null || _email.text.isNotEmpty) return;
+    setState(() {
+      _email.text = remembered;
+      _remember = true;
+    });
+  }
+
+  Future<void> _loadProviders() async {
+    final providers = await AuthStore.instance.enabledProviders();
+    if (!mounted) return;
+    setState(() => _googleEnabled = providers.contains('google'));
+  }
 
   @override
   void dispose() {
@@ -99,6 +141,9 @@ class _AuthScreenState extends State<AuthScreen> {
           password: _password.text,
         );
       }
+      // Only once the address is known to be one the server accepts. Keeping a
+      // typo would prefill the mistake every time from then on.
+      await _saveRemembered();
       if (!mounted) return;
       Navigator.of(context).pop();
     } on ApiError catch (e) {
@@ -129,24 +174,70 @@ class _AuthScreenState extends State<AuthScreen> {
     return e.message;
   }
 
-  Future<void> _forgotPassword() async {
-    final email = await showDialog<String>(
-      context: context,
-      builder: (_) => _RecoverDialog(initialEmail: _email.text),
-    );
-    if (email == null || !mounted) return;
+  /// Persists, or forgets, the address the box is about.
+  Future<void> _saveRemembered() async {
+    if (_remember) {
+      await RememberedEmail.write(_email.text);
+    } else {
+      await RememberedEmail.clear();
+    }
+  }
+
+  /// Google, through the provider handshake the server already speaks.
+  ///
+  /// The page is Google's own, in a WebView; what comes back is the redirect
+  /// URL with the tokens in its fragment, which [AuthStore.completeOAuth]
+  /// turns into a session. Backing out of it is a cancellation, not a failure,
+  /// and says nothing.
+  Future<void> _continueWithGoogle() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _notice = null;
+    });
 
     try {
-      await AuthStore.instance.recover(email);
-    } on ApiError {
-      // Deliberately swallowed. GoTrue answers the same for an address with an
-      // account and one without, and a visible failure here would leak which is
-      // which -- so the message below is the only answer, either way.
+      final returned = await OAuthWebViewScreen.show(
+        context,
+        title: 'Continue with Google',
+        url: AuthStore.instance.authorizeUrl('google'),
+      );
+      if (!mounted) return;
+      if (returned == null) {
+        setState(() => _busy = false);
+        return;
+      }
+      await AuthStore.instance.completeOAuth(returned);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = 'Google sign-in did not complete. Please try again.';
+      });
     }
-    if (!mounted) return;
-    setState(() {
-      _notice = 'If $email has an account, a reset link is on its way.';
-    });
+  }
+
+  /// Opens the reset page, carrying whatever address is already typed.
+  ///
+  /// A page rather than the dialog this was: sending the link is only the
+  /// first half, and what follows -- go to the inbox, come back with the link,
+  /// set a password -- does not fit in a dialog. It owns its own errors and
+  /// its own confirmation, so nothing comes back here to display.
+  Future<void> _forgotPassword() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordScreen(initialEmail: _email.text),
+      ),
+    );
   }
 
   static (String?, String?) _splitName(String value) {
@@ -162,121 +253,28 @@ class _AuthScreenState extends State<AuthScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: Text(_isSignUp ? 'Create account' : 'Sign in')),
+      appBar: AppBar(
+        // The page is its own headline -- the mark, the name and the line
+        // under it -- so the bar carries nothing but the way back.
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        foregroundColor: theme.colorScheme.onSurface,
+        title: const SizedBox.shrink(),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
           children: [
-            _ModeToggle(mode: _mode, onChanged: _busy ? null : _switchTo),
-            const SizedBox(height: 24),
-            Text(
-              _isSignUp ? 'Join ${AppBrand.name}' : 'Welcome back',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              _isSignUp
-                  ? 'Create an account to track orders and save what you like.'
-                  : 'Sign in to pick up where you left off.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 24),
-            if (_isSignUp) ...[
-              TextFormField(
-                controller: _name,
-                enabled: !_busy,
-                textInputAction: TextInputAction.next,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Full name',
-                  prefixIcon: Icon(Icons.person_outline),
-                ),
-                validator: (value) =>
-                    (value ?? '').trim().isEmpty ? 'Enter your name' : null,
-              ),
-              const SizedBox(height: 16),
-            ],
-            TextFormField(
-              controller: _email,
-              enabled: !_busy,
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.next,
-              autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                prefixIcon: Icon(Icons.mail_outline),
-              ),
-              validator: _validateEmail,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _password,
-              enabled: !_busy,
-              obscureText: _obscure,
-              textInputAction: TextInputAction.done,
-              onFieldSubmitted: (_) => _submit(),
-              decoration: InputDecoration(
-                labelText: 'Password',
-                prefixIcon: const Icon(Icons.lock_outline),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscure
-                        ? Icons.visibility_outlined
-                        : Icons.visibility_off_outlined,
-                  ),
-                  tooltip: _obscure ? 'Show password' : 'Hide password',
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                ),
-              ),
-              validator: _validatePassword,
-            ),
-            if (!_isSignUp)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: _busy ? null : _forgotPassword,
-                  child: const Text('Forgot password?'),
-                ),
-              ),
-            if (_error != null) ...[
-              const SizedBox(height: 16),
-              _Banner(message: _error!, tone: theme.colorScheme.error),
-            ],
-            if (_notice != null) ...[
-              const SizedBox(height: 16),
-              _Banner(message: _notice!, tone: theme.colorScheme.primary),
-            ],
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: _busy ? null : _submit,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(50),
-              ),
-              child: _busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2.4),
-                    )
-                  : Text(_isSignUp ? 'Create account' : 'Sign in'),
-            ),
-            const SizedBox(height: 16),
+            // Centred and capped: on a tablet or a desktop window the column
+            // stays a form rather than stretching into a banner.
             Center(
-              child: TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => _switchTo(
-                        _isSignUp ? AuthMode.signIn : AuthMode.signUp,
-                      ),
-                child: Text(
-                  _isSignUp
-                      ? 'Already have an account? Sign in'
-                      : 'New to ${AppBrand.name}? Create an account',
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: _content(theme),
                 ),
               ),
             ),
@@ -284,6 +282,157 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
       ),
     );
+  }
+
+  List<Widget> _content(ThemeData theme) {
+    return [
+      const SizedBox(height: 8),
+      // The supplied lockup, which carries the mark and the name together --
+      // so the name is not set again underneath it. Sized by width and left to
+      // find its own height from the artwork's ratio: it never stretches, and
+      // on a narrow phone it takes the column's width rather than overflowing
+      // it.
+      Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 300),
+          child: AspectRatio(
+            aspectRatio: AppBrand.lockupAspectRatio,
+            child: Image.asset(
+              AppBrand.lockupAsset,
+              fit: BoxFit.contain,
+              semanticLabel: AppBrand.name,
+              // Decoded at the size it is drawn, not at the artwork's.
+              cacheWidth: (300 * MediaQuery.devicePixelRatioOf(context))
+                  .round(),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 18),
+      Text(
+        _isSignUp
+            ? 'Create an account to start shopping'
+            : 'Sign in to continue shopping',
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      const SizedBox(height: 28),
+      if (_isSignUp) ...[
+        TextFormField(
+          controller: _name,
+          enabled: !_busy,
+          textInputAction: TextInputAction.next,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            hintText: 'Full name',
+            prefixIcon: Icon(Icons.person_outline),
+          ),
+          validator: (value) =>
+              (value ?? '').trim().isEmpty ? 'Enter your name' : null,
+        ),
+        const SizedBox(height: 14),
+      ],
+      TextFormField(
+        controller: _email,
+        enabled: !_busy,
+        keyboardType: TextInputType.emailAddress,
+        textInputAction: TextInputAction.next,
+        autocorrect: false,
+        decoration: const InputDecoration(
+          hintText: 'Email address',
+          prefixIcon: Icon(Icons.mail_outline),
+        ),
+        validator: _validateEmail,
+      ),
+      const SizedBox(height: 14),
+      TextFormField(
+        controller: _password,
+        enabled: !_busy,
+        obscureText: _obscure,
+        textInputAction: TextInputAction.done,
+        onFieldSubmitted: (_) => _submit(),
+        decoration: InputDecoration(
+          hintText: 'Password',
+          prefixIcon: const Icon(Icons.lock_outline),
+          suffixIcon: IconButton(
+            icon: Icon(
+              _obscure
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+            ),
+            tooltip: _obscure ? 'Show password' : 'Hide password',
+            onPressed: () => setState(() => _obscure = !_obscure),
+          ),
+        ),
+        validator: _validatePassword,
+      ),
+      if (!_isSignUp) ...[
+        const SizedBox(height: 4),
+        // A Wrap rather than a Row: side by side while they fit, stacked when
+        // they do not. As a Row the pair overflowed by 22pt at the widest
+        // metrics -- a large text size, or a narrow handset, would have put a
+        // striped bar across the sign-in form.
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _RememberMe(
+              value: _remember,
+              onChanged: _busy
+                  ? null
+                  : (value) {
+                      setState(() => _remember = value);
+                      // Untick and the address is gone now, not at the next
+                      // successful sign-in: somebody clearing it on a shared
+                      // handset means now.
+                      if (!value) unawaited(RememberedEmail.clear());
+                    },
+            ),
+            TextButton(
+              onPressed: _busy ? null : _forgotPassword,
+              child: const Text('Forgot password?'),
+            ),
+          ],
+        ),
+      ],
+      if (_error != null) ...[
+        const SizedBox(height: 12),
+        _Banner(message: _error!, tone: theme.colorScheme.error),
+      ],
+      if (_notice != null) ...[
+        const SizedBox(height: 12),
+        _Banner(message: _notice!, tone: theme.colorScheme.primary),
+      ],
+      const SizedBox(height: 16),
+      _SubmitButton(
+        label: _isSignUp ? 'Create account' : 'Sign in',
+        busy: _busy,
+        onPressed: _busy ? null : _submit,
+      ),
+      if (_googleEnabled) ...[
+        const SizedBox(height: 22),
+        const _OrDivider(),
+        const SizedBox(height: 16),
+        _GoogleButton(onPressed: _busy ? null : _continueWithGoogle),
+      ],
+      const SizedBox(height: 22),
+      const _SecurityNote(),
+      const SizedBox(height: 10),
+      Center(
+        child: TextButton(
+          onPressed: _busy
+              ? null
+              : () => _switchTo(_isSignUp ? AuthMode.signIn : AuthMode.signUp),
+          child: Text(
+            _isSignUp
+                ? 'Already have an account? Sign in'
+                : 'New to ${AppBrand.name}? Create an account',
+          ),
+        ),
+      ),
+    ];
   }
 
   /// Shape only. Whether the address exists is the server's business, and
@@ -305,6 +454,263 @@ class _AuthScreenState extends State<AuthScreen> {
     if (password.isEmpty) return 'Enter your password';
     if (password.length < 8) return 'Use at least 8 characters';
     return null;
+  }
+}
+
+/// "Remember me", and what it remembers.
+class _RememberMe extends StatelessWidget {
+  const _RememberMe({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final enabled = onChanged != null;
+
+    return InkWell(
+      // The words are part of the target. A 20pt box on its own is a hard
+      // thing to hit with a thumb.
+      onTap: enabled ? () => onChanged!(!value) : null,
+      borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: Checkbox(
+                value: value,
+                onChanged: enabled ? (v) => onChanged!(v ?? false) : null,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Remember me',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The primary button: the brand band, with the arrow the design carries.
+///
+/// A gradient, so [Ink] rather than a filled button's own colour -- and the
+/// ripple on top of it, which is why the Material is transparent.
+class _SubmitButton extends StatelessWidget {
+  const _SubmitButton({
+    required this.label,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final radius = BorderRadius.circular(AppTheme.radiusCard);
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: AppColors.brandBand,
+            borderRadius: radius,
+            // Faded rather than greyed while it works: the band is the button,
+            // and a disabled fill would lose it.
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1F000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: InkWell(
+            onTap: onPressed,
+            child: SizedBox(
+              height: 54,
+              child: Center(
+                child: busy
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          valueColor: AlwaysStoppedAnimation(
+                            AppColors.onPrimary,
+                          ),
+                        ),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            label,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: AppColors.onPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Icon(
+                            Icons.arrow_forward,
+                            size: 20,
+                            color: AppColors.onPrimary,
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "or continue with", ruled either side.
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Row(
+      children: [
+        const Expanded(child: Divider()),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            'or continue with',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        const Expanded(child: Divider()),
+      ],
+    );
+  }
+}
+
+/// The provider button, with Google's own mark on it.
+class _GoogleButton extends StatelessWidget {
+  const _GoogleButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(54),
+        backgroundColor: theme.colorScheme.surface,
+        side: BorderSide(color: theme.dividerColor),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SvgPicture.asset('assets/brand/google_g.svg', height: 22),
+          const SizedBox(width: 12),
+          Text(
+            'Continue with Google',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What happens to what was typed.
+///
+/// Two sentences the app can stand behind: the password goes to the identity
+/// provider over TLS and is never written down here, and nothing on this screen
+/// is passed to anyone else.
+class _SecurityNote extends StatelessWidget {
+  const _SecurityNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.success.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.verified_user_outlined,
+              size: 20,
+              color: AppColors.success,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your data is 100% secure',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'We never share your information',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -337,87 +743,6 @@ class _Banner extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _RecoverDialog extends StatefulWidget {
-  const _RecoverDialog({required this.initialEmail});
-
-  final String initialEmail;
-
-  @override
-  State<_RecoverDialog> createState() => _RecoverDialogState();
-}
-
-class _RecoverDialogState extends State<_RecoverDialog> {
-  late final _controller = TextEditingController(text: widget.initialEmail);
-  String? _error;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _send() {
-    final error = _AuthScreenState._validateEmail(_controller.text);
-    if (error != null) {
-      setState(() => _error = error);
-      return;
-    }
-    Navigator.of(context).pop(_controller.text.trim());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Reset your password'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('We will email you a link to set a new one.'),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(labelText: 'Email', errorText: _error),
-            onSubmitted: (_) => _send(),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _send, child: const Text('Send link')),
-      ],
-    );
-  }
-}
-
-/// Segmented Sign in / Sign up switch.
-class _ModeToggle extends StatelessWidget {
-  const _ModeToggle({required this.mode, required this.onChanged});
-
-  final AuthMode mode;
-  final ValueChanged<AuthMode>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SegmentedButton<AuthMode>(
-      segments: const [
-        ButtonSegment(value: AuthMode.signIn, label: Text('Sign In')),
-        ButtonSegment(value: AuthMode.signUp, label: Text('Sign Up')),
-      ],
-      selected: {mode},
-      showSelectedIcon: false,
-      onSelectionChanged: onChanged == null
-          ? null
-          : (selection) => onChanged!(selection.first),
     );
   }
 }

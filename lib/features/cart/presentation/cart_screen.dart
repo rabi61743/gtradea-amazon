@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/action_status.dart';
 import '../../address/data/address_store.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../catalog/data/product.dart' show productStub;
@@ -76,17 +77,14 @@ class _CartScreenState extends State<CartScreen> {
     final index = store.indexOf(line.key);
     store.remove(line.key);
 
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('Removed ${line.title}'),
-          action: SnackBarAction(
-            label: 'Undo',
-            onPressed: () => store.restore(line, index),
-          ),
-        ),
-      );
+    ActionStatus.show(
+      context,
+      ActionStatus.removedFromCart,
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () => store.restore(line, index),
+      ),
+    );
   }
 
   /// Emptying the whole cart IS confirmed: undo alone is too easy to miss when

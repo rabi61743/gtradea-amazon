@@ -93,12 +93,104 @@ class AuthRepository {
   /// Answers the same whether or not the address has an account -- GoTrue
   /// deliberately will not confirm which addresses are registered, and the UI
   /// must not either. "Check your email" is the only honest message.
+  /// Asks GoTrue to email a reset link.
+  ///
+  /// Answers the same for an address with an account and one without -- that
+  /// is GoTrue's behaviour, and it is the right one: a different answer would
+  /// tell anybody with the form which addresses are registered.
+  ///
+  /// `redirect_to` is where the link lands, and it is the storefront's own
+  /// reset page: the same page the website sends people to, so a link works
+  /// wherever it is opened. GoTrue substitutes its SITE_URL for any redirect
+  /// that is not allow-listed, so the worst case is the site's front door
+  /// rather than a broken link.
   Future<void> recover(String email) async {
     try {
-      await _dio.post('/recover', data: {'email': email.trim()});
+      await _dio.post(
+        '/recover',
+        data: {'email': email.trim(), 'redirect_to': Env.passwordResetUrl},
+      );
     } on DioException catch (e) {
       throw ApiError.fromDio(e);
     }
+  }
+
+  /// Sets a new password from a reset token.
+  ///
+  /// Two calls, which is what the token is for and all it is for:
+  ///
+  ///   1. `POST /verify` trades the one-time `token_hash` from the email for a
+  ///      short-lived session. This is where an expired or already-used link is
+  ///      refused -- by the server, not here.
+  ///   2. `PUT /user` sets the password with that session's token.
+  ///
+  /// The session is adopted at the end, because that is what the exchange
+  /// produced: the person proved they hold the mailbox and then set a
+  /// password, and asking them to type it again immediately serves nothing.
+  ///
+  /// The token never leaves this method, and the password is sent once and
+  /// never written down.
+  Future<AuthSession> resetPassword({
+    required String token,
+    required String password,
+  }) async {
+    try {
+      final verified = await _dio.post(
+        '/verify',
+        data: {'type': 'recovery', 'token_hash': token.trim()},
+      );
+      final body = (verified.data as Map).cast<String, dynamic>();
+      final access = body['access_token'];
+      if (access is! String || access.isEmpty) {
+        throw const ApiError(
+          statusCode: null,
+          message: 'That reset link is no longer valid. Request a new one.',
+        );
+      }
+
+      final updated = await _dio.put(
+        '/user',
+        data: {'password': password},
+        options: Options(headers: {'Authorization': 'Bearer $access'}),
+      );
+
+      // The verify response is the session; the update answers with the user.
+      final session = AuthSession.fromJson({
+        ...body,
+        'user': (updated.data as Map).cast<String, dynamic>(),
+      });
+      await _sessions.write(session);
+      return session;
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
+  }
+
+  /// The reset token out of whatever was pasted in.
+  ///
+  /// The email's link carries it as `token` or `token_hash`, in the query or
+  /// the fragment depending on which hop of the redirect chain was copied. A
+  /// bare code pasted on its own is taken as the token itself.
+  static String? tokenFromLink(String pasted) {
+    final trimmed = pasted.trim();
+    if (trimmed.isEmpty) return null;
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.hasScheme) {
+      for (final source in [
+        uri.queryParameters,
+        Uri.splitQueryString(uri.fragment),
+      ]) {
+        final token = source['token_hash'] ?? source['token'];
+        if (token != null && token.isNotEmpty) return token;
+      }
+      // A link with no token in it is not a token.
+      return null;
+    }
+
+    // Not a URL: the code on its own, which is what somebody who copied it out
+    // of the address bar by hand will have.
+    return trimmed.contains(RegExp(r'\s')) ? null : trimmed;
   }
 
   Future<void> signOut() async {

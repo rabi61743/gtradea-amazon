@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../core/network/api_error.dart';
+import '../../cart/presentation/cart_screen.dart';
+import '../../../core/ui/action_status.dart';
+import '../../../../core/network/api_error.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/time_format.dart';
 import '../../../shared/widgets/artwork_panel.dart';
@@ -13,6 +15,7 @@ import '../../catalog/data/product.dart' show productStub;
 import '../../catalog/presentation/catalog_visuals.dart' show openProduct;
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../orders/data/order_store.dart';
+import '../data/hidden_history_store.dart';
 import '../data/product_views_repository.dart';
 
 /// One line of the history, whichever tab it came from.
@@ -44,6 +47,9 @@ class _HistoryEntry {
 
   /// The chosen option, where the record kept one.
   final String? variant;
+
+  /// This row, as the hidden list and the selection both key on it.
+  String get key => HiddenHistoryStore.keyFor(productId: productId, at: at);
 
   /// What to print for the price: the number where there is one, and the label
   /// the view was recorded with otherwise.
@@ -82,6 +88,29 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
   /// How far back to show, or null for everything.
   Duration? _within;
 
+  /// How many rows to ask the server for.
+  ///
+  /// The list is fetched whole at this size rather than stitched from pages:
+  /// `/product-views` takes a limit and nothing else, so asking for more and
+  /// replacing what is held is both the paging this endpoint supports and the
+  /// one arrangement that cannot show a row twice.
+  static const _pageSize = 40;
+
+  int _limit = _pageSize;
+
+  /// False once the server has answered with no more than it did last time --
+  /// which is what "there is nothing older" looks like on a limit-only route.
+  bool _hasOlder = true;
+
+  bool _loadingOlder = false;
+  ApiError? _olderError;
+
+  /// True while the shopper is picking rows to hide.
+  bool _selecting = false;
+
+  /// The rows ticked, by [_HistoryEntry.key].
+  final Set<String> _selected = {};
+
   @override
   void initState() {
     super.initState();
@@ -110,19 +139,62 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
       _error = null;
     });
     try {
-      final views = await ProductViewsRepository.instance.list();
+      final views = await ProductViewsRepository.instance.list(limit: _limit);
+      // The rows this shopper has hidden from their own view. Read here so the
+      // first paint already has them filtered out.
+      await HiddenHistoryStore.instance.load();
       // The purchased tab reads the orders this app already holds.
       await OrderStore.instance.refreshFromServer();
       if (!mounted) return;
       setState(() {
         _views = views;
         _loading = false;
+        // A short answer to a full-size request means the server has nothing
+        // beyond it.
+        _hasOlder = views.length >= _limit;
+        _olderError = null;
       });
     } on ApiError catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e;
         _loading = false;
+      });
+    }
+  }
+
+  /// Asks for a page deeper into the same history.
+  ///
+  /// Nothing is appended: the bigger request is the same list plus what came
+  /// before it, so the answer replaces what is held. That is why this cannot
+  /// duplicate a row however many times it is pressed.
+  Future<void> _loadOlder() async {
+    if (_loadingOlder || !_hasOlder) return;
+    setState(() {
+      _loadingOlder = true;
+      _olderError = null;
+    });
+
+    final asked = _limit + _pageSize;
+    try {
+      final views = await ProductViewsRepository.instance.list(limit: asked);
+      if (!mounted) return;
+      setState(() {
+        _loadingOlder = false;
+        // Nothing new came back, so this is the end of the history.
+        _hasOlder = views.length > _views.length && views.length >= asked;
+        if (views.length > _views.length) {
+          _views = views;
+          _limit = asked;
+        } else {
+          _hasOlder = false;
+        }
+      });
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingOlder = false;
+        _olderError = e;
       });
     }
   }
@@ -172,7 +244,8 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
     return [
       for (final entry in all)
         if ((query.isEmpty || entry.title.toLowerCase().contains(query)) &&
-            (cutoff == null || entry.at.isAfter(cutoff)))
+            (cutoff == null || entry.at.isAfter(cutoff)) &&
+            !HiddenHistoryStore.instance.isHidden(entry.key))
           entry,
     ];
   }
@@ -211,7 +284,98 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
         source: '1688',
       ),
     );
-    _say('Added to your cart. $inCart in cart.');
+    ActionStatus.addedToCart(
+      context,
+      title: entry.title,
+      variant: entry.variant,
+      inCart: inCart,
+      onViewCart: () =>
+          Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => const CartScreen())),
+    );
+  }
+
+  /// Enters selection mode on the row that was held down.
+  void _startSelecting(_HistoryEntry entry) {
+    setState(() {
+      _selecting = true;
+      _selected.add(entry.key);
+    });
+  }
+
+  void _toggle(_HistoryEntry entry) {
+    setState(() {
+      if (!_selected.remove(entry.key)) _selected.add(entry.key);
+      // The last one unticked leaves selection mode, so the list is not stuck
+      // in a mode with nothing in it.
+      if (_selected.isEmpty) _selecting = false;
+    });
+  }
+
+  void _endSelecting() {
+    setState(() {
+      _selecting = false;
+      _selected.clear();
+    });
+  }
+
+  /// Hides the ticked rows from this shopper's own history.
+  ///
+  /// **The server keeps them.** This list is the read side of
+  /// `/product-views`, and what is deleted here is the shopper's view of it --
+  /// see [HiddenHistoryStore]. Nothing is sent, no other account is touched,
+  /// and the product itself is not affected.
+  Future<void> _deleteSelected() async {
+    final count = _selected.length;
+    if (count == 0) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(count == 1 ? 'Remove 1 item?' : 'Remove $count items?'),
+        content: Text(
+          count == 1
+              ? 'It is removed from your history on this device. Your orders '
+                    'are not affected.'
+              : 'They are removed from your history on this device. Your '
+                    'orders are not affected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (!(confirmed ?? false) || !mounted) return;
+
+    final hidden = Set<String>.from(_selected);
+    await HiddenHistoryStore.instance.hide(hidden);
+    if (!mounted) return;
+    setState(() {
+      _selecting = false;
+      _selected.clear();
+    });
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(count == 1 ? '1 item removed' : '$count items removed'),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () async {
+              await HiddenHistoryStore.instance.show(hidden);
+              if (mounted) setState(() {});
+            },
+          ),
+        ),
+      );
   }
 
   void _say(String message) {
@@ -327,6 +491,42 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // Selection owns the bar while it is on: the count is the title and the
+    // only actions are the two that apply to a selection.
+    if (_selecting) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Cancel selection',
+            onPressed: _endSelecting,
+          ),
+          title: Text(
+            _selected.length == 1
+                ? '1 selected'
+                : '${_selected.length} selected',
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Remove from history',
+              onPressed: _selected.isEmpty ? null : _deleteSelected,
+            ),
+          ],
+        ),
+        // Back leaves selection rather than the page, which is what a shopper
+        // who pressed Back expects of a mode they are in.
+        body: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _endSelecting();
+          },
+          child: _tab(_visible(_viewed), removable: true),
+        ),
+        backgroundColor: theme.scaffoldBackgroundColor,
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: _searching
@@ -435,25 +635,106 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
             ),
           ),
           for (final entry in group.value)
-            removable
-                ? Dismissible(
-                    key: ValueKey('history-${entry.productId}-${entry.at}'),
-                    direction: DismissDirection.endToStart,
-                    background: const _RemoveBackground(),
-                    onDismissed: (_) => unawaited(_remove(entry)),
-                    child: _HistoryCard(
-                      entry: entry,
-                      onTap: () => _open(entry),
-                      onAdd: () => _addToCart(entry),
-                    ),
-                  )
-                : _HistoryCard(
-                    entry: entry,
-                    onTap: () => _open(entry),
-                    onAdd: () => _addToCart(entry),
-                  ),
+            if (!removable)
+              _HistoryCard(
+                entry: entry,
+                onTap: () => _open(entry),
+                onAdd: () => _addToCart(entry),
+              )
+            else if (_selecting)
+              // No swipe while selecting: the gesture would fight the tick,
+              // and the two mean different things -- one forgets the row on
+              // the server, the other hides it here.
+              _HistoryCard(
+                entry: entry,
+                selecting: true,
+                selected: _selected.contains(entry.key),
+                onTap: () => _toggle(entry),
+                onLongPress: () => _toggle(entry),
+              )
+            else
+              Dismissible(
+                key: ValueKey('history-${entry.productId}-${entry.at}'),
+                direction: DismissDirection.endToStart,
+                background: const _RemoveBackground(),
+                onDismissed: (_) => unawaited(_remove(entry)),
+                child: _HistoryCard(
+                  entry: entry,
+                  onTap: () => _open(entry),
+                  onAdd: () => _addToCart(entry),
+                  onLongPress: () => _startSelecting(entry),
+                ),
+              ),
         ],
+        if (removable) _olderFooter(),
       ],
+    );
+  }
+
+  /// "See older history", and what it has to say for itself.
+  ///
+  /// Below the list, as asked. It only appears on the viewed tab: the
+  /// purchased half is the order book, which loads whole.
+  Widget _olderFooter() {
+    final theme = Theme.of(context);
+
+    final error = _olderError;
+    if (error != null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(4, 20, 4, 4),
+        child: Column(
+          children: [
+            Text(
+              error.isNetwork
+                  ? 'No connection, so older history could not be loaded.'
+                  : error.message,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextButton(onPressed: _loadOlder, child: const Text('Try again')),
+          ],
+        ),
+      );
+    }
+
+    if (_loadingOlder) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2.4),
+          ),
+        ),
+      );
+    }
+
+    if (!_hasOlder) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(4, 22, 4, 4),
+        child: Text(
+          'That is the whole history.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 16, 4, 4),
+      child: Center(
+        child: OutlinedButton.icon(
+          onPressed: _loadOlder,
+          icon: const Icon(Icons.history, size: 18),
+          label: const Text('See older history'),
+        ),
+      ),
     );
   }
 }
@@ -464,12 +745,25 @@ class _HistoryCard extends StatelessWidget {
   const _HistoryCard({
     required this.entry,
     required this.onTap,
-    required this.onAdd,
+    this.onAdd,
+    this.onLongPress,
+    this.selecting = false,
+    this.selected = false,
   });
 
   final _HistoryEntry entry;
   final VoidCallback onTap;
-  final VoidCallback onAdd;
+
+  /// Null while picking rows: Add to cart is not what a tick is for, and a
+  /// button that still acted would fire on a press meant for the row.
+  final VoidCallback? onAdd;
+
+  /// Long press to start picking -- and, with a mouse, a right-click, which is
+  /// the same intent on a desktop window.
+  final VoidCallback? onLongPress;
+
+  final bool selecting;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -478,90 +772,120 @@ class _HistoryCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 92,
-                height: 92,
-                child: ArtworkPanel(
-                  icon: Icons.inventory_2_outlined,
-                  tint: theme.colorScheme.primary,
-                  imageUrl: entry.imageUrl,
-                  iconScale: 0.4,
-                  knownWidth: 92,
+      // The picked state is the theme's own selection tint over the card
+      // colour, so nothing about the card's shape, radius or spacing moves as
+      // rows are ticked.
+      color: selected
+          ? theme.colorScheme.primary.withValues(alpha: 0.08)
+          : null,
+      child: GestureDetector(
+        onSecondaryTap: onLongPress,
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (selecting) ...[
+                  // Drawn rather than tapped: the whole row is the target, so
+                  // the box says what state it is in and the row answers.
+                  Padding(
+                    padding: const EdgeInsets.only(top: 34),
+                    child: Icon(
+                      selected
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      size: 22,
+                      color: selected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outline,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                SizedBox(
+                  width: 92,
+                  height: 92,
+                  child: ArtworkPanel(
+                    icon: Icons.inventory_2_outlined,
+                    tint: theme.colorScheme.primary,
+                    imageUrl: entry.imageUrl,
+                    iconScale: 0.4,
+                    knownWidth: 92,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        entry.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          height: 1.25,
+                        ),
+                      ),
+                      if (entry.subtitle != null &&
+                          entry.subtitle!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          entry.subtitle!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                      if (price != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          price,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                      if (entry.variant != null &&
+                          entry.variant!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          entry.variant!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      entry.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
+                      formatTime(entry.at),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    if (entry.subtitle != null &&
-                        entry.subtitle!.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        entry.subtitle!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    if (price != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        price,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                    if (entry.variant != null && entry.variant!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        entry.variant!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
+                    if (onAdd case final add?) ...[
+                      const SizedBox(height: 10),
+                      _AddButton(onTap: add),
                     ],
                   ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    formatTime(entry.at),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _AddButton(onTap: onAdd),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/action_status.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../cart/data/cart_store.dart';
@@ -120,17 +121,20 @@ class _WishlistScreenState extends State<WishlistScreen> {
 
     final index = WishlistStore.instance.items.indexOf(product);
     final line = _lineFor(product, price);
-    CartStore.instance.add(line);
-    WishlistStore.instance.remove(product.id);
+    final inCart = CartStore.instance.add(line);
+    // Silent: the add already sounded, and moving is not deleting.
+    WishlistStore.instance.remove(product.id, announce: false);
 
+    // The move keeps its own status: it carries an Undo that puts the product
+    // back on both sides, which the card has no room for.
     _say(
-      'Moved to your cart.',
+      '${ActionStatus.addedToCartLabel} · $inCart in cart',
       action: SnackBarAction(
         label: 'Undo',
         // Undo puts it back on both sides. Moving is destructive to a
         // shortlist someone built, and a one-tap way back costs nothing.
         onPressed: () {
-          CartStore.instance.remove(line.key);
+          CartStore.instance.remove(line.key, announce: false);
           WishlistStore.instance.restore(product, index);
         },
       ),
@@ -159,7 +163,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
       final index = WishlistStore.instance.items.indexOf(product);
       final line = _lineFor(product, price);
       CartStore.instance.add(line);
-      WishlistStore.instance.remove(product.id);
+      WishlistStore.instance.remove(product.id, announce: false);
       moved.add((product: product, index: index, key: line.key));
     }
 
@@ -180,7 +184,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
         label: 'Undo',
         onPressed: () {
           for (final entry in moved) {
-            CartStore.instance.remove(entry.key);
+            CartStore.instance.remove(entry.key, announce: false);
             WishlistStore.instance.restore(entry.product, entry.index);
           }
         },
@@ -194,7 +198,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
     final index = WishlistStore.instance.items.indexOf(product);
     WishlistStore.instance.remove(product.id);
     _say(
-      'Removed ${product.title}',
+      ActionStatus.removedFromWishlist,
       action: SnackBarAction(
         label: 'Undo',
         onPressed: () => WishlistStore.instance.restore(product, index),

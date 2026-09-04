@@ -35,7 +35,7 @@ const _alsoThere = {
 };
 
 void _tall(WidgetTester tester) {
-  tester.view.physicalSize = const Size(1100, 12000);
+  tester.view.physicalSize = const Size(1100, 20000);
   tester.view.devicePixelRatio = 2.0;
   addTearDown(tester.view.reset);
 }

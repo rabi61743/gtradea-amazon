@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../core/audio/sound_settings.dart';
+
 /// The chime that plays when something new arrives.
 ///
 /// Played through `video_player`, which this app already carries for product
@@ -73,7 +75,9 @@ class NotificationSound {
   ///
   /// Never awaited by callers, and never throws.
   Future<void> play() async {
-    if (!enabled) return;
+    // The shopper's one sound switch governs this too. "Sound off" that still
+    // chimes is not sound off.
+    if (!enabled || !SoundSettings.instance.enabled) return;
 
     final now = DateTime.now();
     if (_sounding || now.isBefore(_nextAllowed)) return;

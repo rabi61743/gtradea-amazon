@@ -310,25 +310,63 @@ class TrackingUpdate {
 class OrderRequest {
   const OrderRequest({
     required this.id,
+    required this.orderId,
     required this.number,
     required this.status,
     required this.reason,
     required this.isReturn,
+    this.details,
+    this.refundAmount,
     this.createdAt,
+    this.approvedAt,
+    this.refundedAt,
   });
 
   final String id;
+
+  /// The order it was raised against, so a screen can find its own.
+  final String orderId;
+
   final String number;
+
+  /// The server's own word: pending, approved, rejected, received, refunded,
+  /// cancelled. Never invented here -- what the shop calls a state is the
+  /// shop's business, and this only reads it.
   final String status;
+
   final String reason;
+  final String? details;
+
+  /// What the shop says it is refunding, where it has said. Null is "not
+  /// decided yet", which is not the same as zero.
+  final num? refundAmount;
+
   final bool isReturn;
   final DateTime? createdAt;
+  final DateTime? approvedAt;
+  final DateTime? refundedAt;
+
+  /// Still with the shop, so no other request can be raised for this order.
+  bool get isOpen => const {
+    'pending',
+    'approved',
+    'received',
+    'processing',
+    'under_review',
+  }.contains(status);
+
+  bool get isRejected => status == 'rejected';
+
+  /// Only when the server says the money has gone back. Nothing here infers
+  /// it from a status that merely allows it.
+  bool get isRefunded => status == 'refunded' || refundedAt != null;
 
   factory OrderRequest.fromJson(
     Map<String, dynamic> json, {
     required bool isReturn,
   }) => OrderRequest(
     id: asString(json['id']) ?? '',
+    orderId: asString(json['order_id']) ?? '',
     // Two endpoints, two names for the same thing.
     number:
         asString(json['return_number']) ??
@@ -336,9 +374,51 @@ class OrderRequest {
         '',
     status: (asString(json['status']) ?? 'pending').toLowerCase(),
     reason: asString(json['reason']) ?? '',
+    details: asString(json['reason_details']),
+    refundAmount: asNum(json['refund_amount']),
     isReturn: isReturn,
     createdAt: asDate(json['created_at']),
+    approvedAt: asDate(json['approved_at']),
+    refundedAt: asDate(json['refunded_at']),
   );
+}
+
+/// Why an order is being cancelled, as the shop's own form offers them.
+///
+/// The values are the server's -- the storefront posts exactly these strings
+/// -- and the labels are what it shows beside them.
+class CancellationReason {
+  const CancellationReason(this.value, this.label);
+
+  final String value;
+  final String label;
+
+  static const all = <CancellationReason>[
+    CancellationReason('changed_mind', 'I changed my mind'),
+    CancellationReason('found_cheaper', 'Found it cheaper elsewhere'),
+    CancellationReason('ordered_by_mistake', 'Ordered by mistake'),
+    CancellationReason('too_slow', 'Taking too long to arrive'),
+    CancellationReason('wrong_item', 'Ordered the wrong item'),
+    CancellationReason('other', 'Other reason'),
+  ];
+}
+
+/// Why a delivered order is coming back.
+class ReturnReason {
+  const ReturnReason(this.value, this.label);
+
+  final String value;
+  final String label;
+
+  static const all = <ReturnReason>[
+    ReturnReason('damaged', 'Arrived damaged'),
+    ReturnReason('defective', 'Faulty or not working'),
+    ReturnReason('wrong_item', 'Wrong item sent'),
+    ReturnReason('not_as_described', 'Not as described'),
+    ReturnReason('missing_parts', 'Parts or accessories missing'),
+    ReturnReason('changed_mind', 'No longer needed'),
+    ReturnReason('other', 'Other reason'),
+  ];
 }
 
 /// Orders, their tracking, and the requests raised against them.
@@ -413,6 +493,17 @@ class OrdersRepository {
             {'order_item_id': item.orderItemId, 'quantity': item.quantity},
         ],
       },
+    );
+  });
+
+  /// Takes a pending cancellation back.
+  ///
+  /// The shop's own route for it. The request row stays -- the server marks it
+  /// withdrawn rather than deleting it, which is what keeps the order's paper
+  /// trail intact.
+  Future<void> withdrawCancellation(String requestId) => guarded(() async {
+    await _dio.post(
+      '/order-cancellations/${Uri.encodeComponent(requestId)}/withdraw',
     );
   });
 

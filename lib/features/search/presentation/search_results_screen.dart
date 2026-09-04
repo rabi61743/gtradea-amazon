@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../core/network/api_error.dart';
+import '../../cart/presentation/cart_screen.dart';
+import '../../../core/ui/action_status.dart';
+import '../../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/loadable_view.dart';
 import '../../../shared/widgets/loading_gate.dart';
@@ -40,7 +42,16 @@ class SearchResultsScreen extends StatefulWidget {
     this.categoryName,
     this.parentCid,
     this.parentName,
+    this.sort = ProductSort.relevance,
   });
+
+  /// How the results start out ordered.
+  ///
+  /// The shopper can change it from the sort control as always; this only
+  /// decides where they land. It exists so a banner can open a real view --
+  /// "Trending now" is this catalogue's best selling, and there is no other
+  /// screen that means it.
+  final ProductSort sort;
 
   final String query;
 
@@ -125,12 +136,15 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   SearchFilters _initialFilters() {
     final cid = widget.categoryCid;
-    if (cid == null) return SearchFilters(query: widget.query);
+    if (cid == null) {
+      return SearchFilters(query: widget.query, sort: widget.sort);
+    }
     // Arrived from a department, so that department is already a filter and is
     // shown as a removable chip like any other. Its name is filled in once the
     // tree loads; until then the chip says what it can.
     return SearchFilters(
       query: widget.query,
+      sort: widget.sort,
       departmentCid: cid,
       departmentName: widget.categoryName ?? _placeholderDepartment,
     );
@@ -576,20 +590,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         minOrder: product.minOrder,
       ),
     );
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            saved ? 'Saved to your list' : 'Removed from your list',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    ActionStatus.show(
+      context,
+      saved ? ActionStatus.addedToWishlist : ActionStatus.removedFromWishlist,
+    );
   }
 
   void _addToCart(Product product) {
-    CartStore.instance.add(
+    final inCart = CartStore.instance.add(
       CartLine(
         productId: product.numIid,
         title: product.title,
@@ -601,14 +609,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         source: '1688',
       ),
     );
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('${product.title} added to your cart'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    ActionStatus.addedToCart(
+      context,
+      title: product.title,
+      inCart: inCart,
+      onViewCart: () =>
+          Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => const CartScreen())),
+    );
   }
 
   @override

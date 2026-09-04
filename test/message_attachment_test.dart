@@ -373,6 +373,113 @@ void main() {
       expect(find.text('invoice.pdf'), findsNWidgets(2));
     });
 
+    testWidgets('a photo is quoted as a Photo, not as a file name', (
+      tester,
+    ) async {
+      // What a chat says about a picture. "shot.png" is the name of a file on
+      // a server; "Photo" is what was sent.
+      signIn();
+      api.on(
+        'GET',
+        '/support/tickets/t-1/messages',
+        body: [
+          _message(
+            message: '(attachment)',
+            attachments: const ['u/1/shot.png'],
+          ),
+        ],
+      );
+      api.on('GET', '/media/support-attachments/object', body: _png);
+
+      await pump(tester);
+      await reply(tester, '(attachment)');
+
+      expect(find.text('Photo'), findsOneWidget);
+      // The file name belongs to the attachment in the message itself, never
+      // to the quote.
+      expect(
+        find.descendant(
+          of: find.byType(QuotedLine),
+          matching: find.text('shot.png'),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('several photos are counted', (tester) async {
+      signIn();
+      api.on(
+        'GET',
+        '/support/tickets/t-1/messages',
+        body: [
+          _message(
+            message: '(attachment)',
+            attachments: const ['u/1/a.png', 'u/1/b.jpg', 'u/1/c.png'],
+          ),
+        ],
+      );
+      api.on('GET', '/media/support-attachments/object', body: _png);
+
+      await pump(tester);
+      await reply(tester, '(attachment)');
+
+      expect(find.text('3 Photos'), findsOneWidget);
+    });
+
+    testWidgets('but a caption is quoted instead of the word Photo', (
+      tester,
+    ) async {
+      // The words somebody wrote are more use than the kind of thing they
+      // attached.
+      signIn();
+      api.on(
+        'GET',
+        '/support/tickets/t-1/messages',
+        body: [
+          _message(
+            message: 'Here is the damage',
+            attachments: const ['u/1/shot.png'],
+          ),
+        ],
+      );
+      api.on('GET', '/media/support-attachments/object', body: _png);
+
+      await pump(tester);
+      await reply(tester, 'Here is the damage');
+
+      expect(find.text('Photo'), findsNothing);
+      expect(find.text('Here is the damage'), findsNWidgets(2));
+    });
+
+    testWidgets('the quote in the bubble carries the picture', (tester) async {
+      // The tag in the sent message, not only in the preview above the input.
+      signIn();
+      api.on(
+        'GET',
+        '/support/tickets/t-1/messages',
+        body: [
+          _message(
+            id: 'm-1',
+            message: '(attachment)',
+            attachments: const ['u/1/shot.png'],
+          ),
+          _message(id: 'm-2', message: 'Reply test 1', replyTo: 'm-1'),
+        ],
+      );
+      api.on('GET', '/media/support-attachments/object', body: _png);
+
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Reply test 1'), findsOneWidget);
+      expect(find.text('Photo'), findsOneWidget, reason: 'the quote is typed');
+      expect(
+        find.byType(QuotedThumbnail),
+        findsOneWidget,
+        reason: 'and shows the picture it answers',
+      );
+    });
+
     testWidgets('the reply is cancelled without sending anything', (
       tester,
     ) async {
@@ -456,6 +563,96 @@ void main() {
         findsNWidgets(2),
         reason: 'once as itself, once quoted inside the reply',
       );
+    });
+
+    testWidgets('tapping the quote scrolls back to the original', (
+      tester,
+    ) async {
+      // A long thread, so the original is genuinely off screen under the
+      // reply -- otherwise this proves nothing.
+      signIn();
+      api.on(
+        'GET',
+        '/support/tickets/t-1/messages',
+        body: [
+          _message(id: 'm-1', message: 'Your parcel is on its way'),
+          for (var i = 2; i < 22; i++)
+            _message(id: 'm-$i', message: 'Filler message $i'),
+          _message(id: 'm-99', message: 'Thanks', replyTo: 'm-1'),
+        ],
+      );
+
+      await pump(tester);
+
+      final list = find.byType(Scrollable).first;
+      final before = tester.state<ScrollableState>(list).position.pixels;
+      expect(before, greaterThan(0), reason: 'opened at the newest message');
+
+      // The quote inside the reply bubble, not the original message itself.
+      await tester.tap(
+        find
+            .descendant(
+              of: find.byType(Container),
+              matching: find.text('Your parcel is on its way'),
+            )
+            .last,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.state<ScrollableState>(list).position.pixels,
+        lessThan(before),
+        reason: 'it scrolled back up to the quoted message',
+      );
+    });
+
+    testWidgets('and flashes it, then stops', (tester) async {
+      signIn();
+      api.on(
+        'GET',
+        '/support/tickets/t-1/messages',
+        body: [
+          _message(id: 'm-1', message: 'Your parcel is on its way'),
+          for (var i = 2; i < 22; i++)
+            _message(id: 'm-$i', message: 'Filler message $i'),
+          _message(id: 'm-99', message: 'Thanks', replyTo: 'm-1'),
+        ],
+      );
+
+      await pump(tester);
+
+      /// The highlight is a tinted box drawn behind one bubble.
+      int lit() => tester
+          .widgetList<AnimatedContainer>(find.byType(AnimatedContainer))
+          .where((box) {
+            final decoration = box.decoration;
+            return decoration is BoxDecoration &&
+                decoration.color != null &&
+                decoration.color != Colors.transparent;
+          })
+          .length;
+
+      expect(lit(), 0, reason: 'nothing is flashing to begin with');
+
+      await tester.tap(
+        find
+            .descendant(
+              of: find.byType(Container),
+              matching: find.text('Your parcel is on its way'),
+            )
+            .last,
+      );
+      // Let the scroll to the original finish; the flash is set when it
+      // lands.
+      await tester.pumpAndSettle();
+
+      expect(lit(), 1, reason: 'the original is picked out');
+
+      // It is a flash, not a state the message stays in.
+      await tester.pump(const Duration(milliseconds: 1500));
+      await tester.pumpAndSettle();
+
+      expect(lit(), 0);
     });
 
     testWidgets('a reply whose original is gone still reads as a message', (

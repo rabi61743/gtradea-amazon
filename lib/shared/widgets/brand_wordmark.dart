@@ -21,6 +21,16 @@ abstract final class AppBrand {
   /// disappears.
   static const logoOnDarkAsset = 'assets/brand/logo_on_dark.svg';
 
+  /// The full lockup: the mark, the name and the line under it, as supplied.
+  ///
+  /// For the places that introduce the shop rather than label it -- the
+  /// sign-in page is the one that does. Everywhere else keeps the mark on its
+  /// own, which is what fits a header bar.
+  static const lockupAsset = 'assets/brand/logo_lockup.png';
+
+  /// The lockup's aspect ratio, from the artwork: 8073 by 1686.
+  static const lockupAspectRatio = 8073 / 1686;
+
   /// The mark's aspect ratio, from the artwork's viewBox: 173.6 by 158.7.
   ///
   /// Named so callers reserve the right shape rather than guessing a box and

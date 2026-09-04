@@ -255,6 +255,19 @@ class _Cell extends StatelessWidget {
                   ? theme.colorScheme.surfaceContainerHighest
                   : Colors.white,
               borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+              // Lifted off the panel behind it, matching the rest of the
+              // card's furniture. Only where the box is drawn on a dark
+              // ground: on a light card the box is already the tinted thing
+              // and a shadow under it would be grubby rather than raised.
+              boxShadow: onLight
+                  ? null
+                  : const [
+                      BoxShadow(
+                        color: Color(0x33000000),
+                        blurRadius: 6,
+                        offset: Offset(1, 2),
+                      ),
+                    ],
             ),
             child: digits,
           )

@@ -22,7 +22,9 @@ late FakeApi api;
 /// never constructed and the finders come back empty. This is about the
 /// harness, not about the layout.
 void _tall(WidgetTester tester) {
-  tester.view.physicalSize = const Size(1100, 4400);
+  // Taller than it was: the promotional block grew by about 1200dp of
+  // banners, and everything this file checks lives below it.
+  tester.view.physicalSize = const Size(1100, 16000);
   tester.view.devicePixelRatio = 2.0;
   addTearDown(tester.view.reset);
 }

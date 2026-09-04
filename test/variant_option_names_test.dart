@@ -286,7 +286,9 @@ void main() {
     testWidgets('the selected name still reads above the row', (tester) async {
       await pump(tester, selected: 1);
 
-      expect(find.text('Colour: '), findsOneWidget);
+      // The row now reads 'Choose Colour: Wine red' rather than 'Colour:'.
+      expect(find.text('Choose Colour'), findsOneWidget);
+      expect(find.text(': '), findsOneWidget);
       expect(
         find.text('Wine red'),
         findsOneWidget,

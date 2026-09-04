@@ -46,6 +46,143 @@ void main() {
     CatalogStore.instance.resetForTest();
   });
 
+  group('the active shadow travels', () {
+    /// Where the one selection shadow is, and how many there are.
+    List<Rect> shadows(WidgetTester tester) => tester
+        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+        .toList(growable: false)
+        .asMap()
+        .entries
+        .where((entry) {
+          final decoration = entry.value.decoration;
+          return decoration is BoxDecoration &&
+              (decoration.boxShadow?.isNotEmpty ?? false);
+        })
+        .map((entry) => tester.getRect(find.byType(DecoratedBox).at(entry.key)))
+        .toList(growable: false);
+
+    Future<void> strip(
+      WidgetTester tester, {
+      String? selected,
+      required ValueChanged<Category?> onSelected,
+    }) async {
+      _phone(tester);
+      await tester.pumpWidget(
+        _wrap(
+          DepartmentTabs(
+            categories: _departments(4),
+            selectedCid: selected,
+            onSelected: onSelected,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('there is exactly one, wherever the selection is', (
+      tester,
+    ) async {
+      // It used to be wrapped around the first tab, so "For You" wore it even
+      // when a department was chosen -- two tabs claiming to be current.
+      await strip(tester, onSelected: (_) {});
+      expect(shadows(tester), hasLength(1));
+
+      await strip(tester, selected: 'cid-2', onSelected: (_) {});
+      expect(shadows(tester), hasLength(1));
+    });
+
+    testWidgets('it starts under For You', (tester) async {
+      await strip(tester, onSelected: (_) {});
+
+      final tab = tester.getRect(find.text('For You'));
+      final shadow = shadows(tester).single;
+
+      expect(shadow.left, lessThanOrEqualTo(tab.left));
+      expect(shadow.right, greaterThanOrEqualTo(tab.right));
+    });
+
+    testWidgets('and lands under whichever department is chosen', (
+      tester,
+    ) async {
+      await strip(tester, selected: 'cid-1', onSelected: (_) {});
+
+      final tab = tester.getRect(find.text('Department 1'));
+      final shadow = shadows(tester).single;
+
+      expect(shadow.left, lessThanOrEqualTo(tab.left));
+      expect(shadow.right, greaterThanOrEqualTo(tab.right));
+    });
+
+    testWidgets('it slides rather than jumping', (tester) async {
+      // Halfway through the change it should be between the two tabs, not
+      // already arrived and not still where it started.
+      await strip(tester, onSelected: (_) {});
+      final from = shadows(tester).single.left;
+
+      _phone(tester);
+      await tester.pumpWidget(
+        _wrap(
+          DepartmentTabs(
+            categories: _departments(4),
+            selectedCid: 'cid-2',
+            onSelected: (_) {},
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 130));
+
+      final midway = shadows(tester).single.left;
+      await tester.pumpAndSettle();
+      final to = shadows(tester).single.left;
+
+      expect(midway, greaterThan(from), reason: 'it has left the old tab');
+      expect(midway, lessThan(to), reason: 'and has not arrived yet');
+    });
+
+    testWidgets('the tabs still do their job', (tester) async {
+      // The shadow moved out of the tab; the tap must not have moved with it.
+      Category? picked;
+      var forYou = 0;
+      await strip(
+        tester,
+        selected: 'cid-1',
+        onSelected: (category) {
+          picked = category;
+          if (category == null) forYou++;
+        },
+      );
+
+      await tester.tap(find.text('Department 3'));
+      await tester.pump();
+      expect(picked?.cid, 'cid-3');
+
+      await tester.tap(find.text('For You'));
+      await tester.pump();
+      expect(forYou, 1);
+    });
+
+    testWidgets('a department off the strip is marked by nothing', (
+      tester,
+    ) async {
+      // Chosen from "Shop by category" rather than here: there is no tab to
+      // sit under, and a shadow parked at the left edge would claim For You.
+      _phone(tester);
+      await tester.pumpWidget(
+        _wrap(
+          DepartmentTabs(
+            categories: _departments(4),
+            selectedCid: 'cid-off-strip',
+            onSelected: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(shadows(tester), isEmpty);
+    });
+  });
+
   group('the strip', () {
     testWidgets('leads with For You, then the departments', (tester) async {
       // Somebody who has not decided yet should not have to pick a department

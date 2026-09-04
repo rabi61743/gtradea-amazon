@@ -30,28 +30,42 @@ class DeliveryGuaranteeCard extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
+      // Tinted rather than outlined, with the courier's own badge: the
+      // delivery window is the one thing on this page a shopper checks before
+      // the price, and the design gives it a ground of its own.
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
+          border: Border.all(
+            color: theme.colorScheme.primary.withValues(alpha: 0.18),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.local_shipping_outlined,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant,
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+                  ),
+                  child: Icon(
+                    Icons.local_shipping_outlined,
+                    size: 22,
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     'Standard gtradea.com Logistics',
                     style: theme.textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),

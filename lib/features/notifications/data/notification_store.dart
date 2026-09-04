@@ -617,6 +617,46 @@ class NotificationStore extends ChangeNotifier {
     unawaited(_persist());
   }
 
+  /// Deletes several notifications for good, the server first.
+  ///
+  /// Returns the ids that could **not** be deleted, so the caller can say so
+  /// and leave them on screen. Nothing is taken off the list until the server
+  /// has agreed to it: a row that vanishes and comes back on the next sync is
+  /// worse than one that never went.
+  ///
+  /// Notifications this device derived from its own orders have no server row
+  /// to delete -- those go straight away.
+  ///
+  /// The requests go together rather than one after another: deleting six
+  /// selected rows should not take six round trips end to end.
+  Future<Set<String>> deleteMany(Iterable<String> ids) async {
+    final wanted = ids.toSet();
+    final byId = {
+      for (final item in _items)
+        if (wanted.contains(item.id)) item.id: item,
+    };
+    if (byId.isEmpty) return const {};
+
+    final failed = <String>{};
+    await Future.wait([
+      for (final entry in byId.entries)
+        if (entry.value.fromServer)
+          NotificationRepository.instance
+              .remove(entry.key)
+              .catchError((Object _) => failed.add(entry.key)),
+    ]);
+
+    final gone = byId.keys.where((id) => !failed.contains(id)).toSet();
+    if (gone.isEmpty) return failed;
+
+    _items.removeWhere((item) => gone.contains(item.id));
+    // Kept in [_delivered] by the same rule [remove] follows, so the next sync
+    // does not put them back.
+    notifyListeners();
+    unawaited(_persist());
+    return failed;
+  }
+
   void restore(AppNotification notification, int index) {
     if (_items.any((item) => item.id == notification.id)) return;
     _items.insert(index.clamp(0, _items.length), notification);

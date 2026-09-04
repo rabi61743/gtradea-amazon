@@ -39,6 +39,24 @@ import 'sale_countdown.dart';
 /// gone, it's gone!", which this catalogue cannot support; what replaced it was
 /// true but was a second summary of the deals panel sitting directly below,
 /// under a card whose whole job is the deadline.
+/// The black lift under the card's own furniture.
+///
+/// Every raised thing on the card carries the same one -- the bolt tile, the
+/// countdown panel and the Shop now pill -- so they read as one set of objects
+/// on the red rather than three separate treatments. Soft and low, cast down
+/// and slightly right, as the card's own shadow is.
+const _lift = [
+  BoxShadow(color: Color(0x33000000), blurRadius: 8, offset: Offset(1, 3)),
+];
+
+/// The same lift for words, which take a [Shadow] rather than a [BoxShadow].
+///
+/// Tighter than the boxes': type carries a shadow far less well, and a blur
+/// wide enough for a panel turns a headline muddy.
+const _inkLift = [
+  Shadow(color: Color(0x40000000), blurRadius: 4, offset: Offset(1, 2)),
+];
+
 class FlashSaleCard extends StatefulWidget {
   const FlashSaleCard({super.key, required this.sale, this.onTap, this.now});
 
@@ -91,15 +109,12 @@ class _FlashSaleCardState extends State<FlashSaleCard> {
           // the light were above and to the left.
           boxShadow: const [
             BoxShadow(
-              color: Color.fromARGB(239, 238, 5, 5),
-              // color: Color(0x14000000),
+              color: Color(0x14000000),
               blurRadius: 12,
               offset: Offset(2, 3),
-              
             ),
             BoxShadow(
-               
-               color: Color(0x0F000000),
+              color: Color(0x0F000000),
               blurRadius: 24,
               // Pulled in, so the far layer reads as a soft halo under the
               // card rather than a second edge around it.
@@ -123,7 +138,10 @@ class _FlashSaleCardState extends State<FlashSaleCard> {
             child: InkWell(
               onTap: widget.onTap,
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                // Trimmed from 16 with the rest of the card: the height was
+                // asked to come down to the promo banner's, and padding is the
+                // part of that which costs nothing to read.
+                padding: const EdgeInsets.all(11),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -137,19 +155,20 @@ class _FlashSaleCardState extends State<FlashSaleCard> {
                         // strength. White on it is 3.90:1, which an icon needs 3
                         // for.
                         Container(
-                          width: 38,
-                          height: 38,
+                          width: 32,
+                          height: 32,
                           decoration: BoxDecoration(
                             color: AppColors.accent,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: _lift,
                           ),
                           child: const Icon(
                             Icons.bolt,
-                            size: 24,
+                            size: 20,
                             color: AppColors.onAccent,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         // Expanded, and no Spacer after it. It was Flexible with a
                         // Spacer beside it, and both are flex:1 -- so the row split
                         // its free space evenly between the words and the gap, and
@@ -162,12 +181,13 @@ class _FlashSaleCardState extends State<FlashSaleCard> {
                             'Flash Sales',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.headlineSmall?.copyWith(
+                            style: theme.textTheme.titleLarge?.copyWith(
                               // White on the red now. The heading was red on white
                               // until the card was filled; red on red is nothing.
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
                               letterSpacing: -0.3,
+                              shadows: _inkLift,
                             ),
                           ),
                         ),
@@ -175,20 +195,21 @@ class _FlashSaleCardState extends State<FlashSaleCard> {
                       ],
                     ),
                     if (subhead != null && subhead.isNotEmpty) ...[
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 5),
                       _Subhead(text: subhead),
                     ],
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 6),
                     // The clock in a panel of its own, a shade lighter than the
                     // card. It is the reason this block is at the top of the page,
                     // so it gets a frame rather than sitting loose on the teal.
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 14,
+                        horizontal: 10,
+                        vertical: 5,
                       ),
                       decoration: BoxDecoration(
+                        boxShadow: _lift,
                         // A wash of white over the red rather than a colour of its
                         // own, so the panel stays a shade of the card however the
                         // gradient behind it changes.
@@ -214,6 +235,11 @@ class _FlashSaleCardState extends State<FlashSaleCard> {
                           // it is white now -- white boxes and white unit labels
                           // would both disappear into it.
                           boxed: true,
+                          // The smaller cells. Every figure and label is still
+                          // there and still legible; they simply stop taking a
+                          // block's worth of height on a card that was asked to
+                          // read as a banner.
+                          compact: true,
                           // The on-colour variant: white boxes with red digits,
                           // white unit labels, white colons. It is the variant this
                           // card used while it was teal, and it is what the card
@@ -246,24 +272,33 @@ class _Subhead extends StatelessWidget {
 
   final String text;
 
+  /// One line, cut where it runs out. The card's height is the one it was asked
+  /// to match, and a sale whose subhead runs long must not be the thing that
+  /// grows it back.
+  static const _clip = TextOverflow.ellipsis;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     // White on the card's red: 5.55:1 at its lightest point, 7.30 at its
     // darkest. Ordinary text needs 4.5, which is the whole reason the card's
     // red is a shade deeper than the design's -- see [AppColors.flashSaleTop].
-    final base = theme.textTheme.bodyMedium?.copyWith(
+    final base = theme.textTheme.bodySmall?.copyWith(
       color: Colors.white,
-      height: 1.35,
+      height: 1.25,
     );
 
     // The last sentence, if there is more than one. `lastIndexOf` on the
     // second-to-last stop, so "a. b. c!" splits before "c!".
     final trimmed = text.trimRight();
     final cut = trimmed.lastIndexOf(RegExp(r'[.!?]\s+'));
-    if (cut < 0) return Text(text, style: base);
+    if (cut < 0) {
+      return Text(text, style: base, maxLines: 1, overflow: _clip);
+    }
 
     return Text.rich(
+      maxLines: 1,
+      overflow: _clip,
       TextSpan(
         children: [
           TextSpan(text: trimmed.substring(0, cut + 1), style: base),
@@ -273,6 +308,7 @@ class _Subhead extends StatelessWidget {
             style: base?.copyWith(
               color: AppColors.flashSaleHurry,
               fontWeight: FontWeight.w800,
+              shadows: _inkLift,
             ),
           ),
         ],
@@ -299,6 +335,7 @@ class _ShopNow extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(999),
+        boxShadow: _lift,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

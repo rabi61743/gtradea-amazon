@@ -329,20 +329,13 @@ class _AddressCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      // No headline. It used to be the name, which the form no
-                      // longer asks for, and swapping the address in printed it
-                      // twice over the full line just below. The tags lead and
-                      // the address speaks for itself.
-                      _Tag(text: address.label.title),
-                      if (isDefault) ...[
-                        const SizedBox(width: 6),
-                        _Tag(text: 'Default', tone: theme.colorScheme.primary),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
+                  // The label tag is gone by request, and nothing replaces
+                  // it. "Default" stays: it says which address is actually
+                  // being used, which is not a label on the place.
+                  if (isDefault) ...[
+                    _Tag(text: 'Default', tone: theme.colorScheme.primary),
+                    const SizedBox(height: 4),
+                  ],
                   Text(
                     address.full,
                     style: theme.textTheme.bodySmall?.copyWith(

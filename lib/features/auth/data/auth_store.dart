@@ -174,6 +174,23 @@ class AuthStore extends ChangeNotifier {
 
   Future<void> recover(String email) => _auth.recover(email);
 
+  /// Sets a new password from a reset token, and adopts the session the
+  /// exchange produced. See [AuthRepository.resetPassword].
+  Future<void> resetPassword({
+    required String token,
+    required String password,
+  }) async {
+    _adopt(await _auth.resetPassword(token: token, password: password));
+  }
+
+  /// Which providers the server has configured, asked through the same
+  /// repository everything else here uses -- so a test that stubs GoTrue stubs
+  /// this too.
+  Future<Set<String>> enabledProviders() => _auth.enabledProviders();
+
+  /// Where a provider handshake starts.
+  Uri authorizeUrl(String provider) => _auth.authorizeUrl(provider);
+
   Future<void> signOut() async {
     // Locally first. Telling the server is worth doing but not worth waiting
     // for: on a bad connection a shopper who tapped Sign out should not be left

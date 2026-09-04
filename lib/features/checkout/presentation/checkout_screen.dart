@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/audio/app_sounds.dart';
 import '../../../core/l10n/app_strings.dart';
 import '../../../core/l10n/payment_strings.dart';
 import '../../../core/network/api_error.dart';
@@ -421,6 +422,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     NotificationStore.instance.syncFromOrders(OrderStore.instance.orders);
 
     if (verdict.paid) {
+      // The provider confirmed it, which is the only thing that counts as
+      // paid. A shopper who backed out, or whose money is still being
+      // checked, does not reach this branch.
+      unawaited(AppSounds.paymentSuccessful.play());
       outcome.value = PaymentSucceeded(
         order: placed,
         methodLabel: method.label,
@@ -433,6 +438,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       outcome.value = PaymentCancelled(orderNumber: orderNumber);
       return;
     }
+
+    // Refused, and not merely unfinished. Under review is money taken and
+    // being checked, so it is not a failure to announce as one.
+    if (!verdict.underReview) unawaited(AppSounds.paymentFailed.play());
 
     outcome.value = PaymentFailed(
       message: verdict.underReview
@@ -453,14 +462,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   /// an order, and a second path would announce a payment the server had not
   /// recorded.
   Future<void> _afterOrder(PlacedOrder placed) async {
+    // The order exists and has a number: the server said so. Sounded here
+    // rather than at the button, so it follows the result of the call and not
+    // the tap -- and here rather than in the outcome, because this runs once
+    // per order however the order is then paid for.
+    unawaited(AppSounds.orderConfirmed.play());
+
     final code = widget.totals.couponCode;
     if (code != null) CouponStore.instance.redeem(code);
 
     // The server consumed the ordered rows, so this device's copy is stale.
     // Only the ordered lines are dropped: anything added from another screen
     // after checkout opened is not part of this order and must survive it.
+    //
+    // Silently: this is the app tidying up after an order, not the shopper
+    // deleting anything, and a cart of six lines would otherwise fire six
+    // removal sounds at the moment the order was confirmed.
     for (final line in widget.lines) {
-      CartStore.instance.remove(line.key);
+      CartStore.instance.remove(line.key, announce: false);
     }
 
     await OrderStore.instance.refreshFromServer();

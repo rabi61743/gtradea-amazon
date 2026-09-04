@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../core/network/api_error.dart';
+import '../../../core/ui/action_status.dart';
+import '../../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/loadable_view.dart';
@@ -375,7 +376,7 @@ class _DealsScreenState extends State<DealsScreen> {
 
   void _addToCart(FlashSaleItem item) {
     final product = item.product;
-    CartStore.instance.add(
+    final inCart = CartStore.instance.add(
       CartLine(
         productId: product.numIid,
         title: product.title,
@@ -391,14 +392,14 @@ class _DealsScreenState extends State<DealsScreen> {
       ),
     );
 
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('${product.title} added to your cart'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    ActionStatus.addedToCart(
+      context,
+      title: product.title,
+      inCart: inCart,
+      onViewCart: () =>
+          Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => const CartScreen())),
+    );
   }
 }
 

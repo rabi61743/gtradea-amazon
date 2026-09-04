@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/features/search/data/search_suggestions.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
+import 'package:gtradea_amazon/features/catalog/data/catalog_repository.dart';
 import 'package:gtradea_amazon/features/search/data/recent_search_store.dart';
 import 'package:gtradea_amazon/features/search/data/search_filters.dart';
 import 'package:gtradea_amazon/features/search/data/search_models.dart';
@@ -207,6 +208,28 @@ void main() {
 
       expect(find.byType(SearchResultsScreen), findsNothing);
       expect(find.byType(SearchEntryScreen), findsOneWidget);
+    });
+
+    testWidgets('it can be opened already sorted', (tester) async {
+      // What the Trending Now banner does: there is no trending screen, so it
+      // opens the catalogue ordered by what is selling.
+      _tall(tester);
+      await tester.pumpWidget(
+        _wrap(const SearchResultsScreen(query: '', sort: ProductSort.sales)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Best selling'), findsWidgets);
+    });
+
+    testWidgets('and defaults to relevance when nothing is asked for', (
+      tester,
+    ) async {
+      _tall(tester);
+      await tester.pumpWidget(_wrap(const SearchResultsScreen(query: 'x')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Relevance'), findsWidgets);
     });
 
     testWidgets('the camera opens visual search, not nothing', (tester) async {

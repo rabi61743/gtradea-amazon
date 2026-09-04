@@ -11,6 +11,7 @@ import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../data/order_store.dart';
 import '../data/orders_repository.dart';
+import '../widgets/order_request_sheets.dart';
 import '../widgets/order_status_chip.dart';
 import '../../../core/time_format.dart';
 import '../widgets/order_timeline.dart';
@@ -48,82 +49,116 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     unawaited(OrderStore.instance.loadTracking(widget.orderId));
   }
 
-  Future<void> _confirmCancel(Order order) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Cancel this order?'),
-        content: const Text(
-          'It has not been dispatched yet, so it can still be stopped. This '
-          'cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Keep it'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Cancel order'),
-          ),
-        ],
-      ),
-    );
-    if (!(confirmed ?? false)) return;
+  /// True while a request is in flight, so nothing can be sent twice.
+  bool _submitting = false;
 
-    // Between opening the dialog and confirming, the parcel may have shipped.
-    // The store re-checks, and says so rather than silently doing nothing.
-    // The server decides, not this screen: between opening the dialog and
+  Future<void> _confirmCancel(Order order) async {
+    if (_submitting) return;
+
+    final draft = await CancelOrderSheet.show(context);
+    if (draft == null || !mounted) return;
+
+    setState(() => _submitting = true);
+    // The server decides, not this screen: between opening the sheet and
     // confirming, the parcel may have gone out.
-    final done = await OrderStore.instance.requestCancellation(order.id);
+    final done = await OrderStore.instance.requestCancellation(
+      order.id,
+      reason: draft.reason,
+      details: draft.details,
+    );
     if (!mounted) return;
-    if (!done) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            OrderStore.instance.error?.message ??
-                'This order could not be cancelled',
-          ),
-        ),
-      );
-    }
+    setState(() => _submitting = false);
+
+    _report(
+      done,
+      good: 'Cancellation requested. Our team will review it shortly.',
+      bad: 'This order could not be cancelled',
+    );
   }
 
   Future<void> _requestReturn(Order order) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Return this order?'),
-        content: const Text(
-          'A courier will collect it. Refunds are issued once it arrives back '
-          'at the warehouse.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Not now'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Request return'),
-          ),
-        ],
-      ),
-    );
-    if (!(confirmed ?? false)) return;
+    if (_submitting) return;
 
-    final done = await OrderStore.instance.requestReturnFor(order.id);
+    final lines = [
+      for (final item in order.server?.items ?? const <ServerOrderItem>[])
+        (id: item.id, title: item.name, quantity: item.quantity),
+    ];
+    if (lines.isEmpty) {
+      _report(false, good: '', bad: 'This order has nothing to return');
+      return;
+    }
+
+    final draft = await ReturnRequestSheet.show(context, items: lines);
+    if (draft == null || !mounted) return;
+
+    setState(() => _submitting = true);
+    final done = await OrderStore.instance.requestReturnFor(
+      order.id,
+      reason: draft.reason,
+      details: draft.details,
+      items: draft.items,
+    );
     if (!mounted) return;
-    if (!done) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            OrderStore.instance.error?.message ??
-                'This return could not be requested',
-          ),
-        ),
+    setState(() => _submitting = false);
+
+    _report(
+      done,
+      good: 'Return requested. We will email you once it is reviewed.',
+      bad: 'This return could not be requested',
+    );
+  }
+
+  Future<void> _withdraw(OrderRequest request) async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+    final done = await OrderStore.instance.withdrawCancellation(request.id);
+    if (!mounted) return;
+    setState(() => _submitting = false);
+
+    _report(
+      done,
+      good: 'Request withdrawn',
+      bad: 'This request could not be withdrawn',
+    );
+  }
+
+  /// One place for both answers, so a failure always says the server's own
+  /// words rather than a guess at what went wrong.
+  void _report(bool done, {required String good, required String bad}) {
+    final message = done ? good : OrderStore.instance.error?.message ?? bad;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Which action this order is up for, or none.
+  ///
+  /// Eligibility is the order's -- see [Order.canCancel] and
+  /// [Order.canReturn] -- narrowed by what the shop already has in hand: an
+  /// order awaiting a decision offers nothing further, and the server would
+  /// refuse a second request anyway.
+  ({String label, bool destructive, VoidCallback onPressed})? _action(
+    Order order,
+  ) {
+    final store = OrderStore.instance;
+
+    if (order.canCancel(_now)) {
+      if (store.openRequestFor(order.id, isReturn: false) != null) return null;
+      return (
+        label: 'Cancel order',
+        destructive: true,
+        onPressed: () => _confirmCancel(order),
       );
     }
+    if (order.canReturn(_now)) {
+      if (store.openRequestFor(order.id, isReturn: true) != null) return null;
+      return (
+        label: 'Request a return',
+        destructive: false,
+        onPressed: () => _requestReturn(order),
+      );
+    }
+    return null;
   }
 
   @override
@@ -190,24 +225,41 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 title: 'Order summary',
                 child: CartSummary(totals: order.totals),
               ),
-              if (order.canCancel(_now) || order.canReturn(_now))
+              // What has already been raised against this order, with the
+              // shop's own status on it.
+              for (final request in OrderStore.instance.requestsFor(order.id))
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: OrderRequestCard(
+                    request: request,
+                    busy: _submitting,
+                    // Only a pending cancellation can be taken back, which is
+                    // the shop's own rule.
+                    onWithdraw: !request.isReturn && request.status == 'pending'
+                        ? () => _withdraw(request)
+                        : null,
+                  ),
+                ),
+              if (_action(order) case final action?)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: OutlinedButton(
-                    onPressed: order.canCancel(_now)
-                        ? () => _confirmCancel(order)
-                        : () => _requestReturn(order),
+                    // Off while a request is in flight: two taps must not
+                    // become two requests.
+                    onPressed: _submitting ? null : action.onPressed,
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),
-                      foregroundColor: order.canCancel(_now)
+                      foregroundColor: action.destructive
                           ? Theme.of(context).colorScheme.error
                           : null,
                     ),
-                    child: Text(
-                      order.canCancel(_now)
-                          ? 'Cancel order'
-                          : 'Request a return',
-                    ),
+                    child: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2.2),
+                          )
+                        : Text(action.label),
                   ),
                 ),
             ],

@@ -46,6 +46,17 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   SupportMessage? _replyingTo;
   ApiError? _error;
 
+  /// One key per message, so a quote can scroll to the message it quotes.
+  ///
+  /// Keyed by message id rather than by position: the thread is reloaded after
+  /// every send, and a key tied to an index would point at whatever had moved
+  /// into that slot.
+  final _bubbleKeys = <String, GlobalKey>{};
+
+  /// The message flashing after having been jumped to.
+  String? _highlighted;
+  Timer? _flash;
+
   @override
   void initState() {
     super.initState();
@@ -54,9 +65,64 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
 
   @override
   void dispose() {
+    _flash?.cancel();
     _composer.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// Scrolls to the message a quote refers to, and flashes it.
+  ///
+  /// Nothing is fetched first: the whole conversation arrives in one request
+  /// -- `GET /support/tickets/{id}/messages` is not paged -- so every message
+  /// the thread can quote is already in [_messages].
+  ///
+  /// Being *loaded* is not the same as being *built*, though. The list builds
+  /// only what is on screen, so a message far enough up the thread has no
+  /// element to scroll to yet. Moving roughly to where it sits builds it, and
+  /// the exact scroll follows.
+  Future<void> _jumpTo(String id) async {
+    var target = _bubbleKeys[id]?.currentContext;
+
+    if (target == null) {
+      final index = _messages.indexWhere((message) => message.id == id);
+      if (index < 0 || !_scroll.hasClients) return;
+
+      final span = _messages.length > 1 ? _messages.length - 1 : 1;
+      final approximate = _scroll.position.maxScrollExtent * (index / span);
+      await _scroll.animateTo(
+        approximate.clamp(0.0, _scroll.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOut,
+      );
+      // The frame that lands builds the message; only then does it have a
+      // context to be scrolled to precisely.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      target = _bubbleKeys[id]?.currentContext;
+      if (target == null) return;
+    }
+
+    // The element can go between the frame that built it and this call.
+    if (!target.mounted) return;
+    await Scrollable.ensureVisible(
+      target,
+      // A third down the viewport rather than hard against the top edge, so
+      // the messages around it are visible and the jump reads as a place in
+      // the conversation rather than as a new screen.
+      alignment: 0.3,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+    if (!mounted) return;
+
+    setState(() => _highlighted = id);
+    _flash?.cancel();
+    // Long enough to find with the eye after the scroll settles, short enough
+    // not to be mistaken for a state the message is in.
+    _flash = Timer(const Duration(milliseconds: 1400), () {
+      if (mounted) setState(() => _highlighted = null);
+    });
   }
 
   Future<void> _load() async {
@@ -300,6 +366,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           _Bubble(text: _ticket.description, mine: true, at: _ticket.createdAt),
         for (final message in _messages)
           _Bubble(
+            anchor: _bubbleKeys.putIfAbsent(message.id, GlobalKey.new),
             text: message.message,
             mine: message.isMine,
             at: message.createdAt,
@@ -308,6 +375,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             // server stores the id, and the thread already holds the rows.
             quoted: _messageById(message.replyToId),
             onReply: () => _replyTo(message),
+            onOpenQuoted: () {
+              final id = message.replyToId;
+              if (id != null) unawaited(_jumpTo(id));
+            },
+            highlighted: _highlighted == message.id,
           ),
       ],
     );
@@ -322,7 +394,19 @@ class _Bubble extends StatelessWidget {
     this.attachments = const [],
     this.quoted,
     this.onReply,
+    this.onOpenQuoted,
+    this.anchor,
+    this.highlighted = false,
   });
+
+  /// Where in the list this message is, for a quote to scroll to.
+  final GlobalKey? anchor;
+
+  /// Opens the message this one quotes.
+  final VoidCallback? onOpenQuoted;
+
+  /// Briefly true after somebody has jumped here from a quote.
+  final bool highlighted;
 
   final String text;
   final bool mine;
@@ -344,60 +428,83 @@ class _Bubble extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Padding(
+      key: anchor,
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
         crossAxisAlignment: mine
             ? CrossAxisAlignment.end
             : CrossAxisAlignment.start,
         children: [
-          ConstrainedBox(
-            // Never the full width: a bubble that reaches both edges stops
-            // reading as one side of a conversation.
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.78,
+          // The flash after a jump. Behind the bubble rather than on it, so
+          // the message keeps its own colours and the highlight reads as the
+          // page pointing at it.
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: highlighted
+                  ? theme.colorScheme.primary.withValues(alpha: 0.16)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppTheme.radiusCard + 4),
             ),
-            child: GestureDetector(
-              // Held rather than tapped, which is how a chat offers this and
-              // keeps the bubble free of a control on every line.
-              onLongPress: onReply == null ? null : () => _offerReply(context),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 13,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: mine
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(AppTheme.radiusCard),
-                    topRight: const Radius.circular(AppTheme.radiusCard),
-                    bottomLeft: Radius.circular(mine ? AppTheme.radiusCard : 3),
-                    bottomRight: Radius.circular(
-                      mine ? 3 : AppTheme.radiusCard,
-                    ),
+            child: ConstrainedBox(
+              // Never the full width: a bubble that reaches both edges stops
+              // reading as one side of a conversation.
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.78,
+              ),
+              child: GestureDetector(
+                // Held rather than tapped, which is how a chat offers this and
+                // keeps the bubble free of a control on every line.
+                onLongPress: onReply == null
+                    ? null
+                    : () => _offerReply(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 10,
                   ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (quoted case final original?) ...[
-                      _QuotedMessage(message: original, onDark: mine),
-                      const SizedBox(height: 6),
-                    ],
-                    Text(
-                      text,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        height: 1.35,
-                        color: mine
-                            ? theme.colorScheme.onPrimary
-                            : theme.colorScheme.onSurface,
+                  decoration: BoxDecoration(
+                    color: mine
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(AppTheme.radiusCard),
+                      topRight: const Radius.circular(AppTheme.radiusCard),
+                      bottomLeft: Radius.circular(
+                        mine ? AppTheme.radiusCard : 3,
+                      ),
+                      bottomRight: Radius.circular(
+                        mine ? 3 : AppTheme.radiusCard,
                       ),
                     ),
-                    for (final key in attachments)
-                      MessageAttachment(storageKey: key, onDark: mine),
-                  ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (quoted case final original?) ...[
+                        _QuotedMessage(
+                          message: original,
+                          onDark: mine,
+                          onTap: onOpenQuoted,
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      Text(
+                        text,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          height: 1.35,
+                          color: mine
+                              ? theme.colorScheme.onPrimary
+                              : theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      for (final key in attachments)
+                        MessageAttachment(storageKey: key, onDark: mine),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -588,26 +695,7 @@ class _ReplyPreview extends StatelessWidget {
       child: Row(
         children: [
           if (image != null) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: FutureBuilder(
-                future: SupportAttachmentRepository.instance.download(image),
-                builder: (context, snapshot) {
-                  final bytes = snapshot.data;
-                  if (bytes == null) {
-                    return const SizedBox(width: 36, height: 36);
-                  }
-                  return Image.memory(
-                    bytes,
-                    width: 36,
-                    height: 36,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, _, _) =>
-                        const SizedBox(width: 36, height: 36),
-                  );
-                },
-              ),
-            ),
+            QuotedThumbnail(storageKey: image),
             const SizedBox(width: 8),
           ],
           Expanded(
@@ -623,13 +711,9 @@ class _ReplyPreview extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  quotedSummary(message),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                QuotedLine(
+                  message: message,
+                  ink: theme.colorScheme.onSurfaceVariant,
                 ),
               ],
             ),
@@ -651,10 +735,17 @@ class _ReplyPreview extends StatelessWidget {
 /// Tinted and ruled down one side so it reads as something quoted rather than
 /// as more of the same message.
 class _QuotedMessage extends StatelessWidget {
-  const _QuotedMessage({required this.message, required this.onDark});
+  const _QuotedMessage({
+    required this.message,
+    required this.onDark,
+    this.onTap,
+  });
 
   final SupportMessage message;
   final bool onDark;
+
+  /// Jumps to the message being quoted.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -663,37 +754,166 @@ class _QuotedMessage extends StatelessWidget {
         ? theme.colorScheme.onPrimary
         : theme.colorScheme.onSurface;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-      decoration: BoxDecoration(
-        color: ink.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(6),
-        border: Border(left: BorderSide(color: ink, width: 3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            message.isMine ? 'You' : 'Support',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: ink,
-              fontWeight: FontWeight.w700,
+    final thumb = message.attachments
+        .where(SupportAttachmentRepository.isImageKey)
+        .firstOrNull;
+
+    return GestureDetector(
+      // Tapped, not held: this is the one thing on a quote worth doing, and
+      // the bubble underneath already uses a long press to start a reply.
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(8, 6, thumb == null ? 8 : 6, 6),
+        decoration: BoxDecoration(
+          color: ink.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(6),
+          border: Border(left: BorderSide(color: ink, width: 3)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    message.isMine ? 'You' : 'Support',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: ink,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  QuotedLine(
+                    message: message,
+                    ink: ink.withValues(alpha: 0.85),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            quotedSummary(message),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: ink.withValues(alpha: 0.85),
-            ),
-          ),
-        ],
+            // The picture being answered, so a quote of a photo is
+            // recognisable without reading its file name.
+            if (thumb != null) ...[
+              const SizedBox(width: 8),
+              QuotedThumbnail(storageKey: thumb),
+            ],
+          ],
+        ),
       ),
     );
   }
+}
+
+/// The line under the sender's name in a quote.
+///
+/// The words where there were words; otherwise what kind of thing was sent,
+/// named and given an icon -- "Photo", "2 Photos", the file's own name. A
+/// quote that said only "(attachment)" told the reader nothing about what they
+/// were being answered on.
+class QuotedLine extends StatelessWidget {
+  const QuotedLine({super.key, required this.message, required this.ink});
+
+  final SupportMessage message;
+  final Color ink;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodySmall?.copyWith(color: ink);
+    final kind = quotedKind(message);
+
+    if (kind == null) {
+      return Text(
+        quotedSummary(message),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(kind.icon, size: 14, color: ink),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            kind.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The picture a quote refers to, at quote size.
+///
+/// The bytes are the ones the message itself already downloaded -- the
+/// repository memoises them per storage key -- so quoting a photo that is on
+/// screen costs no second fetch.
+class QuotedThumbnail extends StatelessWidget {
+  const QuotedThumbnail({super.key, required this.storageKey, this.size = 36});
+
+  final String storageKey;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: FutureBuilder(
+        future: SupportAttachmentRepository.instance.download(storageKey),
+        builder: (context, snapshot) {
+          final bytes = snapshot.data;
+          if (bytes == null) return SizedBox(width: size, height: size);
+          return Image.memory(
+            bytes,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (context, _, _) =>
+                SizedBox(width: size, height: size),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// What a quoted message is, when it has no words of its own.
+///
+/// Null when it does: a caption is more use than the word "Photo", and that is
+/// the choice a chat makes here.
+({IconData icon, String label})? quotedKind(SupportMessage message) {
+  final text = message.message.trim();
+  if (text.isNotEmpty && text != '(attachment)') return null;
+  if (message.attachments.isEmpty) return null;
+
+  final images = message.attachments
+      .where(SupportAttachmentRepository.isImageKey)
+      .length;
+
+  if (images == message.attachments.length) {
+    return (
+      icon: Icons.photo_outlined,
+      label: images == 1 ? 'Photo' : '$images Photos',
+    );
+  }
+  if (message.attachments.length == 1) {
+    return (
+      icon: Icons.insert_drive_file_outlined,
+      label: SupportAttachmentRepository.fileNameFor(message.attachments.first),
+    );
+  }
+  return (
+    icon: Icons.attach_file,
+    label: '${message.attachments.length} files',
+  );
 }
 
 /// What a quoted message says in one line.

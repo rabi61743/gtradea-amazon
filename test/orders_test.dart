@@ -489,9 +489,22 @@ void main() {
       await tester.tap(find.text('Cancel order'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('Cancel this order?'), findsOneWidget);
+      // The form the shop's own site uses: a reason, and room for more.
+      expect(find.text('Cancel this order'), findsOneWidget);
 
-      await tester.tap(find.text('Cancel order').last);
+      // Nothing can be sent until a reason is picked.
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Request cancellation'),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      await tester.tap(find.text('I changed my mind'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Request cancellation'));
       await tester.pumpAndSettle();
 
       expect(api.calls.any((c) => c.path == '/order-cancellations'), isTrue);
@@ -516,8 +529,10 @@ void main() {
       await tester.tap(find.text('Cancel order'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
-      await tester.tap(find.text('Keep it'));
-      await tester.pump();
+      // Backing out of the sheet, which is what a shopper who changed their
+      // mind about changing their mind does.
+      Navigator.of(tester.element(find.text('Cancel this order'))).pop();
+      await tester.pumpAndSettle();
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(OrderStore.instance.byId(order.id)!.outcome, isNull);

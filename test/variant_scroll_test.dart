@@ -60,6 +60,59 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
   }
 
+  group('the grid says it can be swiped', () {
+    Future<void> grid(WidgetTester tester, VariantMatrix matrix) => phone(
+      tester,
+      VariantMatrixTable(
+        matrix: matrix,
+        quantities: const {},
+        total: 0,
+        minOrder: 1,
+        onChanged: (_, _) {},
+      ),
+    );
+
+    testWidgets('it names the axis running past the edge', (tester) async {
+      // Eight sizes do not fit a 360pt phone beside the colour names, so the
+      // last columns are off screen with nothing saying so.
+      await grid(tester, _wideMatrix());
+
+      expect(find.text('Swipe left to see more sizes'), findsOneWidget);
+      expect(find.byIcon(Icons.swipe_left_alt), findsOneWidget);
+    });
+
+    testWidgets('and says nothing about a grid that fits', (tester) async {
+      // A standing instruction to swipe something that cannot move is noise.
+      await grid(tester, _wideMatrix(sizes: 2));
+
+      expect(find.textContaining('Swipe left'), findsNothing);
+      expect(find.byIcon(Icons.swipe_left_alt), findsNothing);
+    });
+
+    testWidgets('it goes once the grid has been moved', (tester) async {
+      await grid(tester, _wideMatrix());
+      expect(find.text('Swipe left to see more sizes'), findsOneWidget);
+
+      await tester.drag(find.byType(VariantMatrixTable), const Offset(-120, 0));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Swipe left to see more sizes'),
+        findsNothing,
+        reason: 'the hint has done its job',
+      );
+    });
+
+    testWidgets('it sits under the grid, not over it', (tester) async {
+      await grid(tester, _wideMatrix());
+
+      final hint = tester.getRect(find.text('Swipe left to see more sizes'));
+      final cells = tester.getRect(find.text('Colour 0'));
+
+      expect(hint.top, greaterThan(cells.bottom));
+    });
+  });
+
   group('every colourway can be reached', () {
     testWidgets('the last swatch is off screen to begin with', (tester) async {
       // If it were already visible the rest of this group would prove nothing.

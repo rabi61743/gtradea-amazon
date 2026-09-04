@@ -160,36 +160,10 @@ class _AddressRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          // No headline any more. It used to be the name, and
-                          // the form has stopped asking for one -- it comes
-                          // from the account, so every row would carry the same
-                          // word. Putting the address there instead just
-                          // printed it twice, since the line below is the full
-                          // address already. The label leads the row and the
-                          // address speaks for itself.
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.onSurfaceVariant
-                                  .withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              address.label.title,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
+                      // The label tag is gone by request. Nothing takes its
+                      // place: the address itself leads the row now. What kind
+                      // of place it is still comes through the icon beside it,
+                      // and the field behind it is untouched.
                       Text(
                         address.full,
                         style: theme.textTheme.bodySmall?.copyWith(

@@ -189,7 +189,7 @@ void main() {
       expect(bell.right, width - 16);
     });
 
-    testWidgets('the search pill is untouched', (tester) async {
+    testWidgets('the search pill spans the header, compactly', (tester) async {
       _phone(tester);
       await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
       await tester.pump();
@@ -200,10 +200,10 @@ void main() {
 
       expect(pill.left, 16);
       expect(pill.right, width - 16);
-      // 44: the smallest a comfortable tap target goes, and the row above it
-      // was trimmed too, so the saving is not borrowed from the one control
-      // everybody on this screen presses.
-      expect(pill.height, 44);
+      // 38 by request: the pill was made more compact. It is short for a tap
+      // target and gets away with it because it spans the header -- the height
+      // is the only tight dimension.
+      expect(pill.height, 38);
     });
 
     testWidgets('the icons keep their order: chat, tracker, bell', (

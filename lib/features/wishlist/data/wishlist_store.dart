@@ -4,6 +4,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/audio/app_sound.dart';
+import '../../../core/audio/app_sounds.dart';
+
 /// A saved product, stored flat so the wishlist can render without refetching.
 ///
 /// Denormalised on purpose: a shopper opening their list on a bad connection
@@ -106,6 +109,14 @@ class WishlistStore extends ChangeNotifier {
 
   static const _key = 'gtradea_wishlist';
 
+  /// Sounded when a product is saved.
+  ///
+  /// Here rather than on the buttons: every heart in the app -- the product
+  /// page, the search results, the rails, the department feed -- saves through
+  /// [toggle], so one call covers all of them and none of them can be missed
+  /// or get it subtly wrong.
+  static AppSound get sound => AppSounds.wishlist;
+
   final List<SavedProduct> _items = [];
   bool _loaded = false;
 
@@ -145,18 +156,33 @@ class WishlistStore extends ChangeNotifier {
     final wasSaved = contains(product.id);
     if (wasSaved) {
       _items.removeWhere((item) => item.id == product.id);
+      unawaited(AppSounds.removed.play());
     } else {
       // Newest first: the list is a shortlist, and the thing just saved is
       // the thing most likely to be acted on.
       _items.insert(0, product);
+      // Saving only; the branch above sounds the removal instead.
+      //
+      // Not awaited, and it cannot throw: the save has already happened by
+      // the time this is called, so nothing about the sound can undo it.
+      unawaited(AppSounds.wishlist.play());
     }
     notifyListeners();
     unawaited(_persist());
     return !wasSaved;
   }
 
-  void remove(String id) {
+  /// Takes a product off the list.
+  ///
+  /// [announce] is false where the removal is not the point of what the
+  /// shopper did -- moving a product to the cart takes it off the list, but
+  /// the event is the arrival in the cart, and two sounds for one tap is one
+  /// too many.
+  void remove(String id, {bool announce = true}) {
+    final before = _items.length;
     _items.removeWhere((item) => item.id == id);
+    if (_items.length == before) return;
+    if (announce) unawaited(AppSounds.removed.play());
     notifyListeners();
     unawaited(_persist());
   }
@@ -165,9 +191,14 @@ class WishlistStore extends ChangeNotifier {
   ///
   /// Position matters: dropping it back at the top would reorder a shortlist
   /// the shopper built, which is not what undoing a removal means.
+  ///
+  /// Sounded as an undo, not as a save: taking something back is its own
+  /// event, and [AppSounds.wishlist] would claim the shopper had just chosen
+  /// the product again.
   void restore(SavedProduct product, int index) {
     if (contains(product.id)) return;
     _items.insert(index.clamp(0, _items.length), product);
+    unawaited(AppSounds.undo.play());
     notifyListeners();
     unawaited(_persist());
   }

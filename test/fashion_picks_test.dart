@@ -82,7 +82,7 @@ void main() {
     // Tall enough to build the sale, the picks and the first Browse section at
     // once. Scrolling to the picks would unbuild the sale above them, and a
     // finder cannot measure a widget the list has already thrown away.
-    tester.view.physicalSize = const Size(1100, 12000);
+    tester.view.physicalSize = const Size(1100, 20000);
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.reset);
 

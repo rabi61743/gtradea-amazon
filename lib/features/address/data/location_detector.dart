@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -203,6 +204,29 @@ class LocationDetector {
   /// A ceiling on the whole attempt, so no single step can hang the UI.
   static const overallTimeout = Duration(seconds: 90);
 
+  /// Good enough to stop waiting, in metres.
+  ///
+  /// A GPS lock settles around 5-20 m outdoors. 30 leaves room for a phone
+  /// against a window without holding the shopper while the last few metres
+  /// come in.
+  static const targetAccuracyMetres = 30.0;
+
+  /// How much longer to keep listening after the first fix arrives.
+  ///
+  /// This is the actual bug this button had. `getCurrentPosition` answers with
+  /// the *first* fix the platform produces, and on Android that is almost
+  /// always the fused provider's network estimate -- hundreds of metres to a
+  /// couple of kilometres out -- delivered in well under a second. The
+  /// satellite fix that follows it a few seconds later is the accurate one,
+  /// and nothing was waiting for it. The geocoder then faithfully named
+  /// whatever building sat at the wrong point, which is exactly the
+  /// "not my address" this was reported as.
+  static const settleWindow = Duration(seconds: 8);
+
+  /// Older than this and a fix is somebody's last known position rather than
+  /// where they are now. The fused provider will hand one straight back.
+  static const maxFixAge = Duration(minutes: 2);
+
   /// Built once. In geocoding 5 the reverse lookup hangs off an instance
   /// rather than a top-level function.
   static final _geocoding = Geocoding();
@@ -252,18 +276,8 @@ class LocationDetector {
         return const DetectPermissionDenied(permanently: false);
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          // High, and the manifest declares ACCESS_FINE_LOCATION to match.
-          // The comment here used to argue the opposite -- that a rough fix was
-          // enough because the geocoder would supply the street from it. It is
-          // not: a network fix lands a kilometre or more out, and the geocoder
-          // faithfully names whatever is at that wrong point. The shopper then
-          // gets somebody else's neighbourhood presented as their address.
-          accuracy: LocationAccuracy.high,
-          timeLimit: fixTimeout,
-        ),
-      );
+      final position = await _bestFix();
+      if (position == null) return const DetectTimeout();
 
       return await describe(position.latitude, position.longitude);
     } on TimeoutException {
@@ -283,6 +297,126 @@ class LocationDetector {
       }
       return DetectFailed(error.toString());
     }
+  }
+
+  /// The most accurate fix the device will give inside the time allowed.
+  ///
+  /// Listens rather than asking once: the stream reports the network estimate
+  /// first and the satellite fix after it, so this keeps the best one seen and
+  /// stops as soon as a fix is inside [targetAccuracyMetres] -- or when
+  /// [settleWindow] has passed since the first fix, whichever comes first. If
+  /// the stream produces nothing at all before [fixTimeout], one last
+  /// single-shot request is made, because a device with no update stream can
+  /// still answer that.
+  ///
+  /// Null means no usable fix arrived, which the caller reports as a timeout.
+  Future<Position?> _bestFix() async {
+    final fixes = <Position>[];
+    final settled = Completer<void>();
+    Timer? settle;
+
+    final subscription =
+        Geolocator.getPositionStream(
+          locationSettings: _streamSettings(),
+        ).listen(
+          (position) {
+            fixes.add(position);
+            if (settled.isCompleted) return;
+            // Accurate enough: nothing is gained by holding the shopper here.
+            if (position.accuracy > 0 &&
+                position.accuracy <= targetAccuracyMetres) {
+              settled.complete();
+              return;
+            }
+            // The first fix starts the clock the better one has to arrive in.
+            settle ??= Timer(settleWindow, () {
+              if (!settled.isCompleted) settled.complete();
+            });
+          },
+          onError: (_) {
+            if (!settled.isCompleted) settled.complete();
+          },
+          cancelOnError: true,
+        );
+
+    try {
+      await settled.future.timeout(fixTimeout, onTimeout: () {});
+    } finally {
+      settle?.cancel();
+      await subscription.cancel();
+    }
+
+    final best = pickBestFix(fixes);
+    if (best != null) return best;
+
+    // Nothing came down the stream. Some devices and emulators only answer the
+    // single-shot call, so it is worth one try rather than reporting failure.
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.best,
+          timeLimit: fixTimeout,
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The settings the stream runs with.
+  ///
+  /// Android's fused provider needs telling to keep updating -- a distance
+  /// filter would stop the very refinement this is waiting for -- and `best`
+  /// rather than `high` so it uses the satellites rather than settling for
+  /// the network estimate.
+  static LocationSettings _streamSettings() {
+    const accuracy = LocationAccuracy.best;
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.android => AndroidSettings(
+        accuracy: accuracy,
+        distanceFilter: 0,
+        intervalDuration: const Duration(seconds: 1),
+      ),
+      TargetPlatform.iOS || TargetPlatform.macOS => AppleSettings(
+        accuracy: accuracy,
+        distanceFilter: 0,
+      ),
+      _ => const LocationSettings(accuracy: accuracy, distanceFilter: 0),
+    };
+  }
+
+  /// The fix to trust, out of everything the stream reported.
+  ///
+  /// Fresh first: the fused provider will hand back a position recorded
+  /// somewhere else hours ago, and using it would put the shopper's address in
+  /// the last town they were in. Among the fresh ones, the tightest accuracy
+  /// wins. A stale fix is used only when there is nothing else at all --
+  /// better than telling somebody standing outdoors that it failed.
+  static Position? pickBestFix(List<Position> fixes, {DateTime? now}) {
+    if (fixes.isEmpty) return null;
+
+    final moment = now ?? DateTime.now();
+    bool fresh(Position p) =>
+        moment.difference(p.timestamp.toUtc().toLocal()).abs() <= maxFixAge;
+
+    Position? best;
+    for (final candidate in fixes.where(fresh)) {
+      if (best == null || _tighter(candidate, best)) best = candidate;
+    }
+    if (best != null) return best;
+
+    for (final candidate in fixes) {
+      if (best == null || _tighter(candidate, best)) best = candidate;
+    }
+    return best;
+  }
+
+  /// True when [a] is the better of the two. An accuracy of zero or less is
+  /// "unknown" rather than "perfect", and loses to any real figure.
+  static bool _tighter(Position a, Position b) {
+    final left = a.accuracy > 0 ? a.accuracy : double.infinity;
+    final right = b.accuracy > 0 ? b.accuracy : double.infinity;
+    return left < right;
   }
 
   /// Coordinates to an address, geocoder first and the city table second.

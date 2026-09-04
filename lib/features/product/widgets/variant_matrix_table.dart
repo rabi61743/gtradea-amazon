@@ -6,6 +6,7 @@ import '../../../core/images/app_images.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 
 import '../data/product_detail_content.dart';
+import 'swipe_hint.dart';
 import 'variant_tooltip.dart';
 
 /// A wholesale order grid: colourways down the side, sizes across the top, a
@@ -78,10 +79,31 @@ class _VariantMatrixTableState extends State<VariantMatrixTable> {
 
   bool _expanded = false;
 
+  /// Whether the columns run past the edge, which is the only case worth
+  /// hinting at.
+  bool _overflows = false;
+
+  /// Set the first time the grid is moved sideways. The hint has done its job
+  /// then, and a standing instruction to do the thing you are already doing is
+  /// noise.
+  bool _used = false;
+
   @override
   void initState() {
     super.initState();
     _horizontal.addListener(_updateFade);
+    // The listener only fires on a scroll, so the first state -- does this
+    // grid overflow at all -- has to be read once the columns have been laid
+    // out.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFade());
+  }
+
+  @override
+  void didUpdateWidget(VariantMatrixTable old) {
+    super.didUpdateWidget(old);
+    // A different listing, or "show all" adding rows: the grid may no longer
+    // run past the edge, and a hint left over would point at nothing.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFade());
   }
 
   @override
@@ -94,8 +116,18 @@ class _VariantMatrixTableState extends State<VariantMatrixTable> {
   }
 
   void _updateFade() {
-    if (!_horizontal.hasClients) return;
+    if (!mounted || !_horizontal.hasClients) return;
     final max = _horizontal.position.maxScrollExtent;
+
+    final overflows = max > 0;
+    final used = _used || _horizontal.offset > 4;
+    if (overflows != _overflows || used != _used) {
+      setState(() {
+        _overflows = overflows;
+        _used = used;
+      });
+    }
+
     if (max <= 0) {
       _endFade.value = 0;
       return;
@@ -287,6 +319,24 @@ class _VariantMatrixTableState extends State<VariantMatrixTable> {
                   ],
                 ),
               ),
+            ),
+            // Only where there are columns past the edge, and only until
+            // the shopper has moved the grid once. The same hint the chip
+            // rows carry, worded the same way.
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              child: _overflows && !_used
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: SwipeHint(
+                          noun: '${matrix.columnLabel.toLowerCase()}s',
+                        ),
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
             ),
             if (hidden > 0)
               Align(

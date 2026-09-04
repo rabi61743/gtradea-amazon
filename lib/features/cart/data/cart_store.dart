@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/audio/app_sounds.dart';
 import '../../../core/network/api_error.dart';
 import '../../../core/network/json.dart';
 import '../../auth/data/auth_store.dart';
@@ -557,6 +558,9 @@ class CartStore extends ChangeNotifier {
   /// happened rather than guessing.
   int add(CartLine line) {
     final resulting = _mergeIn(line);
+    // The add has already happened. Not awaited and it cannot throw, so
+    // nothing about the sound can cost the shopper the line.
+    unawaited(AppSounds.addToCart.play());
     notifyListeners();
     unawaited(_persist());
     _scheduleSync();
@@ -608,10 +612,16 @@ class CartStore extends ChangeNotifier {
     if (line != null) setQuantity(key, line.quantity - 1);
   }
 
-  void remove(String key) {
+  /// Takes a line out of the cart.
+  ///
+  /// [announce] is false where the line is being removed by the app rather
+  /// than by the shopper -- checkout clears the ordered rows, and an undo puts
+  /// a moved product back. Neither is somebody deleting something.
+  void remove(String key, {bool announce = true}) {
     final before = _lines.length;
     _lines.removeWhere((line) => line.key == key);
     if (_lines.length == before) return;
+    if (announce) unawaited(AppSounds.removed.play());
     notifyListeners();
     unawaited(_persist());
     _scheduleSync();
@@ -621,6 +631,9 @@ class CartStore extends ChangeNotifier {
   void restore(CartLine line, int index) {
     if (_lines.any((existing) => existing.key == line.key)) return;
     _lines.insert(index.clamp(0, _lines.length), line);
+    // After the line is back, and only when one actually went back: an undo
+    // of something already restored is not an undo.
+    unawaited(AppSounds.undo.play());
     notifyListeners();
     unawaited(_persist());
     _scheduleSync();

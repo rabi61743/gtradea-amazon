@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../../core/network/api_error.dart';
+import '../../../core/ui/action_status.dart';
+import '../../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../account/data/recently_viewed_store.dart';
@@ -73,7 +74,78 @@ class ProductDetailScreen extends StatefulWidget {
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int _variant = 0;
   late int _quantity = _detail.minOrder > 0 ? _detail.minOrder : 1;
+
   bool _descriptionExpanded = false;
+
+  /// Whether the Highlights card is showing everything it has.
+  bool _highlightsExpanded = false;
+
+  /// Price, struck price and saving.
+  ///
+  /// Lifted out of build so the minimum-order pill can sit beside it in a row
+  /// rather than under it. The widget itself is unchanged -- same Wrap, same
+  /// wrapping behaviour when the three pieces will not fit on one line.
+  Widget _priceBlock(
+    ThemeData theme, {
+    required ProductDetail product,
+    num? list,
+    int? discount,
+  }) {
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 2,
+      children: [
+        // The headline price, or what to do about not
+        // having one. A row that reached this page without a
+        // price seeds the record with zero, and printing that
+        // told the shopper the product was free.
+        Text(
+          product.price > 0 ? formatRupees(product.price) : _priceUnknownLabel,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: product.price > 0
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        if (list != null && discount != null) ...[
+          Text(
+            formatRupees(list),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              decoration: TextDecoration.lineThrough,
+              decorationColor: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Text(
+            '-$discount%',
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: AppColors.successInk,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Whether the seller wrote anything worth showing.
+  ///
+  /// The catalogue's `description` is HTML, and on most listings it holds
+  /// nothing but the detail photographs -- which strip to an empty string.
+  /// That is not a description, and printing the empty result would be a
+  /// blank paragraph under a heading.
+  bool get _hasDescription => _detail.description.trim().isNotEmpty;
+
+  /// Where the rest of what the seller supplied can be found.
+  static String _elsewhere(ProductDetail product) {
+    final places = [
+      if (product.specs.isNotEmpty) 'the specifications',
+      if (product.detailImages.isNotEmpty) "the seller's photographs",
+    ];
+    return 'What they did supply is in ${places.join(' and ')} below.';
+  }
 
   late ProductDetail _detail =
       widget.detail ?? ProductDetail.fromProduct(widget.product);
@@ -529,18 +601,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
     final inCart = CartStore.instance.add(_cartLine);
     final variant = _selectedVariant?.label;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            variant == null
-                ? 'Added to your cart. $inCart in cart.'
-                : 'Added $variant to your cart. $inCart in cart.',
-          ),
-          action: SnackBarAction(label: 'View cart', onPressed: _openCart),
-        ),
-      );
+    ActionStatus.addedToCart(
+      context,
+      title: _product.title,
+      // The variant matters here in a way it does not on a card: this is the
+      // page where one was chosen, and choosing the wrong one is the mistake
+      // worth catching.
+      variant: variant,
+      inCart: inCart,
+      onViewCart: _openCart,
+    );
   }
 
   /// Buy now is add-to-cart that keeps going, rather than a second path with
@@ -637,10 +707,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       final nowSaved = WishlistStore.instance.toggle(
                         _savedProduct,
                       );
-                      _snack(
+                      ActionStatus.show(
+                        context,
                         nowSaved
-                            ? 'Saved to your list'
-                            : 'Removed from your list',
+                            ? ActionStatus.addedToWishlist
+                            : ActionStatus.removedFromWishlist,
                       );
                     },
                   );
@@ -798,43 +869,24 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     // Wrap, not Row: price + struck price + saving overflows a
                     // 360pt phone by ~90px, and dropping the saving to a second
                     // line beats shrinking the price until it cannot be read.
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      runSpacing: 2,
+                    // The price at the left, the minimum order at the right:
+                    // the two halves of what a wholesale listing costs, on one
+                    // line. The pill keeps its own width and the price takes
+                    // what is left, so neither pushes the other off the edge.
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // The headline price, or what to do about not
-                        // having one. A row that reached this page without a
-                        // price seeds the record with zero, and printing that
-                        // told the shopper the product was free.
-                        Text(
-                          product.price > 0
-                              ? formatRupees(product.price)
-                              : _priceUnknownLabel,
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: product.price > 0
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurfaceVariant,
+                        Expanded(
+                          child: _priceBlock(
+                            theme,
+                            product: product,
+                            list: list,
+                            discount: discount,
                           ),
                         ),
-                        if (list != null && discount != null) ...[
-                          Text(
-                            formatRupees(list),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              decoration: TextDecoration.lineThrough,
-                              decorationColor:
-                                  theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          Text(
-                            '-$discount%',
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: AppColors.successInk,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                        if (product.minOrder > 1) ...[
+                          const SizedBox(width: 12),
+                          _MinOrderPill(minOrder: product.minOrder),
                         ],
                       ],
                     ),
@@ -863,7 +915,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     // Two axes are bought by the tableful; one is bought by
                     // picking it. The grid is not forced onto a listing that
                     // does not have the shape for it -- see [VariantMatrix].
-                    if (matrix != null)
+                    if (matrix != null) ...[
                       VariantMatrixTable(
                         matrix: matrix,
                         quantities: _picked,
@@ -871,8 +923,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         minOrder: product.minOrder,
                         onChanged: _setPicked,
                         onImageTap: _openVariantImage,
-                      )
-                    else ...[
+                      ),
+                    ] else ...[
                       VariantPicker(
                         label: product.variantLabel,
                         variants: product.variants,
@@ -897,40 +949,80 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               const SizedBox(height: 14),
               AssuranceRow(assurances: product.assurances),
               if (product.highlights.isNotEmpty) ...[
-                _SectionTitle('Highlights'),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _HighlightsGrid(highlights: product.highlights),
+                const SizedBox(height: 16),
+                _PanelCard(
+                  title: 'Highlights',
+                  child: _HighlightsGrid(
+                    highlights: product.highlights,
+                    expanded: _highlightsExpanded,
+                    onToggle: () => setState(
+                      () => _highlightsExpanded = !_highlightsExpanded,
+                    ),
+                  ),
                 ),
               ],
-              _SectionTitle('Description'),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              const SizedBox(height: 12),
+              // Always below the Highlights card, as the design has it -- and
+              // present even when the seller wrote nothing, which on this
+              // catalogue is most of them: 1688 returns the description as a
+              // block of images with no prose in it at all. Saying so is the
+              // storefront's own answer, and it beats a section that silently
+              // is not there on one product and is on the next.
+              _PanelCard(
+                title: 'Description',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      product.description,
-                      maxLines: _descriptionExpanded ? null : 3,
-                      overflow: _descriptionExpanded
-                          ? TextOverflow.visible
-                          : TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: () => setState(
-                          () => _descriptionExpanded = !_descriptionExpanded,
-                        ),
-                        child: Text(
-                          _descriptionExpanded ? 'Show less' : 'Read more',
+                    if (_hasDescription) ...[
+                      Text(
+                        product.description,
+                        maxLines: _descriptionExpanded ? null : 3,
+                        overflow: _descriptionExpanded
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          height: 1.4,
                         ),
                       ),
-                    ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () => setState(
+                            () => _descriptionExpanded = !_descriptionExpanded,
+                          ),
+                          child: Text(
+                            _descriptionExpanded ? 'Show less' : 'Read more',
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      Text(
+                        'The seller has not written a description for this '
+                        'product.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+                      // Where the rest of what they did supply actually is.
+                      // Both are real sections on this page, and neither is
+                      // opened for them: this only says where to look.
+                      if (product.specs.isNotEmpty ||
+                          product.detailImages.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          _elsewhere(product),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ],
                   ],
                 ),
               ),
+              const SizedBox(height: 4),
               // Two panels rather than a strip of tabs. Both start closed:
               // between them they run to a screen or three of table and
               // photography, and a shopper looking for the ratings below
@@ -1025,56 +1117,237 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 /// them behind a chevron saves a few hundred pixels and costs the shopper
 /// the tap that answers "is this the right thing".
 class _HighlightsGrid extends StatelessWidget {
-  const _HighlightsGrid({required this.highlights});
+  const _HighlightsGrid({
+    required this.highlights,
+    this.expanded = false,
+    this.onToggle,
+  });
 
   final List<ProductSpec> highlights;
+
+  /// Whether every fact is on screen, or only the first [compactCount].
+  final bool expanded;
+
+  /// Null where there is nothing to expand -- and then no control is drawn,
+  /// because a "View more" that reveals nothing is worse than none.
+  final VoidCallback? onToggle;
+
+  /// Three rows of two: enough to answer "is this the right thing" without
+  /// pushing the description off the screen.
+  static const compactCount = 6;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final shown = expanded
+        ? highlights
+        : highlights.take(compactCount).toList(growable: false);
+    final more = highlights.length - compactCount;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         const gap = 12.0;
         final columnWidth = (constraints.maxWidth - gap) / 2;
-        return Wrap(
-          spacing: gap,
-          runSpacing: 14,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final item in highlights)
-              SizedBox(
-                width: columnWidth,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // The caption, one step up from 11pt: it names what the
-                    // fact underneath it is -- Brand, Model -- and at the old
-                    // size it was the smallest type on the page.
-                    Text(
-                      item.label,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    // The fact itself, which is what a shopper is scanning
-                    // this block for: 16pt at full weight rather than 14pt at
-                    // w600. Nothing else moves -- same grid, same gap, same
-                    // colours -- the block only grows taller by the extra
-                    // line height.
-                    Text(
-                      item.value,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+            // The grid itself, unchanged: same two columns, same gaps, same
+            // type. Only how many rows it is given changes.
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: _grid(theme, shown, columnWidth, gap),
+            ),
+            if (onToggle != null && more > 0) ...[
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: onToggle,
+                  child: Text(expanded ? 'View less' : 'View more'),
                 ),
               ),
+            ],
           ],
         );
       },
+    );
+  }
+
+  Widget _grid(
+    ThemeData theme,
+    List<ProductSpec> items,
+    double columnWidth,
+    double gap,
+  ) {
+    return Wrap(
+      spacing: gap,
+      runSpacing: 16,
+      children: [
+        for (final item in items)
+          SizedBox(
+            width: columnWidth,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // A mark for the kind of fact this is, as the design has
+                // it. Chosen from the label the seller filed it under, and
+                // a neutral one where that says nothing recognisable --
+                // the icon is a hint, never the information.
+                Icon(
+                  _iconFor(item.label),
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // The caption, one step up from 11pt: it names what
+                      // the fact underneath it is -- Brand, Model -- and at
+                      // the old size it was the smallest type on the page.
+                      Text(
+                        item.label,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      // The fact itself, which is what a shopper is
+                      // scanning this block for.
+                      Text(
+                        item.value,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// The mark beside a fact, from the words the seller filed it under.
+  ///
+  /// Matched loosely and case-insensitively, because these labels come from a
+  /// wholesale catalogue and are written by hand: "Item No.", "Item number"
+  /// and "Model number" are all the same kind of fact. Anything unrecognised
+  /// gets the neutral mark rather than a wrong one.
+  static IconData _iconFor(String label) {
+    final text = label.toLowerCase();
+    bool has(List<String> words) => words.any(text.contains);
+
+    if (has(['brand', 'manufactur', 'supplier', 'factory'])) {
+      return Icons.apartment_outlined;
+    }
+    if (has(['categor', 'type', 'use', 'applicable'])) {
+      return Icons.sell_outlined;
+    }
+    if (has(['size', 'dimension', 'specification', 'weight', 'length'])) {
+      return Icons.straighten_outlined;
+    }
+    if (has(['item no', 'item number', 'model', 'sku', 'article'])) {
+      return Icons.description_outlined;
+    }
+    if (has(['origin', 'place', 'location', 'made in'])) {
+      return Icons.place_outlined;
+    }
+    if (has(['pack', 'box', 'carton', 'bag'])) {
+      return Icons.inventory_2_outlined;
+    }
+    if (has(['material', 'fabric', 'texture'])) {
+      return Icons.layers_outlined;
+    }
+    if (has(['colour', 'color'])) return Icons.palette_outlined;
+    if (has(['style', 'design', 'pattern'])) return Icons.brush_outlined;
+    return Icons.label_outline;
+  }
+}
+
+/// "Min. order: 500 pcs".
+class _MinOrderPill extends StatelessWidget {
+  const _MinOrderPill({required this.minOrder});
+
+  final int minOrder;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: 'Min. order: ',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              TextSpan(
+                text: '$minOrder pcs',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A titled white card, which is the shape the design gives Highlights and
+/// Description.
+class _PanelCard extends StatelessWidget {
+  const _PanelCard({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1139,8 +1412,10 @@ class _QuantityRow extends StatelessWidget {
                 tooltip: 'Fewer',
                 onPressed: canDecrease ? () => onChanged(quantity - 1) : null,
               ),
-              SizedBox(
-                width: 28,
+              ConstrainedBox(
+                // Room for a wholesale figure: a 500-piece minimum runs to
+                // four digits, and 28pt clipped it.
+                constraints: const BoxConstraints(minWidth: 44),
                 child: Text(
                   '$quantity',
                   textAlign: TextAlign.center,
@@ -1158,13 +1433,9 @@ class _QuantityRow extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        if (minOrder > 1)
-          Text(
-            'Min $minOrder',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+        // The floor is stated up beside the price now, on the pill the design
+        // puts there. Repeating it here was the same fact twice, and at four
+        // digits it was what pushed this row off the edge.
       ],
     );
   }

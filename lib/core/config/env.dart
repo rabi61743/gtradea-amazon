@@ -51,6 +51,17 @@ class Env {
     defaultValue: 'https://gtradea.com/auth/callback',
   );
 
+  /// Where a password-reset link lands.
+  ///
+  /// The storefront's own reset page, so one link works whether it is opened
+  /// on the site or pasted into the app. Must be allow-listed server-side, as
+  /// [oauthRedirect] must: GoTrue quietly substitutes its SITE_URL for any
+  /// redirect it does not recognise.
+  static const String passwordResetUrl = String.fromEnvironment(
+    'PASSWORD_RESET_URL',
+    defaultValue: 'https://gtradea.com/reset-password',
+  );
+
   /// Long enough for a slow mobile network on a first connect, short enough
   /// that a dead server does not look like a hung app.
   static const Duration requestTimeout = Duration(seconds: 20);

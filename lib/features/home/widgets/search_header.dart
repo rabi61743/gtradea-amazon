@@ -5,7 +5,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/animated_search_hint.dart';
 import '../../../shared/widgets/brand_wordmark.dart';
+import '../../auth/data/auth_store.dart';
 import '../../notifications/presentation/notifications_screen.dart';
+import '../../profile/data/profile_store.dart';
 import '../../address/presentation/delivery_location_button.dart';
 import '../../orders/presentation/order_tracker_button.dart';
 import '../../support/presentation/support_button.dart';
@@ -152,17 +154,94 @@ class SearchHeader extends StatelessWidget {
             // bell's asymmetric one. The pill sits on _edge at both sides,
             // which is what it always measured out to -- it just used to get
             // there by cancelling the container's right inset back out.
-            padding: const EdgeInsets.fromLTRB(_edge, 6, _edge, 10),
-            child: _SearchPill(
-              key: pillKey,
-              hintText: hintText,
-              onTap: onTap,
-              onImageSearch: onImageSearch,
-              onVoiceResult: onVoiceResult,
+            padding: const EdgeInsets.fromLTRB(_edge, 4, _edge, 8),
+            child: Row(
+              children: [
+                // Sizes to its words and takes nothing when there is nobody to
+                // greet, so the pill keeps the full width it had for a signed
+                // out shopper.
+                const _Greeting(),
+                Expanded(
+                  child: _SearchPill(
+                    key: pillKey,
+                    hintText: hintText,
+                    onTap: onTap,
+                    onImageSearch: onImageSearch,
+                    onVoiceResult: onVoiceResult,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// "Hi, Pravakar" beside the search pill.
+///
+/// The name is the account's own -- [ProfileStore.displayName], which prefers
+/// the gateway's profile row over the session's copy and falls back to the
+/// part of the email before the @. Nothing here is written down.
+///
+/// **The first word only.** A greeting uses a first name, and the header has
+/// one row to share with the search pill: a full name would push the pill
+/// narrow on the phones this ships to.
+///
+/// Nothing at all when signed out. There is no name to use, and "Hi, Guest"
+/// is a greeting to nobody.
+class _Greeting extends StatelessWidget {
+  const _Greeting();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([AuthStore.instance, ProfileStore.instance]),
+      builder: (context, _) {
+        if (!AuthStore.instance.isSignedIn) return const SizedBox.shrink();
+
+        final full = ProfileStore.instance.displayName?.trim() ?? '';
+        if (full.isEmpty) return const SizedBox.shrink();
+        final first = full.split(RegExp(r'\s+')).first;
+
+        final theme = Theme.of(context);
+
+        return Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: ConstrainedBox(
+            // A long name gives way to the pill rather than squeezing it.
+            constraints: const BoxConstraints(maxWidth: 110),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // The greeting leads and the name follows it, smaller: the
+                // word is the same every time, and the name is the part worth
+                // reading.
+                Text(
+                  'Hi,',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: AppColors.onPrimary,
+                    fontWeight: FontWeight.w700,
+                    height: 1.05,
+                  ),
+                ),
+                Text(
+                  first,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: AppColors.onPrimary.withValues(alpha: 0.85),
+                    height: 1.15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -187,42 +266,48 @@ class _SearchPill extends StatelessWidget {
 
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(9),
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(9),
         onTap: onTap,
         child: SizedBox(
-          // 44, the smallest a comfortable tap target goes. The row it sits in
-          // was trimmed too, so the saving is real rather than borrowed from
-          // the one thing on this screen everybody presses.
-          height: 44,
+          // Trimmed from 44 by request. Short for a tap target, which this
+          // pill gets away with because it is the full width of the header --
+          // the height is the only tight dimension, and the whole bar answers
+          // the tap.
+          height: 38,
           child: Row(
             children: [
-              const SizedBox(width: 12),
-              Icon(Icons.search, size: 20, color: onPill),
               const SizedBox(width: 10),
+              Icon(Icons.search, size: 18, color: onPill),
+              const SizedBox(width: 8),
               Expanded(
                 // The pill is a button, not a field -- nothing is typed here,
                 // so the hint cycles freely until the shopper taps through to
                 // the search screen, where it stops the moment they type.
                 child: AnimatedSearchHint(
                   prefix: hintText,
-                  style: TextStyle(fontSize: 14.5, color: onPill),
+                  style: TextStyle(fontSize: 13.5, color: onPill),
                 ),
               ),
               // Voice first, then image: they read as a pair of ways to search
               // without typing, and the cheaper one leads.
               if (onVoiceResult != null)
-                VoiceSearchButton(color: onPill, onResult: onVoiceResult!),
+                VoiceSearchButton(
+                  color: onPill,
+                  // 18 gives it the same 32pt box the image button now has.
+                  size: 18,
+                  onResult: onVoiceResult!,
+                ),
               IconButton(
-                icon: Icon(Icons.center_focus_weak, size: 20, color: onPill),
+                icon: Icon(Icons.center_focus_weak, size: 18, color: onPill),
                 tooltip: 'Search by image',
                 // Matched to the voice button so the two sit level rather than
-                // one carrying a 48pt box and the other a 36pt one.
+                // one carrying a 48pt box and the other a 32pt one.
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints.tightFor(
-                  width: 36,
-                  height: 36,
+                  width: 32,
+                  height: 32,
                 ),
                 onPressed: onImageSearch,
               ),

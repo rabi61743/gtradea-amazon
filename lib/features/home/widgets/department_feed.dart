@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/network/api_error.dart';
+import '../../../core/ui/action_status.dart';
+import '../../../../core/network/api_error.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/data/catalog_store.dart';
@@ -440,16 +441,10 @@ class _Grid extends StatelessWidget {
         minOrder: product.minOrder,
       ),
     );
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            saved ? 'Saved to your list' : 'Removed from your list',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    ActionStatus.show(
+      context,
+      saved ? ActionStatus.addedToWishlist : ActionStatus.removedFromWishlist,
+    );
   }
 }
 

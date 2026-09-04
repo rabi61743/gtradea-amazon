@@ -245,7 +245,10 @@ void main() {
       expect(find.textContaining('Pokhara'), findsOneWidget);
       expect(find.text('Rabi Yadav'), findsNothing);
       expect(find.text('Default'), findsOneWidget);
-      expect(find.text('Work'), findsOneWidget);
+      // The label tag was removed by request, and nothing replaced it: no row
+      // carries Home, Work or Other any more.
+      expect(find.text('Work'), findsNothing);
+      expect(find.text('Home'), findsNothing);
     });
 
     testWidgets('the search box only appears once the book needs one', (

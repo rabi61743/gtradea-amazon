@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'core/audio/sound_settings.dart';
 import 'core/dev/frame_probe.dart';
 import 'core/l10n/app_strings.dart';
 import 'core/theme/app_theme.dart';
@@ -24,6 +25,11 @@ void main() {
   PaintingBinding.instance.imageCache
     ..maximumSize = 1500
     ..maximumSizeBytes = 120 << 20;
+
+  // Read before the first screen can play anything. It defaults to on, so a
+  // slow read is never wrongly silent -- but a shopper who turned sound off
+  // should not get one last chime while the preference is still loading.
+  SoundSettings.instance.load();
 
   // Profile builds only, and a no-op in debug and release. See the file for why
   // Android's own frame tooling cannot measure a Flutter app.

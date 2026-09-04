@@ -527,6 +527,37 @@ class OrderStore extends ChangeNotifier {
   // ---------------------------------------------------------------------
 
   bool _refreshing = false;
+
+  /// Cancellations and returns this shopper has raised, as the server holds
+  /// them. Read rather than inferred: whether a request is open, approved,
+  /// rejected or refunded is the shop's decision, not this app's.
+  List<OrderRequest> _requests = const [];
+
+  List<OrderRequest> get requests => List.unmodifiable(_requests);
+
+  /// The requests raised against one order, newest first.
+  List<OrderRequest> requestsFor(String orderId) {
+    final mine =
+        [
+          for (final request in _requests)
+            if (request.orderId == orderId) request,
+        ]..sort((a, b) {
+          final left = a.createdAt, right = b.createdAt;
+          if (left == null || right == null) return 0;
+          return right.compareTo(left);
+        });
+    return List.unmodifiable(mine);
+  }
+
+  /// The request that stops another being raised: one the shop still has in
+  /// hand. A rejected or withdrawn one does not block a second attempt.
+  OrderRequest? openRequestFor(String orderId, {required bool isReturn}) {
+    for (final request in requestsFor(orderId)) {
+      if (request.isReturn == isReturn && request.isOpen) return request;
+    }
+    return null;
+  }
+
   ApiError? _error;
 
   ApiError? get error => _error;
@@ -548,6 +579,9 @@ class OrderStore extends ChangeNotifier {
         ..clear()
         ..addAll(rows.map((row) => Order.fromServer(row, cached[row.id])));
       _sort();
+      // Both lists, in the same pass: a screen that knew the orders but not
+      // the requests would offer Cancel on an order already awaiting one.
+      _requests = await OrdersRepository.instance.requests();
       _error = null;
     } on ApiError catch (e) {
       // Whatever was cached stays. An empty order history shown because the
@@ -626,6 +660,10 @@ class OrderStore extends ChangeNotifier {
     String reason = 'changed_mind',
     String? details,
   }) async {
+    // Nothing is sent while the shop already has one in hand. The server
+    // enforces this too; this only saves the shopper a refusal.
+    if (openRequestFor(orderId, isReturn: false) != null) return false;
+
     try {
       await OrdersRepository.instance.requestCancellation(
         orderId: orderId,
@@ -641,24 +679,45 @@ class OrderStore extends ChangeNotifier {
     }
   }
 
+  /// Takes a pending cancellation back.
+  Future<bool> withdrawCancellation(String requestId) async {
+    try {
+      await OrdersRepository.instance.withdrawCancellation(requestId);
+      await refreshFromServer();
+      return true;
+    } on ApiError catch (e) {
+      _error = e;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Raises a return for the items given, or for the whole order when none
+  /// are named.
   Future<bool> requestReturnFor(
     String orderId, {
     String reason = 'changed_mind',
     String? details,
+    List<({String orderItemId, int quantity})>? items,
   }) async {
+    if (openRequestFor(orderId, isReturn: true) != null) return false;
+
     final order = byId(orderId);
-    final items = order?.server?.items ?? const <ServerOrderItem>[];
-    if (items.isEmpty) return false;
+    final all = order?.server?.items ?? const <ServerOrderItem>[];
+    final wanted =
+        items ??
+        [
+          for (final item in all)
+            (orderItemId: item.id, quantity: item.quantity),
+        ];
+    if (wanted.isEmpty) return false;
 
     try {
       await OrdersRepository.instance.requestReturn(
         orderId: orderId,
         reason: reason,
         details: details,
-        items: [
-          for (final item in items)
-            (orderItemId: item.id, quantity: item.quantity),
-        ],
+        items: wanted,
       );
       await refreshFromServer();
       return true;

@@ -356,8 +356,13 @@ class ProductDetail {
   /// The bulk-price ladder, cheapest rung last. Empty for most products.
   final List<QuantityTier> tiers;
 
-  /// The handful of facts a shopper checks before anything else. Separate from
-  /// [specs], which is the exhaustive table.
+  /// The facts a shopper checks before anything else, in the order the seller
+  /// filed them.
+  ///
+  /// The whole list, not a slice of it: how many fit above a "View more" is a
+  /// question about the card that draws them, and it used to be answered here
+  /// -- which left the card with nothing to reveal. [specs] is still the
+  /// exhaustive table the Specifications panel prints.
   final List<ProductSpec> highlights;
 
   final List<Assurance> assurances;
@@ -518,9 +523,9 @@ class ProductDetail {
           asString(item['seller_nick']),
       location: asString(item['location']),
       tiers: tiers,
-      // The first few rows of the spec table, which is what a shopper scans
-      // before reading anything else.
-      highlights: specs.take(6).toList(growable: false),
+      // The same facts the table holds, for the card that shows the first few
+      // of them and offers the rest. The card decides how many that is.
+      highlights: specs,
       assurances: storeAssurances,
     );
   }

@@ -186,6 +186,83 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  /// The notifications ticked, by id. Empty means not in selection mode:
+  /// there is no third state, so the two cannot disagree.
+  final Set<String> _selected = {};
+
+  /// True while the deletion is in flight, so a second tap on Delete cannot
+  /// send the same rows twice.
+  bool _deleting = false;
+
+  bool get _selecting => _selected.isNotEmpty;
+
+  void _toggle(String id) {
+    setState(() {
+      if (!_selected.remove(id)) _selected.add(id);
+    });
+  }
+
+  void _endSelecting() => setState(_selected.clear);
+
+  /// Drops any ticked id that is no longer on the list -- a sync can take a
+  /// row away while it is ticked, and a phantom id would be counted and
+  /// deleted against nothing.
+  void _pruneSelection(List<AppNotification> items) {
+    if (_selected.isEmpty) return;
+    final live = {for (final item in items) item.id};
+    _selected.removeWhere((id) => !live.contains(id));
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_deleting || _selected.isEmpty) return;
+    final count = _selected.length;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete $count notification${count == 1 ? '' : 's'}?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    final failed = await NotificationStore.instance.deleteMany(_selected);
+    if (!mounted) return;
+
+    setState(() {
+      _deleting = false;
+      // The ones that went are gone from the list already; the ones that did
+      // not stay ticked, so a retry does not have to find them again.
+      _selected
+        ..clear()
+        ..addAll(failed);
+    });
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            failed.isEmpty
+                ? '$count notification${count == 1 ? '' : 's'} deleted'
+                : 'Deleted ${count - failed.length} of $count. The rest could '
+                      'not be deleted -- check your connection and try again.',
+          ),
+        ),
+      );
+  }
+
   void _dismiss(AppNotification notification) {
     final store = NotificationStore.instance;
     final index = store.indexOf(notification.id);
@@ -214,64 +291,108 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       builder: (context, _) {
         final store = NotificationStore.instance;
         final items = store.items;
+        _pruneSelection(items);
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Notifications'),
-            actions: [
-              if (store.hasUnread)
-                TextButton(
-                  onPressed: store.markAllRead,
-                  child: const Text('Mark all read'),
-                ),
-              IconButton(
-                icon: const Icon(Icons.tune),
-                tooltip: 'Notification settings',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const NotificationSettingsScreen(),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          body: items.isEmpty
-              ? Column(
-                  children: [
-                    _PermissionBanner(
-                      state: _permission,
-                      onAsk: _askPermission,
+        return PopScope(
+          // Back leaves selection mode before it leaves the page: the first
+          // press undoing a selection is what a shopper expects, and it is the
+          // way out for anyone who entered it by accident.
+          canPop: !_selecting,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && _selecting) _endSelecting();
+          },
+          child: Scaffold(
+            appBar: _selecting
+                ? AppBar(
+                    leading: IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Cancel',
+                      onPressed: _endSelecting,
                     ),
-                    const Expanded(child: _NoNotifications()),
-                  ],
-                )
-              : ListView(
-                  padding: const EdgeInsets.only(top: 4, bottom: 24),
-                  children: [
-                    _PermissionBanner(
-                      state: _permission,
-                      onAsk: _askPermission,
-                    ),
-                    for (final entry in _groupByDay(items, _now)) ...[
-                      _DayHeading(label: entry.key),
-                      for (final notification in entry.value)
-                        Dismissible(
-                          key: ValueKey(notification.id),
-                          direction: DismissDirection.endToStart,
-                          background: const _DismissBackground(),
-                          onDismissed: (_) => _dismiss(notification),
-                          child: _NotificationTile(
-                            notification: notification,
-                            now: _now,
-                            onTap: () => _open(notification),
-                            onMarkRead: notification.read
-                                ? null
-                                : () => store.markRead(notification.id),
+                    title: Text('${_selected.length} selected'),
+                    actions: [
+                      IconButton(
+                        icon: _deleting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.delete_outline),
+                        tooltip: 'Delete selected',
+                        onPressed: _deleting ? null : _deleteSelected,
+                      ),
+                    ],
+                  )
+                : AppBar(
+                    title: const Text('Notifications'),
+                    actions: [
+                      if (store.hasUnread)
+                        TextButton(
+                          onPressed: store.markAllRead,
+                          child: const Text('Mark all read'),
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.tune),
+                        tooltip: 'Notification settings',
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationSettingsScreen(),
                           ),
                         ),
+                      ),
                     ],
-                  ],
-                ),
+                  ),
+            body: items.isEmpty
+                ? Column(
+                    children: [
+                      _PermissionBanner(
+                        state: _permission,
+                        onAsk: _askPermission,
+                      ),
+                      const Expanded(child: _NoNotifications()),
+                    ],
+                  )
+                : ListView(
+                    padding: const EdgeInsets.only(top: 4, bottom: 24),
+                    children: [
+                      _PermissionBanner(
+                        state: _permission,
+                        onAsk: _askPermission,
+                      ),
+                      for (final entry in _groupByDay(items, _now)) ...[
+                        _DayHeading(label: entry.key),
+                        for (final notification in entry.value)
+                          Dismissible(
+                            key: ValueKey(notification.id),
+                            // Swiping a row away while several are ticked is two
+                            // ways of deleting at once, and the swipe would only
+                            // take the one under the finger.
+                            direction: _selecting
+                                ? DismissDirection.none
+                                : DismissDirection.endToStart,
+                            background: const _DismissBackground(),
+                            onDismissed: (_) => _dismiss(notification),
+                            child: _NotificationTile(
+                              notification: notification,
+                              now: _now,
+                              selecting: _selecting,
+                              selected: _selected.contains(notification.id),
+                              onTap: _selecting
+                                  ? () => _toggle(notification.id)
+                                  : () => _open(notification),
+                              onLongPress: () => _toggle(notification.id),
+                              onMarkRead: notification.read || _selecting
+                                  ? null
+                                  : () => store.markRead(notification.id),
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+          ),
         );
       },
     );
@@ -325,12 +446,23 @@ class _NotificationTile extends StatelessWidget {
     required this.notification,
     required this.now,
     required this.onTap,
+    this.onLongPress,
+    this.selecting = false,
+    this.selected = false,
     this.onMarkRead,
   });
 
   final AppNotification notification;
   final DateTime now;
   final VoidCallback onTap;
+
+  /// Starts selection mode, or adds this row to it.
+  final VoidCallback? onLongPress;
+
+  /// Whether the page is choosing rows at all, and whether this is one.
+  final bool selecting;
+  final bool selected;
+
   final VoidCallback? onMarkRead;
 
   @override
@@ -340,18 +472,38 @@ class _NotificationTile extends StatelessWidget {
     final (colour, icon) = categoryTone(context, notification.category);
 
     return Material(
-      // Unread carries a tint as well as the dot: a single small dot is easy
-      // to miss, and colour alone is not a cue everyone can use.
-      color: unread
+      // Selected outranks unread: while rows are being chosen, which ones are
+      // chosen is the only thing being read off this list.
+      color: selected
+          ? theme.colorScheme.primary.withValues(alpha: 0.14)
+          : unread
           ? theme.colorScheme.primary.withValues(alpha: 0.05)
           : Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (selecting) ...[
+                // Ticked rather than merely tinted: a colour wash alone is not
+                // a state everyone can read.
+                Padding(
+                  padding: const EdgeInsets.only(top: 7),
+                  child: Icon(
+                    selected
+                        ? Icons.check_circle
+                        : Icons.radio_button_unchecked,
+                    size: 22,
+                    color: selected
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
               Container(
                 width: 38,
                 height: 38,

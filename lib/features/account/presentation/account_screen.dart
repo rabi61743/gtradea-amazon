@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/audio/sound_settings.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../../shared/widgets/brand_wordmark.dart';
@@ -61,6 +62,7 @@ class _AccountScreenState extends State<AccountScreen> {
     LanguageStore.instance.load();
     AddressStore.instance.load();
     SavedPaymentStore.instance.load();
+    SoundSettings.instance.load();
   }
 
   void _push(Widget page) {
@@ -96,6 +98,7 @@ class _AccountScreenState extends State<AccountScreen> {
         LanguageStore.instance,
         AddressStore.instance,
         SavedPaymentStore.instance,
+        SoundSettings.instance,
       ]),
       builder: (context, _) {
         final account = AuthStore.instance.account;
@@ -180,6 +183,21 @@ class _AccountScreenState extends State<AccountScreen> {
                     icon: Icons.notifications_none,
                     label: 'Notifications',
                     onTap: () => _push(const NotificationSettingsScreen()),
+                  ),
+                  // In the list rather than behind a page of its own: it is
+                  // one switch, and a page containing one switch is a tap
+                  // spent on nothing.
+                  _RowSpec(
+                    icon: SoundSettings.instance.enabled
+                        ? Icons.volume_up_outlined
+                        : Icons.volume_off_outlined,
+                    label: 'Sound',
+                    // Said in words as well as shown by the switch: a switch
+                    // alone reads as on or off by position, which is a thing
+                    // to be interpreted rather than read.
+                    trailing: SoundSettings.instance.enabled ? 'On' : 'Off',
+                    toggle: SoundSettings.instance.enabled,
+                    onToggle: SoundSettings.instance.setEnabled,
                   ),
                   _RowSpec(
                     icon: Icons.location_on_outlined,
@@ -638,14 +656,26 @@ class _RowSpec {
   const _RowSpec({
     required this.icon,
     required this.label,
-    required this.onTap,
+    this.onTap,
     this.trailing,
-  });
+    this.toggle,
+    this.onToggle,
+  }) : assert(
+         onTap != null || onToggle != null,
+         'a row either opens something or switches something',
+       );
 
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+
+  /// What opening the row does. Null on a row that only carries a switch.
+  final VoidCallback? onTap;
+
   final String? trailing;
+
+  /// The switch state, when this row is a setting rather than a link.
+  final bool? toggle;
+  final ValueChanged<bool>? onToggle;
 }
 
 /// Rows sharing one bordered card, hairline-separated.
@@ -691,8 +721,15 @@ class _SettingsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final toggle = spec.toggle;
+    final onToggle = spec.onToggle;
+
     return InkWell(
-      onTap: spec.onTap,
+      // The whole row flips the switch, not only the switch itself: a 34pt
+      // target at the end of a row is the hardest thing on this page to hit.
+      onTap: onToggle != null && toggle != null
+          ? () => onToggle(!toggle)
+          : spec.onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Column(
@@ -729,11 +766,23 @@ class _SettingsRow extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                   ],
-                  Icon(
-                    Icons.chevron_right,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  if (toggle != null && onToggle != null)
+                    // Excluded from semantics above and labelled here, so a
+                    // screen reader announces one control -- "Sound, on" --
+                    // rather than a row and a switch it has to relate.
+                    Semantics(
+                      label: spec.label,
+                      toggled: toggle,
+                      child: ExcludeSemantics(
+                        child: Switch(value: toggle, onChanged: onToggle),
+                      ),
+                    )
+                  else
+                    Icon(
+                      Icons.chevron_right,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                 ],
               ),
             ),

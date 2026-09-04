@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:gtradea_amazon/features/home/widgets/promo_section.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/features/catalog/data/catalog_repository.dart';
 import 'package:gtradea_amazon/features/catalog/data/catalog_store.dart';
@@ -17,10 +18,11 @@ import 'support/catalog.dart';
 import 'support/fake_api.dart';
 
 const _title = 'Discover something new';
-const _banner = 'Delivery quoted before you pay';
+// The promotional pair that replaced the delivery band; the recommendations
+// still sit under it, which is the placement this file is about.
 
 void _tall(WidgetTester tester) {
-  tester.view.physicalSize = const Size(1100, 14000);
+  tester.view.physicalSize = const Size(1100, 20000);
   tester.view.devicePixelRatio = 2.0;
   addTearDown(tester.view.reset);
 }
@@ -52,7 +54,7 @@ void main() {
   });
 
   group('where it sits', () {
-    testWidgets('directly below the delivery banner', (tester) async {
+    testWidgets('directly below the promotional cards', (tester) async {
       // The placement the request is about. Asserted by position rather than by
       // reading the widget list, because "below the banner" is the requirement.
       _tall(tester);
@@ -60,14 +62,16 @@ void main() {
 
       await _openHome(tester);
 
-      final banner = tester.getRect(find.text(_banner)).top;
+      // The promotional block is all artwork now, so it is found by its
+      // widget rather than by any words on it.
+      final promo = tester.getRect(find.byType(PromoSection)).top;
       final section = tester.getRect(_inFeed(find.text(_title))).top;
       final recommended = tester
           .getRect(_inFeed(find.text('Recommended for you')))
           .top;
 
-      expect(section, greaterThan(banner));
-      // And above the recommendations, so it is *directly* below the banner
+      expect(section, greaterThan(promo));
+      // And above the recommendations, so it is *directly* below the promo
       // rather than merely somewhere after it.
       expect(section, lessThan(recommended));
     });

@@ -819,7 +819,6 @@ class _HeroBannerSkeletonState extends State<HeroBannerSkeleton>
                           color: theme.colorScheme.surfaceContainerHighest
                               .withValues(alpha: 0.45 + _shimmer.value * 0.35),
                         ),
-                       
                       ),
                     ),
                   ),

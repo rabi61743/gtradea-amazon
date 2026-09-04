@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/action_status.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/shimmer.dart';
 import '../../../shared/widgets/snap_physics.dart';
@@ -122,14 +123,10 @@ void toggleSavedProduct(BuildContext context, Product product) {
       minOrder: product.minOrder,
     ),
   );
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        content: Text(saved ? 'Saved to your list' : 'Removed from your list'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  ActionStatus.show(
+    context,
+    saved ? ActionStatus.addedToWishlist : ActionStatus.removedFromWishlist,
+  );
 }
 
 /// A rail of card-shaped bones, at exactly the height the real rail will be.

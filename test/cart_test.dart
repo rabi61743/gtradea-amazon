@@ -808,7 +808,10 @@ void main() {
       expect(line.variantLabel, 'Red', reason: 'the default variant');
       // The listing has a minimum order of two, and the page opens there.
       expect(line.quantity, 2);
-      expect(find.textContaining('Added Red to your cart'), findsOneWidget);
+      // The confirmation names the variant, which is the mistake worth
+      // catching on the page where one was chosen.
+      expect(find.textContaining('Added to Cart'), findsOneWidget);
+      expect(find.textContaining('Red'), findsWidgets);
     });
 
     testWidgets('the app-bar badge counts what was added', (tester) async {
@@ -841,6 +844,10 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 200));
 
+      // The stepper sits under the pinned app bar until the page is
+      // scrolled to it.
+      await tester.ensureVisible(find.byTooltip('More'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('More'));
       await tester.pump();
       await tester.tap(find.text('Add to cart'));
