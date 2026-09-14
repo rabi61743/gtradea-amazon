@@ -112,11 +112,20 @@ class LoadFailed extends StatelessWidget {
     required this.message,
     required this.onRetry,
     this.compact = false,
+    this.retryLabel,
+    this.retryIcon,
   });
 
   final String message;
   final VoidCallback onRetry;
   final bool compact;
+
+  /// What the button says, when "Try again" would be the wrong thing to
+  /// offer. An expired session is the case this exists for: retrying a dead
+  /// refresh token fetches the same refusal forever, and the way out is to
+  /// sign in. Null keeps the default, so every other caller is unchanged.
+  final String? retryLabel;
+  final IconData? retryIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -152,8 +161,8 @@ class LoadFailed extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
               onPressed: onRetry,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Try again'),
+              icon: Icon(retryIcon ?? Icons.refresh, size: 18),
+              label: Text(retryLabel ?? 'Try again'),
             ),
           ),
         ],

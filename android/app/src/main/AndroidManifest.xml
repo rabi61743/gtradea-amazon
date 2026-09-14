@@ -26,8 +26,13 @@
          chose. -->
     <uses-permission android:name="android.permission.CAMERA"/>
 
+    <!-- The shop's name, not the package name. The label was "gtradea_amazon",
+         the identifier `flutter create` writes, and it is what Android shows
+         as the app name in the notification header, the app switcher, the
+         launcher and the Settings list. The name used here is the one
+         BrandWordmark.name already carries. -->
     <application
-        android:label="gtradea_amazon"
+        android:label="GtradeA"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

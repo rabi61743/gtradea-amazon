@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/theme/colors.dart';
 import 'notification_store.dart';
 
 /// Where a tapped device notification wants to go.
@@ -75,6 +76,57 @@ class DeviceNotifications {
   static const _channelId = 'gtradea_updates';
   static const _askedKey = 'gtradea_notification_permission_asked';
 
+  /// The shop's own mark, as a drawable Android can use for a small icon.
+  ///
+  /// Not the launcher icon, which is what this used to point at. A small icon
+  /// is drawn as an alpha mask, so a full-colour launcher PNG arrives as a
+  /// white blob -- and the launcher icon here was still the stock Flutter logo
+  /// that `flutter create` writes, so the blob was not even this shop's shape.
+  static const notificationIcon = 'ic_notification';
+
+  /// What the system tints that mask with, and the accent beside the title.
+  ///
+  /// Read from the palette rather than written down again: left unset, Android
+  /// picks an accent of its own, which differs by manufacturer, theme and
+  /// version -- the "random colour". This is the same Trust Blue the header
+  /// band and the rest of the app already use.
+  static const notificationAccent = AppColors.trustBlue;
+
+  /// How every notification this app posts is dressed.
+  ///
+  /// Exposed so a test can assert the branding without a device: there is no
+  /// notification service on the test binding, so the only way to pin the icon
+  /// and the colour is to read the details the plugin is handed.
+  @visibleForTesting
+  static const androidDetails = AndroidNotificationDetails(
+    _channelId,
+    'Order and account updates',
+    channelDescription:
+        'Quotes, support replies and updates about your orders.',
+    importance: Importance.high,
+    priority: Priority.high,
+    icon: notificationIcon,
+    color: notificationAccent,
+    // The accent tints the icon and the app name; it does not flood the
+    // notification's background. Colorising the whole row is for media and
+    // call notifications, and would not match anything else in this app.
+    colorized: false,
+    // Shown on the lock screen, and redacted there if the shopper asked for
+    // that.
+    //
+    // This was `public`, on the reasoning that the shop's own words carry
+    // nothing a passer-by should not read. That reasoning is the app deciding
+    // on the shopper's behalf: `public` *overrides* the device setting for
+    // hiding sensitive content, so someone who had chosen to keep previews off
+    // their lock screen got a quote total on it anyway.
+    //
+    // `private` still puts the notification on the lock screen. It only gives
+    // the choice about the content back to the person whose phone it is: they
+    // see it in full when their settings allow previews, and the redacted form
+    // when they do not.
+    visibility: NotificationVisibility.private,
+  );
+
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
   Future<void>? _readying;
@@ -89,7 +141,12 @@ class DeviceNotifications {
       try {
         await _plugin.initialize(
           const InitializationSettings(
-            android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+            // The shop's mark, not the launcher icon. See [notificationIcon]:
+            // the launcher icon was still the stock Flutter logo, and a small
+            // icon is an alpha mask, so it arrived as a white blob.
+            android: AndroidInitializationSettings(
+              '@drawable/$notificationIcon',
+            ),
             iOS: DarwinInitializationSettings(
               // Asked for separately, at a moment that makes sense, rather
               // than the first time a notification happens to be posted.
@@ -223,24 +280,12 @@ class DeviceNotifications {
       await _ensureReady();
       if (!_ready) return pretendPosted;
 
-      const android = AndroidNotificationDetails(
-        _channelId,
-        'Order and account updates',
-        channelDescription:
-            'Quotes, support replies and updates about your orders.',
-        importance: Importance.high,
-        priority: Priority.high,
-        // Shown in full on the lock screen: the title and body are already the
-        // shop's own words and carry nothing a passer-by should not read.
-        visibility: NotificationVisibility.public,
-      );
-
       await _plugin.show(
         notification.id.hashCode,
         notification.title,
         notification.body.isEmpty ? null : notification.body,
         const NotificationDetails(
-          android: android,
+          android: androidDetails,
           iOS: DarwinNotificationDetails(),
         ),
         payload: jsonEncode({
