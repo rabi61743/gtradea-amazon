@@ -18,6 +18,16 @@ Entry format:
 
 ---
 
+## 2026-09-15 17:25 — Account card runs to the bottom; greeting padding 11
+- **What:**
+  - The page list's bottom padding went from 32 to 0, and `_AccountCard`'s bottom padding from 12 to `32 + MediaQuery.viewPaddingOf(context).bottom`, so the white card continues below Sign out to the foot of the screen, behind the navigation bar, and no grey page shows underneath.
+  - Also included: the user's own edit of `_ProfileCard` padding from `EdgeInsets.all(16)` to `EdgeInsets.all(11)`.
+- **Why:** User request: add white card below the Sign out button and do not show the grey page. The padding edit was made by the user.
+- **Affected:** `lib/features/account/presentation/account_screen.dart` (ListView padding, `_AccountCard` padding, `_ProfileCard` padding).
+- **Impact & risk:** Account screen spacing only. Note: `all(11)` also brings the avatar and Switch 5 dp closer to the side edges than the rest of the page (which aligns at 16). `fromLTRB(16, 11, 16, 11)` would keep that alignment; the user was told and it was left as they set it.
+- **Verification:** analyze clean; auth, account and multi-account suites 63/63. On the Redmi the card is white from the greeting to the bottom edge, with no grey below Sign out.
+- **Commit:** see `git log` — `style(account): run the account card to the bottom of the page`, pushed to origin `main`.
+
 ## 2026-09-15 17:05 — Greeting block without its own card
 - **What:** `_ProfileCard` (avatar, "Hello, name", email, Switch) no longer draws its own tinted wash, border or shadow; it sits directly on the account card. Its 16 dp padding and all content are unchanged. The guest card (signed out) keeps its card.
 - **Why:** User request: remove the card from the greeting, email and Switch, as done for the other sections, nothing else.

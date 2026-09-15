@@ -235,7 +235,9 @@ class _AccountScreenState extends State<AccountScreen> {
             title: Text(account == null ? 'Sign In / Sign Up' : 'Account'),
           ),
           body: ListView(
-            padding: const EdgeInsets.only(top: 12, bottom: 32),
+            // No bottom padding: the account card runs to the foot of the page
+            // itself, so no grey shows under it.
+            padding: const EdgeInsets.only(top: 12),
             children: [
               // Every item of the Account section in one card, each exactly as
               // it was: profile, shortcuts, recently viewed, settings, help and
@@ -434,7 +436,13 @@ class _AccountCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      // White below the last item (Sign out) down to the bottom of the
+      // screen: the 32 the page used to leave grey, plus the system
+      // navigation bar's height so the card also runs behind it.
+      padding: EdgeInsets.only(
+        top: 12,
+        bottom: 32 + MediaQuery.viewPaddingOf(context).bottom,
+      ),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: _cardShape,
@@ -571,7 +579,7 @@ class _ProfileCard extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(11),
         // No card of its own, by request -- like the settings, help and
         // recently viewed sections, the greeting sits directly on the account
         // card. Padding and content are unchanged.
