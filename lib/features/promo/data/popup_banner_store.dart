@@ -29,11 +29,12 @@ class PopupBannerStore extends ChangeNotifier {
   /// Whether this launch has already decided about the popup, shown or not.
   ///
   /// Held in memory on the singleton on purpose: it lives exactly as long as
-  /// the app's process. A fresh launch from a closed app is a new process and
-  /// starts false, so the popup shows again. Returning from the background,
-  /// moving between pages or the home screen being rebuilt all happen inside
-  /// the same process, where this is already true -- so none of them can show
-  /// it a second time.
+  /// the running app. Opening the app after it was closed -- swiped away,
+  /// backed out of, or stopped -- starts a new Flutter engine and so a fresh
+  /// copy of this, false, and the popup shows again. Returning from the
+  /// background, moving between pages or the home screen being rebuilt all
+  /// happen inside the same running app, where this is already true -- so
+  /// none of them can show it a second time.
   bool _launchHandled = false;
 
   bool get isLoaded => _loaded;

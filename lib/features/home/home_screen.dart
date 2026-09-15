@@ -218,9 +218,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   StreamSubscription<RealtimeEvent>? _realtime;
 
-  /// What can make the popup ready: the catalogue finishing its cold load, the
-  /// tour answering, and the setting arriving.
+  /// What can make the popup ready: the saved sign-in being restored, the
+  /// catalogue finishing its cold load, the tour answering, and the setting
+  /// arriving.
   final Listenable _popupTriggers = Listenable.merge([
+    AuthStore.instance,
     CatalogStore.instance.categories,
     TourStore.instance,
     PopupBannerStore.instance,
@@ -239,17 +241,25 @@ class _HomeScreenState extends State<HomeScreen> {
   /// there is one to show.
   ///
   /// Driven by the startup state itself rather than a timer: it waits for the
-  /// cold-start loader to be gone, for the tour to have read the disk and for
-  /// the setting to arrive, whichever lands last. Once per app process -- see
-  /// [PopupBannerStore.launchHandled] -- so resuming from the background or
-  /// navigating never shows it again. A launch that opens the tour keeps the
-  /// tour to itself: the popup waits for the next launch rather than stacking
-  /// two overlays on a first run.
+  /// saved sign-in to be restored, the cold-start loader to be gone, the tour
+  /// to have read that account's record and the setting to arrive, whichever
+  /// lands last. Once per app launch -- see [PopupBannerStore.launchHandled] --
+  /// so resuming from the background or navigating never shows it again. A
+  /// launch that opens the tour keeps the tour to itself: the popup waits for
+  /// the next launch rather than stacking two overlays on a first run.
   Future<void> _maybeShowPopup() async {
     if (!mounted) return;
     final store = PopupBannerStore.instance;
     if (store.launchHandled) return;
 
+    // The sign-in first. The tour reads the guest's record until the saved
+    // session is restored, and then re-reads the account's. Deciding in that
+    // gap took a signed-in shopper who had finished the tour for somebody who
+    // had not -- "tour pending, skip the popup" -- on every launch, which is
+    // why it did not appear. Restoring the session makes the tour unload for
+    // the re-read synchronously, so the check below then waits for the right
+    // record.
+    if (!AuthStore.instance.isLoaded) return;
     final tour = TourStore.instance;
     if (!tour.isLoaded) return;
     final catalogue = CatalogStore.instance.categories;

@@ -2,7 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
+// Only to hold the keystore's answer back; it ships with flutter_secure_storage.
+// ignore: depend_on_referenced_packages
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gtradea_amazon/core/network/session_store.dart';
 import 'package:gtradea_amazon/core/images/app_images.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
@@ -44,6 +50,10 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    // Real session restore at startup, from an empty keystore unless a test
+    // puts a saved sign-in there.
+    FlutterSecureStorage.setMockInitialValues({});
+    SessionStore.instance.resetForTest();
     AuthStore.instance.resetForTest();
     WishlistStore.instance.resetForTest();
     TourStore.instance.resetForTest();
@@ -240,6 +250,60 @@ void main() {
     expect(popup, findsNothing);
   });
 
+  testWidgets(
+    'a signed-in shopper who finished the tour gets it on every fresh launch',
+    (tester) async {
+      // The root cause of it not appearing: the tour's record is under the
+      // account, the guest has none, and the decision used to be made before
+      // the saved sign-in was restored -- reading the guest's "not seen" as
+      // "tour pending" and skipping the popup, launch after launch.
+      //
+      // On a phone the keystore answers last, so the keystore here holds its
+      // answer back until everything else -- catalogue, setting, the tour's
+      // guest read -- has landed. Without the fix this skipped the popup.
+      TourStore.enabled = true;
+      SharedPreferences.setMockInitialValues({
+        TourStore.storageKeyFor('user-1'):
+            '{"version":${TourStore.currentVersion},"outcome":"completed"}',
+      });
+      final keystore = _SlowKeystore({
+        'gtradea-go-auth-session':
+            '{"access_token":"a","refresh_token":"r","expires_at":9999999999,'
+            '"user":{"id":"user-1","email":"rabi@example.com"}}',
+      });
+      FlutterSecureStoragePlatform.instance = keystore;
+      SessionStore.instance.resetForTest();
+      TourStore.instance.bindToAuth();
+      serve(_banner());
+
+      await launch(tester);
+      expect(AuthStore.instance.isLoaded, isFalse, reason: 'still restoring');
+      expect(PopupBannerStore.instance.isLoaded, isTrue);
+      expect(TourStore.instance.isLoaded, isTrue, reason: "the guest's record");
+      expect(popup, findsNothing);
+      expect(
+        PopupBannerStore.instance.launchHandled,
+        isFalse,
+        reason: 'no decision while the sign-in is unknown',
+      );
+
+      keystore.release();
+      for (var i = 0; i < 4; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+      }
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(AuthStore.instance.account?.id, 'user-1');
+      expect(TourStore.instance.shouldStart, isFalse);
+      expect(popup, findsOneWidget);
+    },
+  );
+
   testWidgets('a launch that opens the tour leaves the popup for next time', (
     tester,
   ) async {
@@ -321,5 +385,24 @@ void main() {
       expect(screen.contains(close.topLeft), isTrue, reason: 'close on screen');
       expect(screen.contains(close.bottomRight), isTrue);
     });
+  }
+}
+
+/// A keystore that answers only once [release] is called: the slow part of a
+/// real cold start, made deterministic.
+class _SlowKeystore extends TestFlutterSecureStoragePlatform {
+  _SlowKeystore(super.data);
+
+  final _gate = Completer<void>();
+
+  void release() => _gate.complete();
+
+  @override
+  Future<String?> read({
+    required String key,
+    required Map<String, String> options,
+  }) async {
+    await _gate.future;
+    return super.read(key: key, options: options);
   }
 }

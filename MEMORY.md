@@ -18,6 +18,36 @@ Entry format:
 
 ---
 
+## 2026-09-15 22:05 — Popup reliably shows on every fresh launch (root cause fixed)
+- **What:**
+  - The popup's once-per-launch decision now also waits for the saved sign-in to be restored (`AuthStore.isLoaded`), and `AuthStore` joined the popup triggers.
+  - `TourStore` unloads synchronously when the restored account arrives, so the decision then waits for that account's tour record.
+- **Root cause:**
+  - At cold start the keystore (secure storage) answers after the catalogue, the popup setting and the tour's guest read. The device log confirmed it: the decision ran with `auth=false`.
+  - The tour was still reading the guest key, while a signed-in shopper's finished tour lives under the account key. The popup read "tour pending", skipped, and burned the launch, so it failed on every launch.
+  - The earlier persisted `gtradea_popup_seen` list (removed in the 19:45 entry) was the other historic "only once" cause.
+- **Launch detection:**
+  - `PopupBannerStore.launchHandled` lives with the Flutter engine / Dart isolate. Force-stop, back-out and swipe-away all start a new engine, so the flag is fresh. Resume and navigation keep the same engine.
+  - The trigger is event-driven (no timer).
+  - No design change.
+- **Why:** User reported the popup not appearing on repeated opens and asked to fix the root cause so it shows on every fresh launch, once per session.
+- **Affected:** `lib/features/home/home_screen.dart` (popup trigger and readiness only), `lib/features/promo/data/popup_banner_store.dart` (doc only), `test/startup_popup_test.dart`.
+- **Impact & risk:**
+  - The popup may appear slightly later on cold start, after the keystore read.
+  - If the keystore never answers, `AuthStore.load` still completes: its read errors resolve to signed out.
+- **Verification:**
+  - analyze clean. `startup_popup_test` 18/18 plus `tour_overlay_test`.
+  - New regression test with a keystore held back until released: no decision while the sign-in is unknown, then the popup shows for a signed-in user with a finished tour. It fails without the fix, as checked.
+  - On the Redmi (temporary uncommitted `--dart-define` preview build; the server setting is still null):
+    - fresh launch → popup
+    - close → Account and back → no popup
+    - Home and reopen → no popup
+    - force-stop and open → popup
+    - back-out and open → popup
+  - The clean build was reinstalled afterwards.
+  - Full suite: 2358 pass; only the 3 known `brand_system_test` failures.
+- **Commit:** see git log (`fix(promo): wait for sign-in restore before deciding the startup popup`) on main, pushed to origin
+
 ## 2026-09-15 20:05 — Popup card centred on screen
 - **What:** The popup card itself now sits exactly in the centre. Before, the frame only added the close button's 18 dp overhang on the right and top, so the card sat about 9 dp left of and below centre. The frame now adds the overhang on all sides; the close button position and card size are unchanged.
 - **Why:** User request: "add center of the screen". The user also reported no popup after opening the app several times. Cause: the live `app_popup_banner` setting is still null. The user chose to set the banner themselves in the admin panel.
