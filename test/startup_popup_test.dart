@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -150,32 +151,81 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('closing it keeps it closed on the next launch', (tester) async {
-    serve(_banner());
-    await launch(tester);
+  Future<void> close(WidgetTester tester) async {
     await tester.tap(find.byKey(const ValueKey('popup-close')));
     await tester.pumpAndSettle();
     expect(popup, findsNothing);
+  }
 
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getStringList('gtradea_popup_seen'), ['maha-sale']);
+  testWidgets('every fresh launch shows it again, even after closing it', (
+    tester,
+  ) async {
+    serve(_banner());
+    await launch(tester);
+    expect(popup, findsOneWidget);
+    await close(tester);
 
-    // Next launch, same campaign.
+    // The app fully closed and opened again: a new process, so the in-memory
+    // launch state starts over.
     await tester.pumpWidget(const SizedBox());
     PopupBannerStore.instance.resetForTest();
     await launch(tester);
+    expect(popup, findsOneWidget);
+  });
+
+  testWidgets('returning from the background does not show it again', (
+    tester,
+  ) async {
+    serve(_banner());
+    await launch(tester);
+    await close(tester);
+
+    for (final state in const [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 500));
     expect(popup, findsNothing);
   });
 
-  testWidgets('a new campaign shows even after the last was closed', (
+  testWidgets('moving between pages does not show it again', (tester) async {
+    serve(_banner());
+    await launch(tester);
+    await close(tester);
+
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('p')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    navigator.pop();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(popup, findsNothing);
+  });
+
+  testWidgets('a rebuilt home screen in the same run does not show it again', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({
-      'gtradea_popup_seen': ['old-sale'],
-    });
-    serve(_banner(id: 'new-sale'));
+    serve(_banner());
     await launch(tester);
-    expect(popup, findsOneWidget);
+    await close(tester);
+
+    // Same process, home screen torn down and built again.
+    await tester.pumpWidget(const SizedBox());
+    await launch(tester);
+    expect(popup, findsNothing);
   });
 
   testWidgets('switched off or expired: no popup', (tester) async {

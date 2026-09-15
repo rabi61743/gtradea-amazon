@@ -18,6 +18,28 @@ Entry format:
 
 ---
 
+## 2026-09-15 19:45 — Popup shows on every fresh app launch
+- **What:**
+  - The startup popup now shows on every cold launch, meaning the app was fully closed and opened again, after the loading screen finishes.
+  - It does not show again when returning from the background, moving between pages, or when the home screen is rebuilt in the same run.
+  - Replaced the saved "seen campaign ids" list (`gtradea_popup_seen`, no longer read or written) with an in-memory `PopupBannerStore.launchHandled` / `claimLaunch()`. It lives as long as the app process, and a fresh launch is a new process.
+  - `HomeScreen` checks the store's flag instead of its own field.
+  - The trigger is still event-driven with no timer: loader done, tour loaded, setting loaded.
+  - The tour-first rule is kept.
+  - If Android kills the app in the background, reopening it is a fresh launch and the popup shows.
+- **Why:** User request: show on fresh launch only, not on navigation or resume; trigger from real lifecycle/startup state, not a timer. This supersedes the earlier "once per banner until closed" choice.
+- **Affected:** `lib/features/promo/data/popup_banner_store.dart`, `lib/features/home/home_screen.dart` (popup trigger only), `test/startup_popup_test.dart`.
+- **Impact & risk:** People now see a live campaign on each cold start even after closing it. There's no other behaviour change.
+- **Verification:**
+  - analyze clean; `startup_popup_test` 17/17 and `tour_overlay_test` pass.
+  - New tests: every fresh launch shows it after a close; background → resume doesn't show it; push/pop doesn't show it; home rebuilt in the same run doesn't show it.
+  - On the Redmi, with a temporary uncommitted `--dart-define` preview build (server setting still null):
+    - cold start → popup
+    - close, Home key, reopen → no popup
+    - Account and back → no popup
+    - force-stop and launch → popup again
+- **Commit:** see git log (`feat(promo): show startup popup on every fresh launch`) on main, pushed to origin
+
 ## 2026-09-15 19:15 — Startup promo popup banner (admin-managed site setting)
 - **What:**
   - After the existing loading screen finishes, the home screen can open a promo popup: dimmed backdrop, portrait artwork card (radius 12), and a round white ✕ on its top-right corner.

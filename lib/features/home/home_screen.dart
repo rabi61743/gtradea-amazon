@@ -226,11 +226,8 @@ class _HomeScreenState extends State<HomeScreen> {
     PopupBannerStore.instance,
   ]);
 
-  /// Decided at most once per launch, shown or not.
-  bool _popupDecided = false;
-
   void _schedulePopupCheck() {
-    if (_popupDecided) return;
+    if (PopupBannerStore.instance.launchHandled) return;
     // After the frame: these stores can notify in the middle of a build.
     WidgetsBinding.instance
       ..addPostFrameCallback((_) => _maybeShowPopup())
@@ -238,23 +235,28 @@ class _HomeScreenState extends State<HomeScreen> {
       ..scheduleFrame();
   }
 
-  /// Shows the popup straight after the loading screen, if there is one to show.
+  /// Shows the popup straight after the loading screen on a fresh launch, if
+  /// there is one to show.
   ///
-  /// Waits for the cold-start loader to be gone, for the tour to have read the
-  /// disk and for the setting to arrive. A launch that opens the tour keeps the
+  /// Driven by the startup state itself rather than a timer: it waits for the
+  /// cold-start loader to be gone, for the tour to have read the disk and for
+  /// the setting to arrive, whichever lands last. Once per app process -- see
+  /// [PopupBannerStore.launchHandled] -- so resuming from the background or
+  /// navigating never shows it again. A launch that opens the tour keeps the
   /// tour to itself: the popup waits for the next launch rather than stacking
   /// two overlays on a first run.
   Future<void> _maybeShowPopup() async {
-    if (_popupDecided || !mounted) return;
+    if (!mounted) return;
+    final store = PopupBannerStore.instance;
+    if (store.launchHandled) return;
 
     final tour = TourStore.instance;
     if (!tour.isLoaded) return;
     final catalogue = CatalogStore.instance.categories;
     if (catalogue.value == null && catalogue.isLoading) return;
-    final store = PopupBannerStore.instance;
     if (!store.isLoaded) return;
 
-    _popupDecided = true;
+    if (!store.claimLaunch()) return;
     _popupTriggers.removeListener(_schedulePopupCheck);
     final banner = store.banner;
     if (tour.shouldStart || banner == null || !store.shouldShow()) return;
@@ -272,7 +274,6 @@ class _HomeScreenState extends State<HomeScreen> {
       banner: banner,
       image: image,
     );
-    unawaited(store.markSeen(banner.id));
     if (result == PopupResult.followed && mounted) {
       _followPopupLink(banner.buttonLink);
     }
