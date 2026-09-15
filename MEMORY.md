@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 16:10 — Account items combined into one card
+- **What:** On the Account screen the profile/guest card, the Orders/Saved/Cart/Support shortcuts, Recently viewed, Account settings and Help and information are wrapped, unchanged, in one `_AccountCard`. It uses the page's own card style (surface colour, `_cardShape`, horizontal hairline border, `_cardLift`) with 12 dp vertical inner padding and no horizontal padding, so nothing inside changes width or position. Sign out stays outside.
+- **Why:** User request: place these existing items in one unified card without repositioning or restyling anything.
+- **Affected:** `lib/features/account/presentation/account_screen.dart` (wrapper; ignoring whitespace, +49/-2 lines, plus two lines the formatter re-wrapped). `test/account_cards_test.dart` (lifted cards 3 -> 4: the new card plus the three inside).
+- **Impact & risk:** Structure only. Items, routes, data and taps are unchanged. The gaps between blocks now show the card's surface instead of the page ground, which is what makes it one card.
+- **Verification:** analyze clean; account, login activity, product history, sound, theme and payment suites 135/135. On the Redmi the items read as one card with positions unchanged.
+- **Commit:** see `git log` — `style(account): place the account items in one card`, pushed to origin `main`.
+
 ## 2026-09-15 15:55 — Flash Sales card radius on the header sections
 - **What:** The Delivery + Points card and the Orders / Messages / Notifications section use the Flash Sales card's radius, reused as the constant `AppTheme.radiusCard` (12; was 14). Both surfaces clip content and ripples with `Clip.antiAlias`. The halves' ripple radii follow `DeliveryPointsCard.radius`.
 - **Why:** User request: the exact Carousel/Flash Sales radius. The two differ (Flash Sales 12, carousel 16); the user chose Flash Sales (12).

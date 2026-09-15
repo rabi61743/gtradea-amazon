@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -119,165 +120,174 @@ class _AccountScreenState extends State<AccountScreen> {
           body: ListView(
             padding: const EdgeInsets.only(top: 12, bottom: 32),
             children: [
-              if (account == null)
-                // Google and Apple are offered on the sign-in and create
-                // account pages, which both buttons here open -- not repeated
-                // on this card.
-                _GuestCard(
-                  onSignIn: () => _openAuth(AuthMode.signIn),
-                  onSignUp: () => _openAuth(AuthMode.signUp),
-                )
-              else
-                _ProfileCard(account: account),
+              // The account's own items -- profile, the four shortcuts,
+              // recently viewed, settings and help -- in one card, each
+              // exactly as it was. Sign out stays outside it.
+              _AccountCard(
+                children: [
+                  if (account == null)
+                    // Google and Apple are offered on the sign-in and create
+                    // account pages, which both buttons here open -- not repeated
+                    // on this card.
+                    _GuestCard(
+                      onSignIn: () => _openAuth(AuthMode.signIn),
+                      onSignUp: () => _openAuth(AuthMode.signUp),
+                    )
+                  else
+                    _ProfileCard(account: account),
 
-              const SizedBox(height: 18),
+                  const SizedBox(height: 18),
 
-              // Four things a shopper actually came here to reach, as targets
-              // rather than list rows. Two of them carry live counts, which is
-              // the whole reason to surface them at this size.
-              _QuickActions(
-                savedCount: WishlistStore.instance.count,
-                cartCount: CartStore.instance.count,
-                // A guest has no orders to show, so the tile asks them to sign
-                // in rather than promising a page that could never have
-                // anything in it for them.
-                onOrders: account == null
-                    ? () => _openAuth(AuthMode.signIn)
-                    : () => _push(const OrdersScreen()),
-                onSaved: () => _push(const WishlistScreen()),
-                onCart: () => _push(const CartScreen()),
-                onHelp: _openContact,
-              ),
+                  // Four things a shopper actually came here to reach, as targets
+                  // rather than list rows. Two of them carry live counts, which is
+                  // the whole reason to surface them at this size.
+                  _QuickActions(
+                    savedCount: WishlistStore.instance.count,
+                    cartCount: CartStore.instance.count,
+                    // A guest has no orders to show, so the tile asks them to sign
+                    // in rather than promising a page that could never have
+                    // anything in it for them.
+                    onOrders: account == null
+                        ? () => _openAuth(AuthMode.signIn)
+                        : () => _push(const OrdersScreen()),
+                    onSaved: () => _push(const WishlistScreen()),
+                    onCart: () => _push(const CartScreen()),
+                    onHelp: _openContact,
+                  ),
 
-              if (viewed.isNotEmpty) ...[
-                const SizedBox(height: 22),
-                _GroupLabel(
-                  'Recently viewed',
-                  action: 'Clear',
-                  onAction: RecentlyViewedStore.instance.clear,
-                ),
-                _RecentlyViewedRail(
-                  items: viewed,
-                  onTap: (product) => _push(
-                    ProductDetailScreen(
-                      product: productStub(
-                        numIid: product.id,
-                        title: product.title,
-                        imageUrl: product.imageUrl,
-                        displayPrice: product.price,
+                  if (viewed.isNotEmpty) ...[
+                    const SizedBox(height: 22),
+                    _GroupLabel(
+                      'Recently viewed',
+                      action: 'Clear',
+                      onAction: RecentlyViewedStore.instance.clear,
+                    ),
+                    _RecentlyViewedRail(
+                      items: viewed,
+                      onTap: (product) => _push(
+                        ProductDetailScreen(
+                          product: productStub(
+                            numIid: product.id,
+                            title: product.title,
+                            imageUrl: product.imageUrl,
+                            displayPrice: product.price,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ],
+                  ],
 
-              const SizedBox(height: 22),
-              const _GroupLabel('Account settings'),
-              _RowGroup(
-                rows: [
-                  // Only for a signed-in shopper. Offering it to a guest would
-                  // open a page whose every field is about an account they do
-                  // not have.
-                  if (account != null)
-                    _RowSpec(
-                      icon: Icons.manage_accounts_outlined,
-                      label: 'Profile settings',
-                      onTap: () => _push(const ProfileSettingsScreen()),
-                    ),
-                  if (account != null)
-                    _RowSpec(
-                      icon: Icons.shield_outlined,
-                      label: 'Login activity',
-                      onTap: () => _push(const LoginActivityScreen()),
-                    ),
-                  _RowSpec(
-                    icon: Icons.translate,
-                    label: LanguageStore.instance.strings.language,
-                    trailing: LanguageStore.instance.language.nativeName,
-                    onTap: () => _push(const LanguageScreen()),
-                  ),
-                  _RowSpec(
-                    icon: Icons.contrast,
-                    label: 'Theme',
-                    trailing: ThemeScreen.labelFor(ThemeSettings.instance.mode),
-                    onTap: () => _push(const ThemeScreen()),
-                  ),
-                  _RowSpec(
-                    icon: Icons.notifications_none,
-                    label: 'Notifications',
-                    onTap: () => _push(const NotificationSettingsScreen()),
-                  ),
-                  // In the list rather than behind a page of its own: it is
-                  // one switch, and a page containing one switch is a tap
-                  // spent on nothing.
-                  _RowSpec(
-                    icon: SoundSettings.instance.enabled
-                        ? Icons.volume_up_outlined
-                        : Icons.volume_off_outlined,
-                    label: 'Sound',
-                    // The word beside the switch is the toggle's own now --
-                    // see StateToggle, the same control the notification
-                    // groups use. Kept here as well it would print "On"
-                    // twice on one row.
-                    toggle: SoundSettings.instance.enabled,
-                    onToggle: SoundSettings.instance.setEnabled,
-                  ),
-                  _RowSpec(
-                    icon: Icons.location_on_outlined,
-                    label: 'Delivery addresses',
-                    trailing: AddressStore.instance.count == 0
-                        ? null
-                        : '${AddressStore.instance.count}',
-                    onTap: () => _push(const AddressListScreen()),
-                  ),
-                  _RowSpec(
-                    icon: Icons.history,
-                    label: 'Product history',
-                    onTap: () => _push(const ProductHistoryScreen()),
-                  ),
-                  _RowSpec(
-                    icon: Icons.request_quote_outlined,
-                    label: 'My quote requests',
-                    onTap: () => _push(const QuoteRequestsScreen()),
-                  ),
-                  _RowSpec(
-                    icon: Icons.payments_outlined,
-                    label: 'Payment methods',
-                    // The count, like the address row above it, so the page
-                    // says what is there without being opened.
-                    trailing: SavedPaymentStore.instance.count == 0
-                        ? null
-                        : '${SavedPaymentStore.instance.count}',
-                    onTap: () => _push(const PaymentMethodsScreen()),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 22),
-              const _GroupLabel('Help and information'),
-              _RowGroup(
-                rows: [
-                  _RowSpec(
-                    icon: Icons.support_agent,
-                    label: 'Help centre',
-                    onTap: _openHelpCenter,
-                  ),
-                  _RowSpec(
-                    icon: Icons.description_outlined,
-                    label: 'Terms and policies',
-                    onTap: () => _push(const TermsPoliciesScreen()),
-                  ),
-                  _RowSpec(
-                    icon: Icons.info_outline,
-                    label: 'About ${AppBrand.name}',
-                    // The shop's own About page, by the slug it publishes it
-                    // under, rather than a copy pasted into the app.
-                    onTap: () => _push(
-                      const LegalPageScreen(
-                        slug: 'about',
-                        title: 'About ${AppBrand.name}',
+                  const SizedBox(height: 22),
+                  const _GroupLabel('Account settings'),
+                  _RowGroup(
+                    rows: [
+                      // Only for a signed-in shopper. Offering it to a guest would
+                      // open a page whose every field is about an account they do
+                      // not have.
+                      if (account != null)
+                        _RowSpec(
+                          icon: Icons.manage_accounts_outlined,
+                          label: 'Profile settings',
+                          onTap: () => _push(const ProfileSettingsScreen()),
+                        ),
+                      if (account != null)
+                        _RowSpec(
+                          icon: Icons.shield_outlined,
+                          label: 'Login activity',
+                          onTap: () => _push(const LoginActivityScreen()),
+                        ),
+                      _RowSpec(
+                        icon: Icons.translate,
+                        label: LanguageStore.instance.strings.language,
+                        trailing: LanguageStore.instance.language.nativeName,
+                        onTap: () => _push(const LanguageScreen()),
                       ),
-                    ),
+                      _RowSpec(
+                        icon: Icons.contrast,
+                        label: 'Theme',
+                        trailing: ThemeScreen.labelFor(
+                          ThemeSettings.instance.mode,
+                        ),
+                        onTap: () => _push(const ThemeScreen()),
+                      ),
+                      _RowSpec(
+                        icon: Icons.notifications_none,
+                        label: 'Notifications',
+                        onTap: () => _push(const NotificationSettingsScreen()),
+                      ),
+                      // In the list rather than behind a page of its own: it is
+                      // one switch, and a page containing one switch is a tap
+                      // spent on nothing.
+                      _RowSpec(
+                        icon: SoundSettings.instance.enabled
+                            ? Icons.volume_up_outlined
+                            : Icons.volume_off_outlined,
+                        label: 'Sound',
+                        // The word beside the switch is the toggle's own now --
+                        // see StateToggle, the same control the notification
+                        // groups use. Kept here as well it would print "On"
+                        // twice on one row.
+                        toggle: SoundSettings.instance.enabled,
+                        onToggle: SoundSettings.instance.setEnabled,
+                      ),
+                      _RowSpec(
+                        icon: Icons.location_on_outlined,
+                        label: 'Delivery addresses',
+                        trailing: AddressStore.instance.count == 0
+                            ? null
+                            : '${AddressStore.instance.count}',
+                        onTap: () => _push(const AddressListScreen()),
+                      ),
+                      _RowSpec(
+                        icon: Icons.history,
+                        label: 'Product history',
+                        onTap: () => _push(const ProductHistoryScreen()),
+                      ),
+                      _RowSpec(
+                        icon: Icons.request_quote_outlined,
+                        label: 'My quote requests',
+                        onTap: () => _push(const QuoteRequestsScreen()),
+                      ),
+                      _RowSpec(
+                        icon: Icons.payments_outlined,
+                        label: 'Payment methods',
+                        // The count, like the address row above it, so the page
+                        // says what is there without being opened.
+                        trailing: SavedPaymentStore.instance.count == 0
+                            ? null
+                            : '${SavedPaymentStore.instance.count}',
+                        onTap: () => _push(const PaymentMethodsScreen()),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 22),
+                  const _GroupLabel('Help and information'),
+                  _RowGroup(
+                    rows: [
+                      _RowSpec(
+                        icon: Icons.support_agent,
+                        label: 'Help centre',
+                        onTap: _openHelpCenter,
+                      ),
+                      _RowSpec(
+                        icon: Icons.description_outlined,
+                        label: 'Terms and policies',
+                        onTap: () => _push(const TermsPoliciesScreen()),
+                      ),
+                      _RowSpec(
+                        icon: Icons.info_outline,
+                        label: 'About ${AppBrand.name}',
+                        // The shop's own About page, by the slug it publishes it
+                        // under, rather than a copy pasted into the app.
+                        onTap: () => _push(
+                          const LegalPageScreen(
+                            slug: 'about',
+                            title: 'About ${AppBrand.name}',
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -397,6 +407,40 @@ Color _cardWash(ThemeData theme) => Color.alphaBlend(
 /// the secondary grey, which measured too faint against the tint.
 Color _cardSubtext(ThemeData theme) =>
     theme.colorScheme.onSurface.withValues(alpha: 0.8);
+
+/// One card around the account's items.
+///
+/// It only wraps: every item inside keeps its own layout, spacing and
+/// decoration, and no horizontal padding is added, so nothing inside moves
+/// sideways or changes width. The surface, edge and lift are the page's own
+/// card style ([_cardShape], [_cardLift]), so this reads as the same kind of
+/// card as the blocks it holds.
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: _cardShape,
+        border: Border.symmetric(
+          horizontal: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        boxShadow: _cardLift,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
+}
 
 class _GuestCard extends StatelessWidget {
   const _GuestCard({required this.onSignIn, required this.onSignUp});
@@ -898,7 +942,10 @@ class _SettingsRow extends StatelessWidget {
                         // approximated: same thumb icon, same colours, same
                         // word beside it, so one kind of decision has one
                         // control across the app.
-                        child: StateToggle(enabled: toggle, onChanged: onToggle),
+                        child: StateToggle(
+                          enabled: toggle,
+                          onChanged: onToggle,
+                        ),
                       ),
                     )
                   else

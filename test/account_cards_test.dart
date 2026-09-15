@@ -55,9 +55,11 @@ void main() {
     signInForTest();
     await pump(tester);
 
-    // Account, Account settings, Help and information. Recently viewed only
-    // appears once something has been looked at, which this account has not.
-    expect(_lifted(tester), hasLength(3));
+    // The one card that now holds all the account items, and inside it the
+    // three blocks that were already lifted: Account, Account settings, Help
+    // and information. Recently viewed only appears once something has been
+    // looked at, which this account has not.
+    expect(_lifted(tester), hasLength(4));
 
     // The quick-action tiles and the rows inside the cards stay flat.
     expect(find.text('Account settings'), findsOneWidget);
