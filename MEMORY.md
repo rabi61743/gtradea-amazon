@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 20:05 — Popup card centred on screen
+- **What:** The popup card itself now sits exactly in the centre. Before, the frame only added the close button's 18 dp overhang on the right and top, so the card sat about 9 dp left of and below centre. The frame now adds the overhang on all sides; the close button position and card size are unchanged.
+- **Why:** User request: "add center of the screen". The user also reported no popup after opening the app several times. Cause: the live `app_popup_banner` setting is still null. The user chose to set the banner themselves in the admin panel.
+- **Affected:** `lib/features/promo/presentation/startup_popup_banner.dart` (frame and card offset), `test/startup_popup_test.dart` (centre assertions).
+- **Impact & risk:** Popup layout only.
+- **Verification:** `startup_popup_test` 17/17, now including a check that the card centre equals the screen centre at 360/800/1400 dp.
+- **Commit:** b13ea37 (`fix(promo): centre the popup card on screen`) on main, pushed to origin; log entry in a follow-up commit.
+
 ## 2026-09-15 19:45 — Popup shows on every fresh app launch
 - **What:**
   - The startup popup now shows on every cold launch, meaning the app was fully closed and opened again, after the loading screen finishes.
