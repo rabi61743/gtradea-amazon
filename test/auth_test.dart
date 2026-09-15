@@ -535,12 +535,12 @@ void main() {
       expect(find.text('Rs. 1,130'), findsOneWidget);
     });
 
-    testWidgets('the rail is back between the shortcuts and the settings', (
+    testWidgets('the rail, settings and sign out share one account card', (
       tester,
     ) async {
-      // Restored to where it always sat, but outside the unified account card:
-      // the card ends after the shortcuts and a second card holds Account
-      // settings and Help, so the rail keeps its own place and look.
+      // In the place it always had, now inside the one Account card with
+      // every other item -- Sign out included, last.
+      signInForTest();
       _useTallWindow(tester);
       RecentlyViewedStore.instance.record(jacket);
       await tester.pumpWidget(_wrap(const AccountScreen()));
@@ -549,8 +549,28 @@ void main() {
       final support = tester.getRect(find.text('Support'));
       final rail = tester.getRect(find.text('Recently viewed'));
       final settings = tester.getRect(find.text('Account settings'));
+      final signOut = tester.getRect(find.text('Sign out'));
       expect(rail.top, greaterThan(support.bottom));
       expect(settings.top, greaterThan(rail.bottom));
+      expect(signOut.top, greaterThan(settings.bottom));
+
+      // One card around all of it: the same card contains the greeting and
+      // the Sign out button.
+      final cards = find.ancestor(
+        of: find.text('Sign out'),
+        matching: find.byWidgetPredicate(
+          (w) => w.runtimeType.toString() == '_AccountCard',
+        ),
+      );
+      expect(cards, findsOneWidget);
+      expect(
+        find.descendant(of: cards, matching: find.text('Recently viewed')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cards, matching: find.text('Help and information')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('opening a product records the visit', (tester) async {

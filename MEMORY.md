@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 16:40 — Whole Account section in one card, Sign out included
+- **What:** One `_AccountCard` now holds every Account-section item in its existing order: profile (greeting and email) or guest card, the Orders/Saved/Cart/Support shortcuts, Recently viewed (heading with Clear, and the rail, when there is history), Account settings, Help and information, and Sign out. The split around Recently viewed and the second card are gone. Each item is the same widget with the same spacing and behaviour; `settingsAndHelp` is still defined once.
+- **Why:** User request: combine all these items, Recently viewed in place and Sign out included, into one card, changing only the outer container.
+- **Affected:** `lib/features/account/presentation/account_screen.dart`. `test/auth_test.dart`: the order test now also asserts Sign out comes last and that Recently viewed, Help and Sign out share one `_AccountCard`.
+- **Impact & risk:** Account screen structure only. Items, routes, sign-out confirmation, data and responsive behaviour are unchanged.
+- **Verification:** analyze clean; account and related suites 134/134. On the Redmi: one continuous card from "Hello, Prabhakar" to Sign out.
+- **Commit:** see `git log` — `style(account): put the whole account section in one card`, pushed to origin `main`.
+
 ## 2026-09-15 16:30 — Recently Viewed restored to its original place, outside the card
 - **What:** Restored Recently viewed (heading with Clear, and the rail) between the Orders/Saved/Cart/Support shortcuts and Account settings, unchanged: the `_RecentlyViewedRail` widget, `_GroupLabel` Clear action and imports come back from `50924c1`. It sits outside the unified card, so the card splits around it: card 1 holds profile and shortcuts; card 2 holds Account settings and Help. With nothing viewed the page is one card as before. Account settings and Help are written once (`settingsAndHelp`) and reused in either placement.
 - **Why:** User request: original location, not inside the card, card unchanged. That spot is inside the card, so the user chose "old spot, split the card in two".

@@ -113,9 +113,8 @@ class _AccountScreenState extends State<AccountScreen> {
         final account = AuthStore.instance.account;
         final viewed = RecentlyViewedStore.instance.items;
 
-        // Account settings and Help and information, written once and placed
-        // either inside the one card or in the second card below Recently
-        // viewed -- the same widgets either way.
+        // Account settings and Help and information, in the order they appear
+        // in the card.
         final settingsAndHelp = <Widget>[
           const SizedBox(height: 22),
           const _GroupLabel('Account settings'),
@@ -236,8 +235,9 @@ class _AccountScreenState extends State<AccountScreen> {
           body: ListView(
             padding: const EdgeInsets.only(top: 12, bottom: 32),
             children: [
-              // The account's own items in one card, each exactly as it was.
-              // Recently viewed stays outside it; Sign out stays below.
+              // Every item of the Account section in one card, each exactly as
+              // it was: profile, shortcuts, recently viewed, settings, help and
+              // sign out.
               _AccountCard(
                 children: [
                   if (account == null)
@@ -270,62 +270,54 @@ class _AccountScreenState extends State<AccountScreen> {
                     onHelp: _openContact,
                   ),
 
-                  // Recently viewed sits between the shortcuts and the
-                  // settings, where it always did. It stays outside the card:
-                  // with nothing viewed there is nothing between them and the
-                  // card is one piece; with something viewed the card splits
-                  // around the rail.
-                  if (viewed.isEmpty) ...settingsAndHelp,
+                  // Recently viewed, in the place it always had: between the
+                  // shortcuts and the settings.
+                  if (viewed.isNotEmpty) ...[
+                    const SizedBox(height: 22),
+                    _GroupLabel(
+                      'Recently viewed',
+                      action: 'Clear',
+                      onAction: RecentlyViewedStore.instance.clear,
+                    ),
+                    _RecentlyViewedRail(
+                      items: viewed,
+                      onTap: (product) => _push(
+                        ProductDetailScreen(
+                          product: productStub(
+                            numIid: product.id,
+                            title: product.title,
+                            imageUrl: product.imageUrl,
+                            displayPrice: product.price,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  ...settingsAndHelp,
+
+                  // Sign out, last in the same card, exactly as it was.
+                  if (account != null) ...[
+                    const SizedBox(height: 22),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: OutlinedButton.icon(
+                        onPressed: _confirmSignOut,
+                        icon: const Icon(Icons.logout, size: 18),
+                        label: const Text('Sign out'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          foregroundColor: Theme.of(context).colorScheme.error,
+                          side: BorderSide(
+                            color: Theme.of(context).colorScheme.error
+                                .withValues(alpha: 0.4),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
-
-              if (viewed.isNotEmpty) ...[
-                const SizedBox(height: 22),
-                _GroupLabel(
-                  'Recently viewed',
-                  action: 'Clear',
-                  onAction: RecentlyViewedStore.instance.clear,
-                ),
-                _RecentlyViewedRail(
-                  items: viewed,
-                  onTap: (product) => _push(
-                    ProductDetailScreen(
-                      product: productStub(
-                        numIid: product.id,
-                        title: product.title,
-                        imageUrl: product.imageUrl,
-                        displayPrice: product.price,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 22),
-                _AccountCard(
-                  // Without its leading gap: the card's own top padding and
-                  // the gap above it already separate it from the rail.
-                  children: settingsAndHelp.skip(1).toList(),
-                ),
-              ],
-
-              if (account != null) ...[
-                const SizedBox(height: 22),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: OutlinedButton.icon(
-                    onPressed: _confirmSignOut,
-                    icon: const Icon(Icons.logout, size: 18),
-                    label: const Text('Sign out'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                      foregroundColor: Theme.of(context).colorScheme.error,
-                      side: BorderSide(
-                        color: Theme.of(context).colorScheme.error
-                            .withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         );
