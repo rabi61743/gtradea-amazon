@@ -202,6 +202,7 @@ class _AccountScreenState extends State<AccountScreen> {
           const SizedBox(height: 22),
           const _GroupLabel('Help and information'),
           _RowGroup(
+            card: false,
             rows: [
               _RowSpec(
                 icon: Icons.support_agent,
@@ -848,9 +849,9 @@ class _RowGroup extends StatelessWidget {
 
   final List<_RowSpec> rows;
 
-  /// Whether the rows sit on their own card. Account settings turns it off,
-  /// by request: its rows sit directly on the account card, with no edge or
-  /// lift of their own.
+  /// Whether the rows sit on their own card. Account settings and Help and
+  /// information turn it off, by request: their rows sit directly on the
+  /// account card, with no edge or lift of their own.
   final bool card;
 
   @override

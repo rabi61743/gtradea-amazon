@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 16:50 — Help and information rows without their own card
+- **What:** Help and information passes `card: false` to `_RowGroup`, like Account settings. Its rows sit directly on the account card with no edge lines or shadow of their own. Rows, icons, text, dividers and spacing are unchanged.
+- **Why:** User request: remove the card from Help and information as was done for Account settings, nothing else.
+- **Affected:** `lib/features/account/presentation/account_screen.dart`. `test/account_cards_test.dart`: lifted surfaces 3 -> 2 (outer card, Account).
+- **Impact & risk:** Visual only, for Help and information. Routes and behaviour are unchanged.
+- **Verification:** analyze clean; account suites 101/101. On the Redmi Help and information sits on the account card, above Sign out.
+- **Commit:** see `git log` — `style(account): drop the help and information rows' own card`, pushed to origin `main`.
+
 ## 2026-09-15 16:45 — Account settings rows without their own card
 - **What:** `_RowGroup` gained `card` (default true). Account settings passes `card: false`, so its rows draw no edge lines, shadow or surface of their own and sit directly on the account card. Rows, icons, text, dividers and spacing are unchanged. Help and information keeps its card.
 - **Why:** User request: remove the card from Account settings only, nothing else.
