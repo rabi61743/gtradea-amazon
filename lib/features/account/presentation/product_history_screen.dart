@@ -664,6 +664,20 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
         child: OutlinedButton.icon(
           key: const ValueKey('history-load-more'),
           onPressed: _loadingOlder ? null : _loadOlder,
+          // The account card's Sign Up treatment: brand blue edge and words on
+          // the card's own white. The theme's hairline edge on a transparent
+          // fill was lost against the grey page, and the default disabled
+          // colours faded it to nearly nothing while a batch was loading.
+          style: OutlinedButton.styleFrom(
+            foregroundColor: theme.colorScheme.primary,
+            backgroundColor: theme.colorScheme.surface,
+            side: BorderSide(color: theme.colorScheme.primary),
+            textStyle: const TextStyle(fontWeight: FontWeight.w600),
+            // Full strength while loading too: the spinner already says it is
+            // busy, and a faded label fell below readable contrast.
+            disabledForegroundColor: theme.colorScheme.primary,
+            disabledBackgroundColor: theme.colorScheme.surface,
+          ),
           icon: _loadingOlder
               ? const SizedBox.square(
                   dimension: 16,

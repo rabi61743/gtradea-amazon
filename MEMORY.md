@@ -18,6 +18,25 @@ Entry format:
 
 ---
 
+## 2026-09-16 00:25 — Product History Load More button made clearly visible
+- **What:** The Load More `OutlinedButton` now uses the account card's Sign Up treatment:
+  - `foregroundColor` and `side` = `colorScheme.primary`, `backgroundColor` = `colorScheme.surface`, w600 label
+  - while a batch loads (disabled), foreground stays primary and fill stays surface, beside the spinner
+  - the theme's 44 dp height, control radius and typography are kept
+- **Why / root cause:**
+  - The user reported the button and its text as not visible.
+  - It used the theme's default outlined style: a transparent fill with the pale `border` hairline, on the grey page, so it read as a faint box.
+  - While loading, Material's default disabled colours (38%) made it almost invisible.
+  - A first attempt at 75% primary for the loading label measured 3.3:1, so full primary is used instead.
+- **Affected:** `lib/features/account/presentation/product_history_screen.dart` (button style only); `test/product_history_older_test.dart` (new contrast test).
+- **Impact & risk:** Visual only, for this button. Behaviour (append, spinner, no double tap, hide at end) is unchanged. Dark theme follows `colorScheme`.
+- **Verification:**
+  - New test: opaque fill; label ≥ 4.5:1 against the fill and edge ≥ 3:1 against the page, both idle and loading.
+  - History suites 47/47.
+  - On the Redmi: blue-edged white button with a readable blue "Load More" label.
+  - Full suite: 2372 pass; only the 3 known `brand_system_test` failures.
+- **Commit:** see git log (`fix(history): make Load More clearly visible`) on main, pushed to origin
+
 ## 2026-09-16 00:10 — Product History cards appear complete (image + description + price together)
 - **Root cause, investigated:**
   - **Different data paths:** the history row (`/product-views`) carries only `product_data.name` and `image_url` (measured). The description, ✓ highlight, department chip and live price exist only in the per-product `/api/1688/product` record.

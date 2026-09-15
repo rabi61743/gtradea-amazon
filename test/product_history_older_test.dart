@@ -204,6 +204,65 @@ void main() {
       },
     );
 
+    testWidgets('Load More reads clearly against the page, idle and loading', (
+      tester,
+    ) async {
+      double contrast(Color a, Color b) {
+        final la = a.computeLuminance();
+        final lb = b.computeLuminance();
+        final hi = la > lb ? la : lb;
+        final lo = la > lb ? lb : la;
+        return (hi + 0.05) / (lo + 0.05);
+      }
+
+      var call = 0;
+      api.onCall('GET', '/product-views', (c) {
+        call++;
+        final limit = int.tryParse('${c.query['limit']}') ?? 10;
+        return reply(
+          _views(40).take(limit).toList(),
+          delay: call == 1 ? null : const Duration(seconds: 2),
+        );
+      });
+      _tall(tester);
+      await tester.pumpWidget(_wrap());
+      await tester.pumpAndSettle();
+      await _toFooter(tester, find.text('Load More'));
+
+      final page = AppTheme.light.scaffoldBackgroundColor;
+      for (final loading in [false, true]) {
+        if (loading) {
+          await tester.tap(find.text('Load More'));
+          await tester.pump();
+        }
+        final button = tester.widget<ButtonStyleButton>(
+          find.byKey(const ValueKey('history-load-more')),
+        );
+        final states = loading ? {WidgetState.disabled} : <WidgetState>{};
+        final fill = button.style!.backgroundColor!.resolve(states)!;
+        final ink = Color.alphaBlend(
+          button.style!.foregroundColor!.resolve(states)!,
+          fill,
+        );
+        final edge = button.style!.side!.resolve(states)!.color;
+
+        expect(fill.a, 1.0, reason: 'an opaque button, not see-through');
+        expect(
+          contrast(ink, fill),
+          greaterThanOrEqualTo(4.5),
+          reason: 'label, loading=$loading',
+        );
+        expect(
+          contrast(edge, page),
+          greaterThanOrEqualTo(3),
+          reason: 'edge against the page, loading=$loading',
+        );
+        expect(find.text('Load More'), findsOneWidget);
+      }
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('when nothing older comes back, Load More goes away', (
       tester,
     ) async {
