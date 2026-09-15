@@ -310,6 +310,11 @@ void main() {
       expect(tester.takeException(), isNull);
       final card = tester.getSize(find.byKey(const ValueKey('popup-artwork')));
       expect(card.width, lessThanOrEqualTo(StartupPopupBanner.maxWidth));
+      final centre = tester.getCenter(
+        find.byKey(const ValueKey('popup-artwork')),
+      );
+      expect(centre.dx, closeTo(size.width / 2, 0.5), reason: 'centred');
+      expect(centre.dy, closeTo(size.height / 2, 0.5), reason: 'centred');
       final close = tester.getRect(find.byKey(const ValueKey('popup-close')));
       expect(close.width, greaterThanOrEqualTo(44), reason: 'tap target');
       final screen = Offset.zero & size;

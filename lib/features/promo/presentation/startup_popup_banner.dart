@@ -104,20 +104,21 @@ class StartupPopupBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = cardSize(MediaQuery.sizeOf(context));
-    // Half the button hangs outside the card's corner, as in the design, so
-    // the frame is that much larger than the card itself.
+    // Half the button hangs outside the card's corner, as in the design. The
+    // frame grows by that much on every side, not just the button's, so the
+    // card itself -- not card plus button -- is what sits dead centre.
     const button = 36.0;
     const overhang = button / 2;
 
     return SafeArea(
       child: Center(
         child: SizedBox(
-          width: size.width + overhang,
-          height: size.height + overhang,
+          width: size.width + overhang * 2,
+          height: size.height + overhang * 2,
           child: Stack(
             children: [
               Positioned(
-                left: 0,
+                left: overhang,
                 top: overhang,
                 width: size.width,
                 height: size.height,
