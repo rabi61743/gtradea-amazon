@@ -5,6 +5,7 @@ import '../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/auth_store.dart';
 import 'oauth_webview_screen.dart';
+import 'two_factor_challenge_screen.dart';
 
 /// Signing in with an identity provider, and the buttons that start it.
 ///
@@ -67,7 +68,22 @@ Future<ProviderSignInResult> startProviderSignIn(
     if (returned == null) {
       return const ProviderSignInResult(ProviderSignInOutcome.cancelled);
     }
-    await AuthStore.instance.completeOAuth(returned);
+    try {
+      await AuthStore.instance.completeOAuth(returned);
+    } on MfaRequired catch (required) {
+      // A provider proves who you are, not that you hold the authenticator.
+      if (!context.mounted) {
+        await AuthStore.instance.cancelMfa();
+        return const ProviderSignInResult(ProviderSignInOutcome.cancelled);
+      }
+      final verified = await TwoFactorChallengeScreen.open(
+        context,
+        email: required.email,
+      );
+      if (!verified) {
+        return const ProviderSignInResult(ProviderSignInOutcome.cancelled);
+      }
+    }
     return const ProviderSignInResult(ProviderSignInOutcome.signedIn);
   } on ApiError catch (e) {
     return ProviderSignInResult(ProviderSignInOutcome.failed, e.message);

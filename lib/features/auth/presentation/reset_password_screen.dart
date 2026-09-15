@@ -5,6 +5,7 @@ import '../../../core/theme/colors.dart';
 import '../data/auth_repository.dart';
 import '../data/auth_store.dart';
 import 'forgot_password_screen.dart' show AuthFurniture;
+import 'two_factor_challenge_screen.dart';
 
 /// Setting the new password, from the link in the email.
 ///
@@ -78,6 +79,24 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       setState(() {
         _busy = false;
         _done = true;
+      });
+    } on MfaRequired catch (required) {
+      // The account has two-factor authentication: the new password is only
+      // set once the authenticator code is verified.
+      if (!mounted) return;
+      final verified = await TwoFactorChallengeScreen.open(
+        context,
+        email: required.email,
+      );
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _done = verified;
+        if (!verified) {
+          _error =
+              'Your password was not changed. The authenticator code is '
+              'required for this account.';
+        }
       });
     } on ApiError catch (e) {
       if (!mounted) return;

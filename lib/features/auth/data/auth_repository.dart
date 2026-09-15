@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../../../core/config/env.dart';
 import '../../../core/network/api_error.dart';
 import '../../../core/network/session_store.dart';
+import '../../security/data/mfa_repository.dart';
 
 /// What came back from a sign-up.
 ///
@@ -40,6 +41,13 @@ class AuthRepository {
   final SessionStore _sessions;
   final Dio _dio;
 
+  /// Exchanges an email and password for a session, **without storing it**.
+  ///
+  /// Storing is [AuthStore]'s decision, because for an account with
+  /// two-factor authentication this session is only `aal1` -- the password
+  /// has been proved and the second factor has not. Written to secure storage
+  /// here, it would survive a restart as a signed-in account that never
+  /// passed 2FA.
   Future<AuthSession> signIn(String email, String password) async {
     try {
       final res = await _dio.post(
@@ -47,14 +55,27 @@ class AuthRepository {
         queryParameters: {'grant_type': 'password'},
         data: {'email': email.trim(), 'password': password},
       );
-      final session = AuthSession.fromJson(
-        (res.data as Map).cast<String, dynamic>(),
-      );
-      await _sessions.write(session);
-      return session;
+      return AuthSession.fromJson((res.data as Map).cast<String, dynamic>());
     } on DioException catch (e) {
       throw ApiError.fromDio(e);
     }
+  }
+
+  /// Stores [session] as the active one. The one place [AuthStore] commits a
+  /// session it has decided is fully signed in.
+  Future<void> writeSession(AuthSession session) => _sessions.write(session);
+
+  /// The active session, renewed first if its hour is up. Throws a 401
+  /// [ApiError] when there is none or the server will not renew it.
+  Future<AuthSession> liveSession() async {
+    final session = await _sessions.read();
+    if (session == null) {
+      throw const ApiError(
+        statusCode: 401,
+        message: 'Your session has expired. Sign in again.',
+      );
+    }
+    return session.isExpired ? _refresh(session) : session;
   }
 
   Future<SignUpResult> signUp({
@@ -130,10 +151,12 @@ class AuthRepository {
   ///
   /// The token never leaves this method, and the password is sent once and
   /// never written down.
-  Future<AuthSession> resetPassword({
-    required String token,
-    required String password,
-  }) async {
+  ///
+  /// Split in two -- [verifyRecovery] then [setPassword] -- and nothing is
+  /// stored here, so that an account with two-factor authentication can pass
+  /// its second factor between the two steps. GoTrue will not change the
+  /// password of such an account on a session that has not.
+  Future<AuthSession> verifyRecovery(String token) async {
     try {
       final verified = await _dio.post(
         '/verify',
@@ -147,20 +170,24 @@ class AuthRepository {
           message: 'That reset link is no longer valid. Request a new one.',
         );
       }
+      return AuthSession.fromJson(body);
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
+  }
 
+  /// Sets the password with [session]'s token and returns the session carrying
+  /// the updated user. Stores nothing.
+  Future<AuthSession> setPassword(AuthSession session, String password) async {
+    try {
       final updated = await _dio.put(
         '/user',
         data: {'password': password},
-        options: Options(headers: {'Authorization': 'Bearer $access'}),
+        options: Options(
+          headers: {'Authorization': 'Bearer ${session.accessToken}'},
+        ),
       );
-
-      // The verify response is the session; the update answers with the user.
-      final session = AuthSession.fromJson({
-        ...body,
-        'user': (updated.data as Map).cast<String, dynamic>(),
-      });
-      await _sessions.write(session);
-      return session;
+      return session.withUser((updated.data as Map).cast<String, dynamic>());
     } on DioException catch (e) {
       throw ApiError.fromDio(e);
     }
@@ -474,12 +501,12 @@ class AuthRepository {
         '/user',
         options: Options(headers: {'Authorization': 'Bearer $access'}),
       );
-      final session = AuthSession.fromJson({
+      // Not stored here, for the same reason as [signIn]: a provider sign-in
+      // to an account with 2FA is `aal1` until the second factor is passed.
+      return AuthSession.fromJson({
         ...fragment,
         'user': (me.data as Map).cast<String, dynamic>(),
       });
-      await _sessions.write(session);
-      return session;
     } on DioException catch (e) {
       throw ApiError.fromDio(e);
     }
@@ -607,7 +634,7 @@ class AuthRepository {
       final body = (res.data as Map).cast<String, dynamic>();
       final access = body['access_token'];
       if (access is String && access.isNotEmpty) {
-        await _sessions.write(AuthSession.fromJson(body));
+        await _writeKeepingAssurance(AuthSession.fromJson(body));
       }
       return body['user'] is Map
           ? (body['user'] as Map).cast<String, dynamic>()
@@ -696,7 +723,7 @@ class AuthRepository {
 
       final access = body['access_token'];
       if (access is String && access.isNotEmpty) {
-        await _sessions.write(AuthSession.fromJson(body));
+        await _writeKeepingAssurance(AuthSession.fromJson(body));
       } else {
         // Verified without a new session: keep the one we have but refresh its
         // copy of the user, so `phone_confirmed_at` is visible to everything
@@ -710,5 +737,26 @@ class AuthRepository {
     } on DioException catch (e) {
       throw ApiError.fromDio(e);
     }
+  }
+
+  /// Stores a session minted by a code check, **without lowering assurance**.
+  ///
+  /// Verifying an email or phone code answers a fresh token pair at `aal1`.
+  /// For an account that signed in through its second factor, storing that
+  /// would quietly downgrade it to a password-level session. So when the
+  /// stored session is the same account at `aal2` and the new one is not, the
+  /// stored tokens are kept and only the user object is refreshed.
+  Future<void> _writeKeepingAssurance(AuthSession fresh) async {
+    final current = await _sessions.read();
+    final sameAccount =
+        current != null &&
+        (fresh.userId == null || current.userId == fresh.userId);
+    if (sameAccount &&
+        MfaRepository.aalOf(current.accessToken) == 'aal2' &&
+        MfaRepository.aalOf(fresh.accessToken) != 'aal2') {
+      await _sessions.write(current.withUser(fresh.user ?? current.user!));
+      return;
+    }
+    await _sessions.write(fresh);
   }
 }

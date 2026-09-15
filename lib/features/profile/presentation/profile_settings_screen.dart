@@ -12,7 +12,9 @@ import '../../auth/data/auth_store.dart';
 import '../../legal/presentation/legal_page_screen.dart';
 import '../../notifications/presentation/notification_settings_screen.dart';
 import '../../search/data/image_source_picker.dart';
+import '../../security/data/mfa_store.dart';
 import '../../security/presentation/login_activity_screen.dart';
+import '../../security/presentation/two_factor_screen.dart';
 import '../../settings/presentation/language_screen.dart';
 import '../../settings/presentation/theme_screen.dart';
 import '../data/profile_store.dart';
@@ -36,10 +38,8 @@ import 'photo_source_sheet.dart';
 ///   * "Verified" badges and "Member since" -- left out on request.
 ///   * "Profile Preferences" -- left out on request.
 ///
-/// **Two-factor authentication** is on the page, as the reference has it, but
-/// states "Not enabled" and says plainly that it is not available yet. There
-/// is no 2FA anywhere in this codebase or on the server, so the row must never
-/// look like it turned anything on.
+/// **Two-factor authentication** shows the status GoTrue holds ([MfaStore])
+/// and opens [TwoFactorScreen], where it is turned on and off.
 ///
 /// "Profile complete" is *derived* here from what the profile actually holds
 /// rather than read from a field the server never sent. Location is the
@@ -57,6 +57,7 @@ class ProfileSettingsScreen extends StatefulWidget {
 class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   final _store = ProfileStore.instance;
   final _addresses = AddressStore.instance;
+  final _mfa = MfaStore.instance;
 
   /// The picked file, held until it is saved, so the shopper sees the actual
   /// photograph in place before anything is uploaded and can back out of it.
@@ -67,7 +68,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     super.initState();
     _store.addListener(_onStore);
     _addresses.addListener(_onStore);
+    _mfa.addListener(_onStore);
     _store.load();
+    // The 2FA row states what the server holds, so it is read, not assumed.
+    _mfa.load();
     // The Location row reads the default delivery address. Loaded here rather
     // than assumed, so it never says "Not set" to someone with saved addresses.
     _addresses.load();
@@ -77,6 +81,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   void dispose() {
     _store.removeListener(_onStore);
     _addresses.removeListener(_onStore);
+    _mfa.removeListener(_onStore);
     super.dispose();
   }
 
@@ -199,11 +204,13 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   /// parcel goes.
   void _openLocation() => _push(const AddressListScreen());
 
-  /// Says so rather than pretending. There is no 2FA on the server, and a
-  /// setting that appears to enable something that is not there is a security
-  /// promise the app would be breaking.
-  void _openTwoFactor() {
-    _say('Two-factor authentication isn’t available yet.');
+  /// Opens the 2FA settings, and reads the status again on the way back so
+  /// the row reflects whatever was changed there.
+  Future<void> _openTwoFactor() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const TwoFactorScreen()));
+    if (mounted) await _mfa.load();
   }
 
   void _openPrivacy() =>
@@ -351,7 +358,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             icon: Icons.shield_outlined,
                             title: 'Two-Factor Authentication (2FA)',
                             subtitle: 'Add extra protection to your account.',
-                            status: 'Not enabled',
+                            trailing: MfaStatusChip(
+                              status: _mfa.status,
+                              style: _Type.control(Theme.of(context)),
+                            ),
                             onTap: _openTwoFactor,
                           ),
                           _ActionRow(
@@ -1098,7 +1108,7 @@ class _ActionRow extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.status,
+    this.trailing,
     this.last = false,
   });
 
@@ -1107,8 +1117,8 @@ class _ActionRow extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
 
-  /// A quiet grey state beside the chevron -- the reference's "Not enabled".
-  final String? status;
+  /// A state beside the chevron -- the 2FA status chip.
+  final Widget? trailing;
   final bool last;
 
   @override
@@ -1116,19 +1126,7 @@ class _ActionRow extends StatelessWidget {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
 
-    Widget? chip() => status == null
-        ? null
-        : Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: muted.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              status!,
-              style: _Type.control(theme)?.copyWith(color: muted),
-            ),
-          );
+    Widget? chip() => trailing;
 
     return Column(
       children: [

@@ -18,6 +18,63 @@ Entry format:
 
 ---
 
+## 2026-09-15 12:58 — Two-factor authentication (TOTP) on GoTrue
+- **What:** Real 2FA using GoTrue v2.177.0 built-in MFA (`/factors`
+  enroll/challenge/verify/delete). No separate 2FA system.
+  - **Security → Two-Factor Authentication** (`TwoFactorScreen`):
+    - status read from the server (Enabled / Not enabled / Setup incomplete)
+    - turn on: password → server-generated secret → QR code and manual key
+      → code verified by the server → Enabled
+    - turn off: password and current code → confirm → factor deleted on the
+      server → status re-read
+  - **Login gate:** after a correct password or Google/Apple sign-in, an
+    account with a verified factor gets `TwoFactorChallengeScreen`. The
+    `aal1` session is held **in memory only**, never stored or adopted, until
+    GoTrue verifies the code and issues an `aal2` session.
+    - wrong code: rejected
+    - expired challenge: renewed
+    - cancel: the aal1 session is revoked on the server
+  - Password reset for a 2FA account asks for the code before setting the
+    new password.
+  - Startup and account switching refuse an `aal1` session of a 2FA account.
+  - Email/phone OTP verification never downgrades an `aal2` session.
+  - The Profile Settings 2FA row shows the real status and opens the screen.
+- **Why:** User request for real, server-verified 2FA with login integration.
+  Before this, `AuthRepository.signIn` stored the session immediately, which
+  would have saved password-only sessions for 2FA accounts.
+- **Affected:**
+  - New: `lib/features/security/data/mfa_repository.dart`, `mfa_store.dart`,
+    `lib/features/security/presentation/two_factor_screen.dart`,
+    `totp_code_field.dart`,
+    `lib/features/auth/presentation/two_factor_challenge_screen.dart`,
+    `test/two_factor_test.dart`
+  - Changed: `auth_repository.dart` (signIn, completeOAuth and reset no
+    longer store; `verifyRecovery`/`setPassword` split;
+    `_writeKeepingAssurance`), `auth_store.dart` (`MfaRequired`,
+    `completeMfa`, `cancelMfa`, startup/switch gates), `auth_screen.dart`,
+    `provider_sign_in.dart`, `reset_password_screen.dart`,
+    `profile_settings_screen.dart` (2FA row), `profile_settings_test.dart`
+  - Untouched: the phone/email change and verification pages.
+- **Impact & risk:** High. Every sign-in path changed. Accounts without 2FA
+  follow the same path as before (tested).
+  - No recovery codes in GoTrue: a lost authenticator needs an admin to delete
+    the factor.
+  - The secret is shown once, kept in memory only, never logged or persisted.
+- **Verification:**
+  - Automated: `flutter analyze` clean; 18 new 2FA tests; full suite 2326
+    pass, 3 known `brand_system_test` failures; profile + 2FA + phone suites
+    70/70 after the width change.
+  - Found and fixed: `MfaStore` notified listeners during a build.
+  - **NOT YET DONE — live end-to-end test on the phone and in Chrome** (enable
+    → sign out → sign in with challenge → wrong/right code → disable). The
+    user asked to commit before it. Waiting on a test account and Microsoft
+    Authenticator.
+  - **NOT YET DONE — gateway probe:** whether the Go gateway rejects `aal1`
+    tokens for 2FA accounts. Until checked, the website/API may accept a
+    password-only token. **Open risk.**
+- **Commit:** see `git log` — `feat(security): two-factor authentication with
+  GoTrue TOTP`, pushed to origin `main`.
+
 ## 2026-09-15 12:50 — Profile Settings responsive width; "Change" label
 - **What:** The page width now depends on screen size, set in the new
   `_PageFrame` helper:

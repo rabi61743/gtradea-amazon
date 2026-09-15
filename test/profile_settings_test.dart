@@ -18,6 +18,9 @@ import 'package:gtradea_amazon/features/profile/data/profile.dart';
 import 'package:gtradea_amazon/features/profile/data/profile_repository.dart';
 import 'package:gtradea_amazon/features/profile/data/profile_store.dart';
 import 'package:gtradea_amazon/features/profile/presentation/profile_settings_screen.dart';
+import 'package:gtradea_amazon/features/security/data/mfa_repository.dart';
+import 'package:gtradea_amazon/features/security/data/mfa_store.dart';
+import 'package:gtradea_amazon/features/security/presentation/two_factor_screen.dart';
 
 import 'support/api.dart';
 import 'support/auth.dart';
@@ -93,6 +96,7 @@ void main() {
     api = stubCatalog();
     AuthStore.instance.resetForTest();
     ProfileStore.instance.resetForTest();
+    MfaStore.instance.resetForTest();
     EmailVerificationStore.instance.resetForTest();
     api.on('GET', '/profile', body: profileJson());
   });
@@ -668,21 +672,56 @@ void main() {
   });
 
   group('two-factor authentication', () {
-    testWidgets('shows "Not enabled" and never pretends to turn on', (
+    /// GoTrue, answering the account's factors. The row must show whatever the
+    /// server holds -- there is no local 2FA flag to read instead.
+    FakeApi stubFactors(List<Map<String, dynamic>> factors) {
+      final auth = stubGoTrue()
+        ..on(
+          'GET',
+          '/user',
+          body: {'id': 'user-1', 'email': 'rabi@example.com', 'factors': factors},
+        );
+      final dio = auth.dio(baseUrl: 'https://test.local/auth/v1');
+      MfaStore.instance
+        ..authRepositoryForTest = AuthRepository(
+          sessions: SessionStore.instance,
+          dio: dio,
+        )
+        ..mfaRepositoryForTest = MfaRepository(dio: dio);
+      return auth;
+    }
+
+    testWidgets('the row states "Not enabled" when the server has no factor', (
       tester,
     ) async {
-      // There is no 2FA on the server. The row is there because the design has
-      // it, and it must say so rather than open something that does nothing.
       signInForTest();
+      stubFactors(const []);
       await _pump(tester);
 
       expect(find.text('Two-Factor Authentication (2FA)'), findsOneWidget);
       expect(find.text('Not enabled'), findsOneWidget);
+    });
+
+    testWidgets('the row states "Enabled" when the server has a verified factor', (
+      tester,
+    ) async {
+      signInForTest();
+      stubFactors([
+        {'id': 'f1', 'factor_type': 'totp', 'status': 'verified'},
+      ]);
+      await _pump(tester);
+
+      expect(find.text('Enabled'), findsOneWidget);
+    });
+
+    testWidgets('tapping it opens the two-factor settings', (tester) async {
+      signInForTest();
+      stubFactors(const []);
+      await _pump(tester);
 
       await tester.tap(find.text('Two-Factor Authentication (2FA)'));
-      await tester.pump();
-      expect(find.textContaining('isn’t available yet'), findsOneWidget);
-      expect(find.text('Not enabled'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.byType(TwoFactorScreen), findsOneWidget);
     });
   });
 

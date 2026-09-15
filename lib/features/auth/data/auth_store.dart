@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/network/api_error.dart';
 import '../../../core/network/session_store.dart';
+import '../../security/data/mfa_repository.dart';
 import 'auth_repository.dart';
 
 /// The signed-in customer, as the app needs them.
@@ -103,6 +104,45 @@ class SavedAccount {
       provider == other.provider;
 }
 
+/// The password (or provider) was right, and the account has two-factor
+/// authentication: the sign-in is not finished until a code from the
+/// authenticator app is verified by the server.
+///
+/// Nothing is signed in while this is outstanding. The half-finished session
+/// is held in memory by [AuthStore] only -- never written to storage -- and is
+/// completed by [AuthStore.completeMfa] or thrown away by
+/// [AuthStore.cancelMfa].
+class MfaRequired implements Exception {
+  const MfaRequired(this.email);
+
+  /// Whose sign-in it is, for the challenge screen to name.
+  final String email;
+
+  @override
+  String toString() => 'Two-factor verification required for $email.';
+}
+
+/// A sign-in waiting on its second factor. Memory only.
+class _PendingSecondFactor {
+  _PendingSecondFactor({
+    required this.session,
+    required this.factorId,
+    required this.alreadySaved,
+    this.newPassword,
+  });
+
+  /// The `aal1` session. Its token is used for the challenge and verify calls
+  /// and for nothing else.
+  final AuthSession session;
+  final String factorId;
+  final bool alreadySaved;
+
+  /// A password reset whose new password is set only after 2FA passes.
+  final String? newPassword;
+
+  String? challengeId;
+}
+
 /// A saved account the server no longer accepts: revoked, signed out
 /// elsewhere, or idle past its lifetime. It has been forgotten here, and the
 /// way back is to sign in to it again.
@@ -167,6 +207,16 @@ class AuthStore extends ChangeNotifier {
   @visibleForTesting
   AuthRepository get repositoryForTestValue => _auth;
   late final StreamSubscription<void> _invalidation;
+
+  MfaRepository _mfa = MfaRepository.instance;
+
+  @visibleForTesting
+  set mfaRepositoryForTest(MfaRepository repo) => _mfa = repo;
+
+  _PendingSecondFactor? _pending;
+
+  /// True while a sign-in is waiting for its authenticator code.
+  bool get awaitingSecondFactor => _pending != null;
 
   Account? _account;
   bool _loaded = false;
@@ -233,7 +283,15 @@ class AuthStore extends ChangeNotifier {
   /// startup and by any screen that needs to know before it renders.
   Future<void> load() async {
     if (_loaded) return;
-    final session = await SessionStore.instance.read();
+    var session = await SessionStore.instance.read();
+    // A stored session for an account with 2FA that never passed it is not a
+    // signed-in account. It should not exist -- nothing here stores one -- but
+    // an older build could have, and it is refused rather than trusted.
+    if (session != null && MfaRepository.needsSecondFactor(session)) {
+      final id = session.userId;
+      if (id != null) await SessionStore.instance.forget(id);
+      session = null;
+    }
     _account = Account.fromUser(session?.user);
     _loaded = true;
     notifyListeners();
@@ -313,12 +371,14 @@ class AuthStore extends ChangeNotifier {
   ///
   /// Signing in while another account is active adds this one beside it:
   /// the other stays saved on the device, and this one becomes active.
+  ///
+  /// Throws [MfaRequired] when the account has two-factor authentication:
+  /// nothing is signed in until [completeMfa] succeeds.
   Future<void> signIn({required String email, required String password}) async {
     final known = await _savedIds();
     await _runBeforeChange();
     final session = await _auth.signIn(email, password);
-    _lastWasAlreadySaved = known.contains(session.userId);
-    _adopt(session);
+    await _finishSignIn(session, alreadySaved: known.contains(session.userId));
   }
 
   /// Returns true when the account was made but needs the emailed link before
@@ -339,30 +399,138 @@ class AuthStore extends ChangeNotifier {
     );
     final session = result.session;
     if (session != null) {
-      _lastWasAlreadySaved = known.contains(session.userId);
-      _adopt(session);
+      // A brand-new account has no second factor; this adopts it as before.
+      await _finishSignIn(
+        session,
+        alreadySaved: known.contains(session.userId),
+      );
     }
     return result.needsConfirmation;
   }
 
+  /// Throws [MfaRequired] for an account with two-factor authentication, as
+  /// [signIn] does: a provider proves who you are, not that you hold the
+  /// authenticator.
   Future<void> completeOAuth(Uri returned) async {
     final known = await _savedIds();
     await _runBeforeChange();
     final session = await _auth.completeOAuth(returned);
-    _lastWasAlreadySaved = known.contains(session.userId);
-    _adopt(session);
+    await _finishSignIn(session, alreadySaved: known.contains(session.userId));
   }
 
   Future<void> recover(String email) => _auth.recover(email);
 
   /// Sets a new password from a reset token, and adopts the session the
   /// exchange produced. See [AuthRepository.resetPassword].
+  ///
+  /// For an account with two-factor authentication the link alone is not
+  /// enough to change the password: this throws [MfaRequired], and the new
+  /// password is set by [completeMfa] once the code is verified.
   Future<void> resetPassword({
     required String token,
     required String password,
   }) async {
     await _runBeforeChange();
-    _adopt(await _auth.resetPassword(token: token, password: password));
+    final recovered = await _auth.verifyRecovery(token);
+    if (MfaRepository.needsSecondFactor(recovered)) {
+      _holdForSecondFactor(recovered, alreadySaved: false, newPassword: password);
+    }
+    final updated = await _auth.setPassword(recovered, password);
+    await _auth.writeSession(updated);
+    _adopt(updated);
+  }
+
+  // ── Two-factor sign-in ─────────────────────────────────────────────────────
+
+  /// Commits a sign-in, or holds it for its second factor.
+  Future<void> _finishSignIn(
+    AuthSession session, {
+    required bool alreadySaved,
+  }) async {
+    if (MfaRepository.needsSecondFactor(session)) {
+      _holdForSecondFactor(session, alreadySaved: alreadySaved);
+    }
+    await _auth.writeSession(session);
+    _lastWasAlreadySaved = alreadySaved;
+    _adopt(session);
+  }
+
+  /// Keeps an `aal1` session in memory and stops the sign-in. Always throws.
+  Never _holdForSecondFactor(
+    AuthSession session, {
+    required bool alreadySaved,
+    String? newPassword,
+  }) {
+    final factor = TotpFactor.listFrom(session.user).firstWhere(
+      (f) => f.isVerified,
+    );
+    _pending = _PendingSecondFactor(
+      session: session,
+      factorId: factor.id,
+      alreadySaved: alreadySaved,
+      newPassword: newPassword,
+    );
+    notifyListeners();
+    throw MfaRequired(Account.fromUser(session.user)?.email ?? '');
+  }
+
+  /// Sends [code] to GoTrue, which decides. On success the session GoTrue
+  /// issues at `aal2` is stored and the account is signed in.
+  ///
+  /// A wrong code throws an [ApiError] and changes nothing, so the person can
+  /// try again. An expired challenge is replaced with a fresh one and reported,
+  /// so the next code typed is checked against it.
+  Future<void> completeMfa(String code) async {
+    final pending = _pending;
+    if (pending == null) {
+      throw const ApiError(
+        statusCode: null,
+        message: 'Sign in again to continue.',
+        local: true,
+      );
+    }
+    final token = pending.session.accessToken;
+    pending.challengeId ??= await _mfa.challenge(token, pending.factorId);
+
+    AuthSession raised;
+    try {
+      raised = await _mfa.verify(
+        accessToken: token,
+        factorId: pending.factorId,
+        challengeId: pending.challengeId!,
+        code: code,
+      );
+    } on ApiError catch (e) {
+      // A challenge can be spent or expire. Either way the next attempt needs
+      // a new one; the code itself is never retried on the old one.
+      pending.challengeId = null;
+      if (MfaError.isExpired(e)) {
+        pending.challengeId = await _mfa.challenge(token, pending.factorId);
+      }
+      rethrow;
+    }
+
+    if (raised.user == null && pending.session.user != null) {
+      raised = raised.withUser(pending.session.user!);
+    }
+    final newPassword = pending.newPassword;
+    if (newPassword != null) {
+      raised = await _auth.setPassword(raised, newPassword);
+    }
+
+    _pending = null;
+    await _auth.writeSession(raised);
+    _lastWasAlreadySaved = pending.alreadySaved;
+    _adopt(raised);
+  }
+
+  /// Abandons a sign-in waiting on its second factor, ending the `aal1`
+  /// session on the server too so it cannot be picked up again.
+  Future<void> cancelMfa() async {
+    final pending = _pending;
+    _pending = null;
+    notifyListeners();
+    if (pending != null) await _auth.revokeSession(pending.session);
   }
 
   /// Which providers the server has configured, asked through the same
@@ -409,6 +577,16 @@ class AuthStore extends ChangeNotifier {
         await SessionStore.instance.forget(id);
         throw SavedSessionExpired(
           Account.fromUser(target.user)?.email ?? 'that account',
+        );
+      }
+      // The account turned on 2FA after this session was saved -- on another
+      // device, say -- so this session never passed it. Switching to it would
+      // skip the second factor; it is forgotten, and signing in again asks.
+      if (MfaRepository.needsSecondFactor(fresh)) {
+        await _auth.revokeSession(fresh);
+        await SessionStore.instance.forget(id);
+        throw SavedSessionExpired(
+          Account.fromUser(fresh.user)?.email ?? 'that account',
         );
       }
       await _runBeforeChange();
@@ -529,6 +707,8 @@ class AuthStore extends ChangeNotifier {
     _saved = const [];
     _switching = false;
     _lastWasAlreadySaved = false;
+    _pending = null;
+    _mfa = MfaRepository.instance;
   }
 
   @override

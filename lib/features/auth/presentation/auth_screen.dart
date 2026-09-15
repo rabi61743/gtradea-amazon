@@ -10,6 +10,7 @@ import '../data/auth_store.dart';
 import 'provider_sign_in.dart';
 import '../data/remembered_email.dart';
 import 'forgot_password_screen.dart';
+import 'two_factor_challenge_screen.dart';
 
 /// Which half of the screen opens first.
 enum AuthMode { signIn, signUp }
@@ -171,6 +172,25 @@ class _AuthScreenState extends State<AuthScreen> {
       await _saveRemembered();
       if (!mounted) return;
       Navigator.of(context).pop(_outcome());
+    } on MfaRequired catch (required) {
+      // The password was right; the account has two-factor authentication.
+      // Nothing is signed in until the code is verified.
+      if (!mounted) return;
+      final verified = await TwoFactorChallengeScreen.open(
+        context,
+        email: required.email,
+      );
+      if (!mounted) return;
+      if (verified) {
+        await _saveRemembered();
+        if (!mounted) return;
+        Navigator.of(context).pop(_outcome());
+      } else {
+        setState(() {
+          _busy = false;
+          _password.clear();
+        });
+      }
     } on ApiError catch (e) {
       if (!mounted) return;
       setState(() {
