@@ -6,9 +6,15 @@ import 'package:flutter/material.dart';
 import '../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
+import '../../address/data/address_store.dart';
+import '../../address/presentation/address_list_screen.dart';
 import '../../auth/data/auth_store.dart';
+import '../../legal/presentation/legal_page_screen.dart';
+import '../../notifications/presentation/notification_settings_screen.dart';
 import '../../search/data/image_source_picker.dart';
 import '../../security/presentation/login_activity_screen.dart';
+import '../../settings/presentation/language_screen.dart';
+import '../../settings/presentation/theme_screen.dart';
 import '../data/profile_store.dart';
 import 'email_verification_screen.dart';
 import 'phone_verification_screen.dart';
@@ -25,20 +31,22 @@ import 'photo_source_sheet.dart';
 /// reasons, and one "Save everything" button would make a rejected password
 /// look like a rejected name.
 ///
-/// **What the reference shows and this does not.** Three things on it have
-/// nothing behind them on the server, and a settings page that states an
-/// untruth about an account is worse than one that stays quiet:
+/// **What the reference shows and this does not**, by decision:
 ///
-///   * "Verified" beside the phone and the email. Neither `Profile` nor the
-///     session carries a verification flag, and a green tick nobody checked is
-///     a security claim this app would be inventing.
-///   * "Member since". No `created_at` is read anywhere in this app.
-///   * Two-factor authentication. There is no 2FA in this codebase at all, so
-///     the row would open nothing.
+///   * "Verified" badges and "Member since" -- left out on request.
+///   * "Profile Preferences" -- left out on request.
 ///
-/// [LoginActivityScreen] already takes the same line for the same reason.
-/// "Profile complete" is kept because it is *derived* here from what the
-/// profile actually holds rather than read from a field the server never sent.
+/// **Two-factor authentication** is on the page, as the reference has it, but
+/// states "Not enabled" and says plainly that it is not available yet. There
+/// is no 2FA anywhere in this codebase or on the server, so the row must never
+/// look like it turned anything on.
+///
+/// "Profile complete" is *derived* here from what the profile actually holds
+/// rather than read from a field the server never sent. Location is the
+/// default delivery address, and is edited where addresses are edited.
+///
+/// The page is set in Nunito Sans (see [_Type]) to match the reference. That
+/// is deliberate and local to this page; the rest of the app keeps its font.
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
 
@@ -48,6 +56,7 @@ class ProfileSettingsScreen extends StatefulWidget {
 
 class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   final _store = ProfileStore.instance;
+  final _addresses = AddressStore.instance;
 
   /// The picked file, held until it is saved, so the shopper sees the actual
   /// photograph in place before anything is uploaded and can back out of it.
@@ -57,12 +66,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   void initState() {
     super.initState();
     _store.addListener(_onStore);
+    _addresses.addListener(_onStore);
     _store.load();
+    // The Location row reads the default delivery address. Loaded here rather
+    // than assumed, so it never says "Not set" to someone with saved addresses.
+    _addresses.load();
   }
 
   @override
   void dispose() {
     _store.removeListener(_onStore);
+    _addresses.removeListener(_onStore);
     super.dispose();
   }
 
@@ -178,15 +192,29 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     await _PasswordSheet.show(context, onDone: () => _say('Password updated'));
   }
 
-  void _openLoginActivity() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const LoginActivityScreen()),
-    );
+  void _openLoginActivity() => _push(const LoginActivityScreen());
+
+  /// Location is the default delivery address, so it is changed in the address
+  /// book. A second place to type a city would be a second answer to where a
+  /// parcel goes.
+  void _openLocation() => _push(const AddressListScreen());
+
+  /// Says so rather than pretending. There is no 2FA on the server, and a
+  /// setting that appears to enable something that is not there is a security
+  /// promise the app would be breaking.
+  void _openTwoFactor() {
+    _say('Two-factor authentication isn’t available yet.');
+  }
+
+  void _openPrivacy() =>
+      _push(const LegalPageScreen(slug: 'privacy', title: 'Privacy policy'));
+
+  void _push(Widget screen) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final account = AuthStore.instance.account;
 
     if (account == null) {
@@ -204,9 +232,25 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         ? profile!.email
         : account.email;
     final phone = profile?.phone;
+    final home = _addresses.defaultAddress;
+    final location = home == null
+        ? null
+        : [home.city, home.province]
+              .map((part) => part.trim())
+              .where((part) => part.isNotEmpty)
+              .join(', ');
+
+    final primary = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.surfaceContainerLowest,
+      // The reference's ground is a cool near-white. The app's page wash is
+      // Premium Ivory, which turned every tinted disc on this page grey, so the
+      // ground here is the brand teal at 3% over white instead -- derived, not a
+      // new colour.
+      backgroundColor: Color.alphaBlend(
+        primary.withValues(alpha: 0.03),
+        Colors.white,
+      ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () => _store.load(force: true),
@@ -242,16 +286,16 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         onEditName: _editName,
                         onChangePhoto: _pickPhoto,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
 
                       _GroupHeading(
                         icon: Icons.person_outline,
                         title: 'Personal Information',
                         subtitle:
                             'Your basic details used for communication and '
-                            'delivery.',
+                            'verification.',
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
                       _Card(
                         children: [
                           _FieldRow(
@@ -272,18 +316,25 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             label: 'Email Address',
                             value: email,
                             onEdit: () => _editEmail(email),
+                          ),
+                          _FieldRow(
+                            icon: Icons.location_on_outlined,
+                            label: 'Location',
+                            optional: true,
+                            value: location,
+                            onEdit: _openLocation,
                             last: true,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
 
                       _GroupHeading(
                         icon: Icons.shield_outlined,
                         title: 'Account Security',
                         subtitle: 'Keep your account safe and secure.',
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
                       _Card(
                         children: [
                           _ActionRow(
@@ -295,17 +346,24 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             onTap: _changePassword,
                           ),
                           _ActionRow(
+                            icon: Icons.shield_outlined,
+                            title: 'Two-Factor Authentication (2FA)',
+                            subtitle: 'Add extra protection to your account.',
+                            status: 'Not enabled',
+                            onTap: _openTwoFactor,
+                          ),
+                          _ActionRow(
                             icon: Icons.fingerprint,
                             title: 'Login Activity',
-                            subtitle: 'View devices and recent sign-ins.',
+                            subtitle: 'View devices and recent logins.',
                             onTap: _openLoginActivity,
                             last: true,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
 
-                      const _SafetyNote(),
+                      _SafetyNote(onTap: _openPrivacy),
                     ],
                   ),
                 ),
@@ -326,126 +384,210 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       (photo?.isNotEmpty ?? false);
 }
 
-/// This page's type scale, a step down from the app's defaults.
+/// This page's type scale, set in Nunito Sans to match the reference.
 ///
-/// Gathered here rather than spelled out at each widget so the hierarchy is a
-/// decision in one place: four ranks, each clearly apart from the one above it,
-/// and nothing below 11 -- which is where supporting text stops being readable
-/// on a phone held at arm's length.
+/// The ratios between ranks are taken from the reference image; the absolute
+/// sizes are fitted to a phone, with a floor of 12 so supporting text stays
+/// readable at arm's length. Gathered here so the hierarchy is one decision.
 ///
-/// Every style is still derived from the theme, so the app's font and the
-/// reader's own text-size setting both carry through. These are sizes, not a
-/// second typography.
+/// Nunito Sans ships as a single variable font (see `pubspec.yaml`), so each
+/// weight is selected with a `wght` [FontVariation] as well as [FontWeight] --
+/// the variation is what actually moves the glyphs, the weight keeps the
+/// semantics for accessibility and for any fallback font.
+///
+/// Colour and the reader's text scaling still come from the theme. Only the
+/// family is local to this page; the rest of the app keeps its own.
 class _Type {
   const _Type._();
 
-  /// The page's name. The largest thing here, and the only thing at this rank.
-  static TextStyle? pageTitle(ThemeData t) => t.textTheme.titleLarge?.copyWith(
-    fontSize: 22,
-    height: 1.15,
-    fontWeight: FontWeight.w800,
+  static const family = 'NunitoSans';
+
+  static TextStyle? _set(
+    TextStyle? base,
+    double size,
+    FontWeight weight, {
+    double height = 1.25,
+    Color? color,
+  }) => base?.copyWith(
+    fontFamily: family,
+    fontSize: size,
+    height: height,
+    fontWeight: weight,
+    fontVariations: [FontVariation('wght', weight.value.toDouble())],
+    color: color,
   );
 
-  /// The line under it, and the line under each group heading.
-  static TextStyle? pageNote(ThemeData t) => t.textTheme.bodySmall?.copyWith(
-    fontSize: 12.5,
+  /// "Profile Settings". The largest thing here, and the only thing at this rank.
+  static TextStyle? pageTitle(ThemeData t) =>
+      _set(t.textTheme.titleLarge, 24, FontWeight.w700, height: 1.15);
+
+  /// "Manage your profile information".
+  static TextStyle? pageNote(ThemeData t) => _set(
+    t.textTheme.bodyMedium,
+    14,
+    FontWeight.w400,
     height: 1.3,
     color: t.colorScheme.onSurfaceVariant,
   );
 
   /// The shopper's name on the card.
-  static TextStyle? cardName(ThemeData t) => t.textTheme.titleMedium?.copyWith(
-    fontSize: 18,
-    height: 1.2,
-    fontWeight: FontWeight.w800,
-  );
+  static TextStyle? cardName(ThemeData t) =>
+      _set(t.textTheme.titleMedium, 20, FontWeight.w700, height: 1.2);
 
   /// A section's name: Personal Information, Account Security.
-  static TextStyle? groupTitle(ThemeData t) => t.textTheme.titleSmall?.copyWith(
-    fontSize: 15.5,
-    height: 1.2,
-    fontWeight: FontWeight.w800,
-  );
+  static TextStyle? groupTitle(ThemeData t) =>
+      _set(t.textTheme.titleSmall, 17, FontWeight.w700, height: 1.2);
 
-  /// What a row is about -- "Full Name", "Phone Number".
-  static TextStyle? rowLabel(ThemeData t) => t.textTheme.bodySmall?.copyWith(
-    fontSize: 12.5,
-    height: 1.2,
-    color: t.colorScheme.onSurfaceVariant,
-  );
-
-  /// What it says. The rank that carries the actual information.
-  static TextStyle? rowValue(ThemeData t) => t.textTheme.bodyMedium?.copyWith(
-    fontSize: 15.5,
-    height: 1.25,
-    fontWeight: FontWeight.w600,
-  );
-
-  /// A row that opens something rather than holding a value.
-  static TextStyle? rowTitle(ThemeData t) => t.textTheme.bodyMedium?.copyWith(
-    fontSize: 15,
-    height: 1.2,
-    fontWeight: FontWeight.w700,
-  );
-
-  /// The line under such a row.
-  static TextStyle? rowNote(ThemeData t) => t.textTheme.bodySmall?.copyWith(
-    fontSize: 12.5,
+  /// The line under a section's name.
+  static TextStyle? groupNote(ThemeData t) => _set(
+    t.textTheme.bodySmall,
+    13,
+    FontWeight.w400,
     height: 1.3,
     color: t.colorScheme.onSurfaceVariant,
   );
 
-  /// Buttons, pills and badges.
-  static TextStyle? control(ThemeData t) => t.textTheme.labelLarge?.copyWith(
-    fontSize: 13,
-    height: 1.1,
-    fontWeight: FontWeight.w700,
+  /// What a row is about -- "Full Name", "Phone Number".
+  static TextStyle? rowLabel(ThemeData t) => _set(
+    t.textTheme.bodySmall,
+    13,
+    FontWeight.w400,
+    height: 1.2,
+    color: t.colorScheme.onSurfaceVariant,
   );
+
+  /// What it says. Regular weight, as the reference sets it: the size and the
+  /// darker ink carry it, not boldness.
+  static TextStyle? rowValue(ThemeData t) =>
+      _set(t.textTheme.bodyMedium, 15, FontWeight.w400);
+
+  /// A row that opens something rather than holding a value.
+  static TextStyle? rowTitle(ThemeData t) =>
+      _set(t.textTheme.bodyMedium, 14.5, FontWeight.w600, height: 1.2);
+
+  /// The line under such a row.
+  static TextStyle? rowNote(ThemeData t) => _set(
+    t.textTheme.bodySmall,
+    12,
+    FontWeight.w400,
+    height: 1.3,
+    color: t.colorScheme.onSurfaceVariant,
+  );
+
+  /// Pills, chips and small buttons.
+  static TextStyle? control(ThemeData t) =>
+      _set(t.textTheme.labelLarge, 13, FontWeight.w600, height: 1.1);
+
+  /// The Change Photo button.
+  static TextStyle? button(ThemeData t) =>
+      _set(t.textTheme.labelLarge, 14, FontWeight.w600, height: 1.1);
 
   /// A sheet's own heading.
-  static TextStyle? sheetTitle(ThemeData t) => t.textTheme.titleSmall?.copyWith(
-    fontSize: 16,
-    height: 1.2,
-    fontWeight: FontWeight.w800,
-  );
+  static TextStyle? sheetTitle(ThemeData t) =>
+      _set(t.textTheme.titleSmall, 17, FontWeight.w700, height: 1.2);
 }
 
-/// The page's own title, with the back arrow beside it.
+/// Where the header's gear leads. The settings that sit beside a profile, each
+/// an existing screen -- the gear is a shortcut, not a new destination.
+enum _SettingsLink { theme, language, notifications }
+
+/// The page's own title, the back arrow beside it, and the gear opposite.
 ///
 /// Not an [AppBar]: the reference puts the title and its line of explanation in
 /// the body, above a card that runs to the page margin.
 class _Header extends StatelessWidget {
   const _Header();
 
+  void _open(BuildContext context, _SettingsLink link) {
+    final Widget screen = switch (link) {
+      _SettingsLink.theme => const ThemeScreen(),
+      _SettingsLink.language => const LanguageScreen(),
+      _SettingsLink.notifications => const NotificationSettingsScreen(),
+    };
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        IconButton(
-          icon: const Icon(Icons.arrow_back),
-          tooltip: 'Back',
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        const SizedBox(width: 2),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 8),
-              Text('Profile Settings', style: _Type.pageTitle(theme)),
-              const SizedBox(height: 1),
-              Text(
-                'Manage your profile information',
-                style: _Type.pageNote(theme),
+    final tint = theme.colorScheme.primary;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back, size: 24),
+            tooltip: 'Back',
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                Text('Profile Settings', style: _Type.pageTitle(theme)),
+                const SizedBox(height: 3),
+                Text(
+                  'Manage your profile information',
+                  style: _Type.pageNote(theme),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // The reference's round gear, top right.
+          PopupMenuButton<_SettingsLink>(
+            tooltip: 'Settings',
+            onSelected: (link) => _open(context, link),
+            position: PopupMenuPosition.under,
+            itemBuilder: (_) => [
+              _menuItem(_SettingsLink.theme, Icons.contrast, 'Theme', theme),
+              _menuItem(
+                _SettingsLink.language,
+                Icons.translate,
+                'Language',
+                theme,
+              ),
+              _menuItem(
+                _SettingsLink.notifications,
+                Icons.notifications_none,
+                'Notifications',
+                theme,
               ),
             ],
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: tint.withValues(alpha: 0.08),
+              ),
+              child: Icon(Icons.settings_outlined, size: 22, color: tint),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
+
+  static PopupMenuItem<_SettingsLink> _menuItem(
+    _SettingsLink value,
+    IconData icon,
+    String label,
+    ThemeData theme,
+  ) => PopupMenuItem(
+    value: value,
+    child: Row(
+      children: [
+        Icon(icon, size: 20, color: theme.colorScheme.primary),
+        const SizedBox(width: 12),
+        Text(label, style: _Type.rowValue(theme)),
+      ],
+    ),
+  );
 }
 
 /// The photograph, the name, and the way to change either.
@@ -501,11 +643,13 @@ class _ProfileCard extends StatelessWidget {
   }
 
   Widget _build(BuildContext context, ThemeData theme, Color tint, bool wide) {
+    final ground = theme.colorScheme.surface;
+
     return Container(
-      padding: const EdgeInsets.all(13),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        border: Border.all(color: tint.withValues(alpha: 0.18)),
+        border: Border.all(color: tint.withValues(alpha: 0.14)),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -518,29 +662,46 @@ class _ProfileCard extends StatelessWidget {
       child: Row(
         children: [
           Stack(
+            clipBehavior: Clip.none,
             children: [
-              _Avatar(
-                file: pending,
-                url: photo,
-                initial: _initialOf(name),
-                radius: 35,
+              // The white ring the reference draws around the photograph.
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: ground,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: _Avatar(
+                  file: pending,
+                  url: photo,
+                  initial: _initialOf(name),
+                  radius: 36,
+                ),
               ),
               // The camera badge from the reference, and a real second way to
               // reach the picker rather than decoration.
               Positioned(
-                right: 0,
+                right: -2,
                 bottom: 0,
                 child: Material(
                   color: tint,
-                  shape: const CircleBorder(),
+                  shape: CircleBorder(side: BorderSide(color: ground, width: 2)),
                   child: InkWell(
                     customBorder: const CircleBorder(),
                     onTap: busy ? null : onChangePhoto,
-                    child: Padding(
-                      padding: const EdgeInsets.all(5),
+                    child: SizedBox(
+                      width: 26,
+                      height: 26,
                       child: Icon(
                         Icons.photo_camera_outlined,
-                        size: 13,
+                        size: 14,
                         color: theme.colorScheme.onPrimary,
                       ),
                     ),
@@ -549,7 +710,7 @@ class _ProfileCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -557,16 +718,19 @@ class _ProfileCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
+                    // Two lines before an ellipsis. On a 406-dp phone an
+                    // ordinary two-part name does not fit beside the photo on
+                    // one, and "Prabhakar Adhik..." hides the surname.
                     Flexible(
                       child: Text(
                         name,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: _Type.cardName(theme),
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.edit_outlined, size: 15),
+                      icon: Icon(Icons.edit_outlined, size: 16, color: tint),
                       tooltip: 'Edit name',
                       visualDensity: VisualDensity.compact,
                       constraints: const BoxConstraints(
@@ -579,7 +743,7 @@ class _ProfileCard extends StatelessWidget {
                   ],
                 ),
                 if (complete) ...[
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 6),
                   const _Chip(
                     icon: Icons.check_circle,
                     label: 'Profile complete',
@@ -589,7 +753,7 @@ class _ProfileCard extends StatelessWidget {
                 // Only when the button is *not* beside the card, which is the
                 // narrow case handled below.
                 if (!wide) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: _ChangePhotoButton(
@@ -632,20 +796,44 @@ class _ChangePhotoButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return OutlinedButton.icon(
+    final tint = theme.colorScheme.primary;
+    return OutlinedButton(
       onPressed: busy ? null : onTap,
-      icon: busy
-          ? const _ButtonSpinner()
-          : const Icon(Icons.photo_camera_outlined, size: 16),
-      label: Text('Change Photo', style: _Type.control(theme)),
       style: OutlinedButton.styleFrom(
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+        foregroundColor: tint,
+        backgroundColor: theme.colorScheme.surface,
+        side: BorderSide(color: tint.withValues(alpha: 0.35)),
+        padding: const EdgeInsets.fromLTRB(14, 9, 10, 9),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(999),
         ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          busy
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: tint),
+                )
+              : Icon(Icons.photo_camera_outlined, size: 18, color: tint),
+          const SizedBox(width: 8),
+          // Flexible, so a narrow phone or a large accessibility text size
+          // shortens the label instead of striping the card with an overflow.
+          Flexible(
+            child: Text(
+              'Change Photo',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: _Type.button(theme)?.copyWith(color: tint),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right, size: 18, color: tint),
+        ],
       ),
     );
   }
@@ -667,25 +855,17 @@ class _GroupHeading extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-            color: theme.colorScheme.primary.withValues(alpha: 0.10),
-          ),
-          child: Icon(icon, size: 18, color: theme.colorScheme.primary),
-        ),
-        const SizedBox(width: 11),
+        _IconDisc(icon: icon, size: 40, iconSize: 21, alpha: 0.10),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title, style: _Type.groupTitle(theme)),
-              const SizedBox(height: 1),
-              Text(subtitle, style: _Type.pageNote(theme)),
+              const SizedBox(height: 2),
+              Text(subtitle, style: _Type.groupNote(theme)),
             ],
           ),
         ),
@@ -708,8 +888,68 @@ class _Card extends StatelessWidget {
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
         border: Border.all(color: theme.colorScheme.outlineVariant),
+        // The reference lifts its cards off the page by a breath, not a drop.
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Column(children: children),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+        child: Column(children: children),
+      ),
+    );
+  }
+}
+
+/// The tinted circle behind every icon on this page, as the reference draws
+/// them. One widget so the rows, the headings and the banner cannot drift.
+class _IconDisc extends StatelessWidget {
+  const _IconDisc({
+    required this.icon,
+    this.size = 40,
+    this.iconSize = 20,
+    this.alpha = 0.08,
+  });
+
+  final IconData icon;
+  final double size;
+  final double iconSize;
+  final double alpha;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = Theme.of(context).colorScheme.primary;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: tint.withValues(alpha: alpha),
+      ),
+      child: Icon(icon, size: iconSize, color: tint),
+    );
+  }
+}
+
+/// The hairline between rows, inset to start where the text starts so the
+/// icon column reads as one, as in the reference.
+class _RowDivider extends StatelessWidget {
+  const _RowDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Divider(
+      height: 1,
+      thickness: 1,
+      indent: 16,
+      endIndent: 16,
+      color: Theme.of(
+        context,
+      ).colorScheme.outlineVariant.withValues(alpha: 0.7),
     );
   }
 }
@@ -722,6 +962,7 @@ class _FieldRow extends StatelessWidget {
     required this.value,
     required this.onEdit,
     this.empty = 'Not set',
+    this.optional = false,
     this.last = false,
   });
 
@@ -733,6 +974,9 @@ class _FieldRow extends StatelessWidget {
   /// an empty field reads as empty rather than as a value.
   final String empty;
   final VoidCallback onEdit;
+
+  /// Adds the reference's muted "(Optional)" after the label.
+  final bool optional;
   final bool last;
 
   @override
@@ -745,68 +989,67 @@ class _FieldRow extends StatelessWidget {
         InkWell(
           onTap: onEdit,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+            padding: const EdgeInsets.fromLTRB(16, 13, 14, 13),
             child: Row(
               children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(
-                      AppTheme.radiusControl,
-                    ),
-                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
-                  ),
-                  child: Icon(
-                    icon,
-                    size: 18,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 11),
+                _IconDisc(icon: icon),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(label, style: _Type.rowLabel(theme)),
-                      const SizedBox(height: 1),
-                      Text(
-                        filled ? value! : empty,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _Type.rowValue(theme)?.copyWith(
-                          color: filled
-                              ? theme.colorScheme.onSurface
-                              : theme.colorScheme.onSurfaceVariant,
+                      Text.rich(
+                        TextSpan(
+                          text: label,
+                          children: [
+                            if (optional)
+                              TextSpan(
+                                text: ' (Optional)',
+                                style: _Type.rowNote(theme),
+                              ),
+                          ],
+                        ),
+                        style: _Type.rowLabel(theme),
+                      ),
+                      const SizedBox(height: 3),
+                      // One line that shrinks only when it must. An email is
+                      // one unbreakable token: an ellipsis hides the half that
+                      // identifies the account ("pravakarcoding@gmai..."), and
+                      // wrapping splits it mid-word.
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          filled ? value! : empty,
+                          maxLines: 1,
+                          softWrap: false,
+                          style: _Type.rowValue(theme)?.copyWith(
+                            color: filled
+                                ? theme.colorScheme.onSurface
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 _EditPill(onTap: onEdit),
               ],
             ),
           ),
         ),
-        if (!last)
-          Divider(
-            height: 1,
-            thickness: 1,
-            indent: 14,
-            endIndent: 14,
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-          ),
+        if (!last) const _RowDivider(),
       ],
     );
   }
 }
 
-/// The reference's pill-shaped affordance for changing a detail.
+/// The reference's pill for changing a detail: pencil, "Edit", chevron.
 ///
-/// It says "Change" rather than "Edit" on every row. The word is the promise:
-/// a contact method is not edited in place, it is replaced and then proved,
-/// and the name goes through a box of its own rather than being typed over.
+/// Tapping it does what the row always did -- the phone and email rows open
+/// their own change-and-verify pages, the name opens its sheet, and Location
+/// opens the address book. Only the word matches the reference now.
 class _EditPill extends StatelessWidget {
   const _EditPill({required this.onTap});
 
@@ -815,35 +1058,25 @@ class _EditPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tint = theme.colorScheme.primary;
     return Material(
-      color: theme.colorScheme.primary.withValues(alpha: 0.06),
-      borderRadius: BorderRadius.circular(999),
+      color: tint.withValues(alpha: 0.05),
+      shape: StadiumBorder(
+        side: BorderSide(color: tint.withValues(alpha: 0.18)),
+      ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(999),
+        customBorder: const StadiumBorder(),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          padding: const EdgeInsets.fromLTRB(12, 7, 8, 7),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.edit_outlined,
-                size: 15,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                'Change',
-                style: _Type.control(
-                  theme,
-                )?.copyWith(color: theme.colorScheme.primary),
-              ),
-              const SizedBox(width: 1),
-              Icon(
-                Icons.chevron_right,
-                size: 16,
-                color: theme.colorScheme.primary,
-              ),
+              Icon(Icons.edit_outlined, size: 15, color: tint),
+              const SizedBox(width: 6),
+              Text('Edit', style: _Type.control(theme)?.copyWith(color: tint)),
+              const SizedBox(width: 2),
+              Icon(Icons.chevron_right, size: 16, color: tint),
             ],
           ),
         ),
@@ -859,6 +1092,7 @@ class _ActionRow extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.status,
     this.last = false,
   });
 
@@ -866,115 +1100,145 @@ class _ActionRow extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+
+  /// A quiet grey state beside the chevron -- the reference's "Not enabled".
+  final String? status;
   final bool last;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+
+    Widget? chip() => status == null
+        ? null
+        : Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: muted.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              status!,
+              style: _Type.control(theme)?.copyWith(color: muted),
+            ),
+          );
+
     return Column(
       children: [
         InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(
-                      AppTheme.radiusControl,
+            padding: const EdgeInsets.fromLTRB(16, 13, 12, 13),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // The reference sets the status beside the chevron, and on its
+                // wide canvas the title still fits on one line. On a phone the
+                // chip would crush "Two-Factor Authentication (2FA)" into three
+                // lines, so below this width it moves under the note instead.
+                final beside = constraints.maxWidth >= _chipBesideFrom;
+                final status = chip();
+                return Row(
+                  children: [
+                    _IconDisc(icon: icon),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title, style: _Type.rowTitle(theme)),
+                          const SizedBox(height: 3),
+                          Text(subtitle, style: _Type.rowNote(theme)),
+                          if (status != null && !beside) ...[
+                            const SizedBox(height: 7),
+                            status,
+                          ],
+                        ],
+                      ),
                     ),
-                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
-                  ),
-                  child: Icon(
-                    icon,
-                    size: 18,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, style: _Type.rowTitle(theme)),
-                      const SizedBox(height: 2),
-                      Text(subtitle, style: _Type.rowNote(theme)),
+                    if (status != null && beside) ...[
+                      const SizedBox(width: 8),
+                      status,
                     ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.chevron_right,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ],
+                    const SizedBox(width: 4),
+                    Icon(Icons.chevron_right, size: 22, color: muted),
+                  ],
+                );
+              },
             ),
           ),
         ),
-        if (!last)
-          Divider(
-            height: 1,
-            thickness: 1,
-            indent: 14,
-            endIndent: 14,
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-          ),
+        if (!last) const _RowDivider(),
       ],
     );
   }
+
+  /// Row width from which a status chip fits beside the chevron without
+  /// forcing the title onto several lines. A tablet or desktop window.
+  static const _chipBesideFrom = 460.0;
 }
 
-/// The reassurance at the foot of the reference.
+/// The reassurance at the foot of the reference. Tapping it opens the privacy
+/// policy that backs the claim, rather than asking to be taken on trust.
 class _SafetyNote extends StatelessWidget {
-  const _SafetyNote();
+  const _SafetyNote({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tint = theme.colorScheme.primary;
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: tint.withValues(alpha: 0.05),
+    return Material(
+      color: tint.withValues(alpha: 0.06),
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        border: Border.all(color: tint.withValues(alpha: 0.15)),
+        side: BorderSide(color: tint.withValues(alpha: 0.14)),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
-            child: Icon(
-              Icons.shield_outlined,
-              size: 18,
-              color: theme.colorScheme.onPrimary,
-            ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Your information is safe with us',
-                  style: _Type.rowTitle(theme)?.copyWith(color: tint),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+                child: Icon(
+                  Icons.shield_outlined,
+                  size: 20,
+                  color: theme.colorScheme.onPrimary,
                 ),
-                const SizedBox(height: 1),
-                Text(
-                  'Your name and photo are visible on reviews and to sellers '
-                  'you buy from. Nothing else here is shown to anyone.',
-                  style: _Type.rowNote(theme),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your information is safe with us',
+                      style: _Type.rowTitle(theme)?.copyWith(color: tint),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'We use industry-standard security to protect your data.',
+                      style: _Type.rowNote(theme),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.chevron_right,
+                size: 22,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -992,16 +1256,16 @@ class _Chip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.fromLTRB(9, 5, 12, 5),
       decoration: BoxDecoration(
-        color: ink.withValues(alpha: 0.12),
+        color: ink.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: ink),
-          const SizedBox(width: 4),
+          Icon(icon, size: 15, color: ink),
+          const SizedBox(width: 6),
           Text(label, style: _Type.control(theme)?.copyWith(color: ink)),
         ],
       ),

@@ -18,6 +18,41 @@ Entry format:
 
 ---
 
+## 2026-09-15 12:10 — Profile Settings matched to the reference design
+- **What:** Refined `ProfileSettingsScreen` to the supplied reference:
+  - round gear in the header (menu: Theme, Language, Notifications)
+  - circular icon discs
+  - "Edit" pills with a hairline border (was "Change")
+  - new **Location (Optional)** row: the default delivery address; Edit opens
+    the address book
+  - new **Two-Factor Authentication (2FA)** row, "Not enabled", with an honest
+    "isn't available yet" message
+  - tappable safety banner that opens the privacy policy
+  - white ring on the avatar
+  - Nunito Sans type scale local to this page
+  - cool page ground (teal at 3% over white)
+  - name wraps to 2 lines; values shrink rather than truncate
+  - on narrow widths the status chip sits under the row note
+- **Why:** User request: match the reference exactly. Decisions: no "Member
+  since", no "Verified" badges, no Profile Preferences. "Edit" label.
+  Location and 2FA rows added. Reference font on this page only.
+- **Affected:**
+  - `lib/features/profile/presentation/profile_settings_screen.dart`
+  - `pubspec.yaml` (fonts entry)
+  - `assets/fonts/NunitoSans-VariableFont.ttf` + `NunitoSans-OFL.txt`
+  - `test/profile_settings_test.dart` (+7 tests)
+  - Untouched: the phone/email change and verification pages and their
+    navigation, the name/password sheets, photo upload, Login Activity.
+- **Impact & risk:** Low. One screen; the font is page-local. The APK grows by
+  about 0.57 MB.
+- **Verification:** `flutter analyze` clean. Profile, phone verification and
+  photo sync suites: 52/52 pass. Full suite: 2306 pass, 3 known
+  `brand_system_test` failures (unchanged). On the phone (Redmi): header, rows,
+  2FA chip and banner checked against the reference; Phone "Edit" opens the
+  existing Change Phone Number page.
+- **Commit:** see `git log` — `feat(profile): match Profile Settings to the
+  reference`, pushed to origin `main`.
+
 ## 2026-09-15 11:22 — Merge all branches into main; start this log
 - **What:** Fast-forwarded local `main` to `origin/main` (`9e677ec`), then
   merged `feat/sep-11-15-features` with a `--no-ff` merge commit.

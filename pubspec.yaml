@@ -107,6 +107,14 @@ flutter:
     # Embedded in the invoice and receipt PDFs. See Roboto-LICENSE.txt.
     - assets/fonts/
 
+  # Nunito Sans (SIL OFL 1.1, assets/fonts/NunitoSans-OFL.txt). Used only by
+  # the Profile Settings page, to match its reference design. A variable font:
+  # weights are selected with FontVariation('wght', ...) in that page's styles.
+  fonts:
+    - family: NunitoSans
+      fonts:
+        - asset: assets/fonts/NunitoSans-VariableFont.ttf
+
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

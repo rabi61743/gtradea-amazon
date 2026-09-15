@@ -9,6 +9,8 @@ import 'package:gtradea_amazon/core/network/api_client.dart';
 import 'package:gtradea_amazon/core/network/api_error.dart';
 import 'package:gtradea_amazon/core/network/session_store.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
+import 'package:gtradea_amazon/features/address/data/address_store.dart';
+import 'package:gtradea_amazon/features/address/presentation/address_list_screen.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_repository.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
 import 'package:gtradea_amazon/features/profile/data/email_verification_store.dart';
@@ -87,6 +89,7 @@ void main() {
     // writes the session finishes a turn later than the pump that looks for it.
     FlutterSecureStorage.setMockInitialValues({});
     SessionStore.instance.resetForTest();
+    AddressStore.instance.resetForTest();
     api = stubCatalog();
     AuthStore.instance.resetForTest();
     ProfileStore.instance.resetForTest();
@@ -593,6 +596,113 @@ void main() {
 
       expect(ProfileStore.instance.profile, isNull);
       expect(ProfileStore.instance.avatarUrl, isNull);
+    });
+  });
+
+  group('the page matches the reference', () {
+    testWidgets('every changeable row offers "Edit", not "Change"', (
+      tester,
+    ) async {
+      signInForTest();
+      await _pump(tester);
+
+      // Full Name, Phone Number, Email Address, Location.
+      expect(find.text('Edit'), findsNWidgets(4));
+      expect(find.text('Change'), findsNothing);
+    });
+
+    testWidgets('left out on request: Member since, Verified, Preferences', (
+      tester,
+    ) async {
+      signInForTest();
+      await _pump(tester);
+
+      expect(find.textContaining('Member since'), findsNothing);
+      expect(find.text('Verified'), findsNothing);
+      expect(find.textContaining('Profile Preferences'), findsNothing);
+      expect(find.textContaining('Show my profile'), findsNothing);
+    });
+
+    testWidgets('the page is set in Nunito Sans', (tester) async {
+      signInForTest();
+      await _pump(tester);
+
+      final title = tester.widget<Text>(find.text('Profile Settings'));
+      expect(title.style?.fontFamily, 'NunitoSans');
+    });
+  });
+
+  group('the location', () {
+    testWidgets('states the default delivery address', (tester) async {
+      // Read from the address book rather than typed here: two answers to
+      // "where does a parcel go" is one too many.
+      signInForTest();
+      AddressStore.instance.add(
+        label: AddressLabel.home,
+        fullName: 'Rabi Yadav',
+        phone: '9800000000',
+        province: 'Bagmati',
+        city: 'Kathmandu',
+        area: 'Jhamsikhel',
+        makeDefault: true,
+      );
+      await _pump(tester);
+
+      expect(find.text('Kathmandu, Bagmati'), findsOneWidget);
+      expect(find.textContaining('(Optional)'), findsOneWidget);
+    });
+
+    testWidgets('says "Not set" when there is none, and Edit opens the book', (
+      tester,
+    ) async {
+      signInForTest();
+      await _pump(tester);
+
+      expect(find.text('Not set'), findsOneWidget);
+
+      // The label reads "Location (Optional)" as one line of text.
+      await tester.tap(find.text('Not set'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AddressListScreen), findsOneWidget);
+    });
+  });
+
+  group('two-factor authentication', () {
+    testWidgets('shows "Not enabled" and never pretends to turn on', (
+      tester,
+    ) async {
+      // There is no 2FA on the server. The row is there because the design has
+      // it, and it must say so rather than open something that does nothing.
+      signInForTest();
+      await _pump(tester);
+
+      expect(find.text('Two-Factor Authentication (2FA)'), findsOneWidget);
+      expect(find.text('Not enabled'), findsOneWidget);
+
+      await tester.tap(find.text('Two-Factor Authentication (2FA)'));
+      await tester.pump();
+      expect(find.textContaining('isn’t available yet'), findsOneWidget);
+      expect(find.text('Not enabled'), findsOneWidget);
+    });
+  });
+
+  group('on a phone', () {
+    testWidgets('360 dp wide, nothing overflows', (tester) async {
+      signInForTest(name: 'Prabhakar Adhikari');
+      api.on(
+        'GET',
+        '/profile',
+        body: profileJson(first: 'Prabhakar', last: 'Adhikari'),
+      );
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap());
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Personal Information'), findsOneWidget);
     });
   });
 
