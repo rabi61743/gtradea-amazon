@@ -519,24 +519,38 @@ void main() {
       );
     });
 
-    testWidgets('the account card no longer shows a recently viewed rail', (
+    testWidgets('the rail is absent until something has been viewed', (
       tester,
     ) async {
-      // Removed from the Account screen's card by request. Visits are still
-      // recorded -- the store and every other use of it are untouched -- the
-      // account page simply does not draw them any more.
       _useTallWindow(tester);
       await tester.pumpWidget(_wrap(const AccountScreen()));
       await tester.pumpAndSettle();
+      expect(find.text('Recently viewed'), findsNothing);
 
       RecentlyViewedStore.instance.record(jacket);
       await tester.pumpAndSettle();
 
-      expect(RecentlyViewedStore.instance.items.single.title, 'Ice silk jacket');
-      expect(find.text('Recently viewed'), findsNothing);
-      expect(find.text('Ice silk jacket'), findsNothing);
-      expect(find.text('Account settings'), findsOneWidget);
-      expect(find.text('Help and information'), findsOneWidget);
+      expect(find.text('Recently viewed'), findsOneWidget);
+      expect(find.text('Ice silk jacket'), findsOneWidget);
+      expect(find.text('Rs. 1,130'), findsOneWidget);
+    });
+
+    testWidgets('the rail is back between the shortcuts and the settings', (
+      tester,
+    ) async {
+      // Restored to where it always sat, but outside the unified account card:
+      // the card ends after the shortcuts and a second card holds Account
+      // settings and Help, so the rail keeps its own place and look.
+      _useTallWindow(tester);
+      RecentlyViewedStore.instance.record(jacket);
+      await tester.pumpWidget(_wrap(const AccountScreen()));
+      await tester.pumpAndSettle();
+
+      final support = tester.getRect(find.text('Support'));
+      final rail = tester.getRect(find.text('Recently viewed'));
+      final settings = tester.getRect(find.text('Account settings'));
+      expect(rail.top, greaterThan(support.bottom));
+      expect(settings.top, greaterThan(rail.bottom));
     });
 
     testWidgets('opening a product records the visit', (tester) async {

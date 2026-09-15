@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 16:30 — Recently Viewed restored to its original place, outside the card
+- **What:** Restored Recently viewed (heading with Clear, and the rail) between the Orders/Saved/Cart/Support shortcuts and Account settings, unchanged: the `_RecentlyViewedRail` widget, `_GroupLabel` Clear action and imports come back from `50924c1`. It sits outside the unified card, so the card splits around it: card 1 holds profile and shortcuts; card 2 holds Account settings and Help. With nothing viewed the page is one card as before. Account settings and Help are written once (`settingsAndHelp`) and reused in either placement.
+- **Why:** User request: original location, not inside the card, card unchanged. That spot is inside the card, so the user chose "old spot, split the card in two".
+- **Affected:** `lib/features/account/presentation/account_screen.dart`. Tests: `auth_test` (the rail is absent until viewed, then appears; new test for the order shortcuts -> rail -> Account settings), `account_cards_test` (restored comment).
+- **Impact & risk:** Account screen layout only. Item look, routes and data are unchanged; `RecentlyViewedStore` is untouched.
+- **Verification:** analyze clean; account and related suites 134/134, including `recent_views_section`. On the Redmi: card 1, Recently viewed, card 2 in that order. Note: the profile avatar showed as a black circle on the device. The profile card code is untouched by this change; the app cache shows a photo picked at 16:02, most likely the new avatar.
+- **Commit:** see `git log` — `style(account): restore recently viewed to its place, outside the card`, pushed to origin `main`.
+
 ## 2026-09-15 16:20 — Recently Viewed removed from the account card
 - **What:** Removed the Recently viewed heading (with Clear) and product rail from `_AccountCard` on the Account screen. Also removed what only it used: the `viewed` local, the private `_RecentlyViewedRail` widget, four unused imports, and `_GroupLabel`'s optional Clear action. The other headings render identically (20/20 padding, no button).
 - **Why:** User request: remove only Recently Viewed from this card.
