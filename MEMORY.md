@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 15:30 — Icon section surface matches the Delivery + Points card
+- **What:** The Orders / Messages / Notifications section (`_Block` in `search_header.dart`) uses the card's surface: black at 22% fill, a 1px white-12% border, radius 14. It was a white-12% wash with no border. The card has no drop shadow, so none was added; fill and border are what give it its weight.
+- **Why:** User request: match the icon section's background/shadow to the Delivery and Points section.
+- **Affected:** `lib/features/home/widgets/search_header.dart` (`_Block` decoration only). Icons, labels, padding, height and taps are unchanged.
+- **Impact & risk:** Minimal. Visual only.
+- **Verification:** analyze clean; header, tour and home suites 147/147. On the Redmi the two groups read as a matching pair.
+- **Commit:** see `git log` — `style(home): give the icon section the delivery card's surface`, pushed to origin `main`.
+
 ## 2026-09-15 15:25 — Fix truncated address in the Delivery + Points card on phones
 - **What:** In the card's dense (phone) form the arrows are hidden and the address shows the neighbourhood alone ("Ekantakuna"), falling back to the city. Tablet and desktop keep both arrows and "Neighbourhood, City". The screen reader always hears the full place.
 - **Why:** User asked to fix "Deliver ... / Ekant..." on the Redmi, where the card shares its row with the icon section.

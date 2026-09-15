@@ -477,9 +477,13 @@ class _Block extends StatelessWidget {
       // Tight by request: the three tiles already carry their own tap-target
       // padding, so the field around them only needs a sliver.
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      // The Delivery + Points card's own surface -- the same dark translucent
+      // fill and hairline border -- so the two groups on this row read as a
+      // pair rather than one dark card beside a lighter wash.
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
+        color: Colors.black.withValues(alpha: 0.22),
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
       ),
       child: child,
     );
