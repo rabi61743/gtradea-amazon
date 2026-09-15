@@ -1005,16 +1005,11 @@ class _RecentlyViewedRail extends StatelessWidget {
       width: double.infinity,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: _cardShape,
-          border: Border.symmetric(
-            horizontal: BorderSide(color: theme.colorScheme.outlineVariant),
-          ),
-          boxShadow: _cardLift,
-        ),
-        // So a thumbnail cannot paint over the rounded corner as it scrolls
-        // past the edge.
+        // No card of its own, by request -- like Account settings and Help and
+        // information, the rail sits directly on the account card. The empty
+        // decoration is what lets the clip below stay.
+        decoration: const BoxDecoration(),
+        // So a thumbnail cannot paint past the edge as it scrolls.
         clipBehavior: Clip.antiAlias,
         child: SizedBox(
           // Grows with the device text scale, like the home rails: a fixed

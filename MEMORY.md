@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 16:58 — Recently viewed rail without its own card
+- **What:** `_RecentlyViewedRail` no longer draws its own surface, edge lines or shadow; its products sit directly on the account card, like Account settings and Help and information. Padding, height, horizontal scroll and the edge clip are kept, and tile images, names, prices and taps are unchanged.
+- **Why:** User request: remove the card from the recently viewed products, as done for the settings and help sections, nothing else.
+- **Affected:** `lib/features/account/presentation/account_screen.dart` (rail container decoration only).
+- **Impact & risk:** Visual only, for the rail. `RecentlyViewedStore` and the other recent-views uses are untouched.
+- **Verification:** analyze clean; auth, account and recent views suites 87/87. On the Redmi the products sit on the account card with no rail edge.
+- **Commit:** see `git log` — `style(account): drop the recently viewed rail's own card`, pushed to origin `main`.
+
 ## 2026-09-15 16:50 — Help and information rows without their own card
 - **What:** Help and information passes `card: false` to `_RowGroup`, like Account settings. Its rows sit directly on the account card with no edge lines or shadow of their own. Rows, icons, text, dividers and spacing are unchanged.
 - **Why:** User request: remove the card from Help and information as was done for Account settings, nothing else.
