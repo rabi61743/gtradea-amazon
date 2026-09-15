@@ -18,6 +18,46 @@ Entry format:
 
 ---
 
+## 2026-09-16 00:10 — Product History cards appear complete (image + description + price together)
+- **Root cause, investigated:**
+  - **Different data paths:** the history row (`/product-views`) carries only `product_data.name` and `image_url` (measured). The description, ✓ highlight, department chip and live price exist only in the per-product `/api/1688/product` record.
+  - The card drew from the row at once and filled in the record's fields later, so the image came first and the text second.
+  - **Queue:** the previous task's 3-at-a-time detail queue made lower visible cards fill in later still.
+  - **Redraws:** each record also caused its own `setState`.
+  - Not causes: slow list query (~200 ms), data conversion, Suspense (Flutter app).
+- **Found on device during the fix:** showing a card on its record alone reversed the problem, with text and price beside an empty image tile. So the picture is now part of "complete" too.
+- **What** (`recent_views_section.dart`; plus `ProductRepository.cachedDetail`):
+  - A card whose record hasn't settled is drawn as the whole-card `RecentViewsSkeleton(rows: 1)`, same size. It switches in one step to the full card when the record (or its failure) **and** the picture are in.
+  - **Parallel:**
+    - the picture download (`warmImage` → `precacheImage` on the exact provider the tile uses, `_ViewRow.imageOf`) starts at the same moment as the record request
+    - all records in the batch start at once, with the queue removed
+    - each product is requested once (`_asked`)
+  - **Fallbacks:** a failed record draws the card from history data; a failed image doesn't block. A slow image may hold a card at most 4 s (`imageGrace`) after its record, never forever.
+  - A record in the 5-minute product cache is used without a request.
+  - Record arrivals are grouped into one rebuild per microtask burst.
+  - Card design, sizes, chip, padding, the duplicate-spec fix, Load More and error/Retry are unchanged.
+- **Backend limitation, reported:**
+  - The backend source isn't on this machine, and `/product-views` can't be made to return price/description from the app.
+  - A stored price would also go stale against authoritative server pricing.
+  - To remove the per-product request entirely, the backend should join the current display price, category and a description summary into `/product-views` rows.
+- **Why:** User request: description and price must appear with the image as one complete card, fix the real data path, no fake data or delays.
+- **Affected:**
+  - `lib/features/account/presentation/recent_views_section.dart`
+  - `lib/features/product/data/product_repository.dart` (`cachedDetail`, read-only)
+  - `test/flutter_test_config.dart` (`RecentViewsSection.warmImage` no-op, like `AppImages.providerOverride`)
+  - `test/recent_views_section_test.dart`, new tests:
+    - slow record → only a skeleton, then all fields at once
+    - a cached record draws with no request
+    - the batch starts all records once each
+    - the card waits for its picture, started alongside the record
+  - `test/product_history_older_test.dart` (timing in one test)
+- **Verification:**
+  - analyze clean; product history suites 46/46.
+  - On the Redmi, rapid screenshots showed whole-card skeletons, then complete cards (image, name, description, ✓ line, chip, price, Buy Now) in one step, with no half-filled card in between.
+  - Not run: tablet and desktop on physical devices (none available). Phone, tablet and desktop widths are covered by widget tests.
+  - Full suite: 2371 pass; only the 3 known `brand_system_test` failures.
+- **Commit:** see git log (`perf(history): render Product History cards whole, fetching record and image together`) on main, pushed to origin
+
 ## 2026-09-15 23:45 — Product History: faster loading, full-screen card skeleton, append-only Load More
 - **Measured root cause** (live gateway, Redmi, temporary uncommitted logging):
   - `/product-views?limit=40` took ~210 ms, so the list itself was not slow.

@@ -54,6 +54,17 @@ class RecentViewsSection extends StatefulWidget {
   /// are its list.
   final int? limit;
 
+  /// Loads a card's picture into the image cache.
+  ///
+  /// Swapped out in tests, where an image decode begun inside the test clock
+  /// never finishes -- the same reason the app's image provider is swapped.
+  @visibleForTesting
+  static Future<void> Function(BuildContext context, ImageProvider image)
+  warmImage = _precache;
+
+  static Future<void> _precache(BuildContext context, ImageProvider image) =>
+      precacheImage(image, context, onError: (_, _) {});
+
   @override
   State<RecentViewsSection> createState() => _RecentViewsSectionState();
 }
@@ -69,50 +80,84 @@ class _RecentViewsSectionState extends State<RecentViewsSection> {
   final Map<String, ProductDetail> _detail = {};
   final Set<String> _asked = {};
 
-  /// Product records waiting their turn, top card first.
-  final List<String> _queue = [];
-  int _running = 0;
-
-  /// How many product records are fetched at once.
+  /// Rows whose product record has been answered for -- with the record, or
+  /// with a failure. Until then the row is drawn as a whole-card skeleton.
   ///
-  /// Each is a full catalogue record -- measured at 1.5 to 3.6 s and up to
-  /// 200 KB on the live route -- and every card used to start its own at the
-  /// same moment. A few at a time, in list order, lets the cards on screen
-  /// finish first instead of all of them crawling in together.
-  static const concurrency = 3;
+  /// This is the fix for the image arriving before the words. The history row
+  /// carries only a name and a picture (measured: `product_data` holds
+  /// `name` and `image_url`, nothing else); the description, the highlight,
+  /// the department and the live price all come from the product record. A
+  /// card drawn from the row alone showed its picture at once and then filled
+  /// its price and description in a second or more later. Held back to one
+  /// complete state, it appears with everything together.
+  final Set<String> _settled = {};
+
+  bool _rebuildQueued = false;
+
+  /// How long a picture may keep a card waiting once its words are in. A slow
+  /// image host must not hold a finished card back as a skeleton for good;
+  /// past this the card shows, and the picture lands in its tile.
+  static const imageGrace = Duration(seconds: 4);
 
   void _enrich(List<ProductView> views) {
     for (final view in views) {
-      if (view.productId.isEmpty || !_asked.add(view.productId)) continue;
-      _queue.add(view.productId);
-    }
-    _pump();
-  }
-
-  void _pump() {
-    while (_running < concurrency && _queue.isNotEmpty) {
-      _running++;
-      final id = _queue.removeAt(0);
-      unawaited(
-        _fetch(id).whenComplete(() {
-          _running--;
-          if (mounted) _pump();
-        }),
-      );
+      final id = view.productId;
+      if (id.isEmpty || !_asked.add(id)) continue;
+      // All of a batch at once, not queued: the batch is ten rows, and a
+      // queue made the lower cards on screen wait out the upper ones.
+      unawaited(_fetch(view));
     }
   }
 
-  Future<void> _fetch(String id) async {
-    try {
-      final body = await ProductRepository.instance.detail(id);
-      if (!mounted) return;
-      final detail = ProductDetail.fromApi(body);
-      // The answer has to be about the product that was asked for.
-      if (detail.numIid != id) return;
-      setState(() => _detail[id] = detail);
-    } on ApiError {
-      // A row that could not be enriched is a row as the history recorded it.
+  void _accept(String id, Map<String, dynamic> body) {
+    final detail = ProductDetail.fromApi(body);
+    // The answer has to be about the product that was asked for.
+    if (detail.numIid == id) _detail[id] = detail;
+  }
+
+  /// The product record and the picture, side by side, and the card shown
+  /// once both are in.
+  ///
+  /// Neither waits for the other to start: the picture's download begins in
+  /// the same moment as the record's request. Showing the card on the record
+  /// alone put its price and description on screen beside an empty tile, which
+  /// is the same two-stage card the other way round.
+  Future<void> _fetch(ProductView view) async {
+    final id = view.productId;
+    final url = view.imageUrl;
+    final picture = url == null
+        ? Future<void>.value()
+        : RecentViewsSection.warmImage(context, _ViewRow.imageOf(context, url));
+
+    // Fetched in the last few minutes -- by an earlier visit or the product
+    // page -- is used as it is, with no second request.
+    final cached = ProductRepository.instance.cachedDetail(id);
+    if (cached != null) {
+      _accept(id, cached);
+    } else {
+      try {
+        _accept(id, await ProductRepository.instance.detail(id));
+      } on ApiError {
+        // A row that could not be enriched is drawn as the history recorded
+        // it, rather than left as a skeleton forever.
+      }
     }
+    if (!mounted) return;
+    await picture.timeout(imageGrace, onTimeout: () {});
+    if (!mounted) return;
+    _settled.add(id);
+    _queueRebuild();
+  }
+
+  /// One rebuild per frame however many records land in it, rather than one
+  /// per record: ten answers arriving together were ten rebuilds of the list.
+  void _queueRebuild() {
+    if (_rebuildQueued || !mounted) return;
+    _rebuildQueued = true;
+    scheduleMicrotask(() {
+      _rebuildQueued = false;
+      if (mounted) setState(() {});
+    });
   }
 
   List<ProductView> get _views {
@@ -191,19 +236,24 @@ class _RecentViewsSectionState extends State<RecentViewsSection> {
         // No strip at the head of the list. The rows are what this is, and
         // the page they sit on already says what page it is.
         for (final view in _views)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: _Measure(
-              child: _ViewRow(
-                view: view,
-                detail: _detail[view.productId],
-                saved: WishlistStore.instance.contains(view.productId),
-                onOpen: () => _open(view),
-                onSave: () => _toggleSaved(view),
-                onBuy: () => _buyNow(view),
+          if (!_settled.contains(view.productId) && view.productId.isNotEmpty)
+            // The whole card in outline, at the card's own size, until its
+            // record is in -- never a picture beside empty slots.
+            const RecentViewsSkeleton(rows: 1)
+          else
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: _Measure(
+                child: _ViewRow(
+                  view: view,
+                  detail: _detail[view.productId],
+                  saved: WishlistStore.instance.contains(view.productId),
+                  onOpen: () => _open(view),
+                  onSave: () => _toggleSaved(view),
+                  onBuy: () => _buyNow(view),
+                ),
               ),
             ),
-          ),
       ],
     );
   }
@@ -272,6 +322,15 @@ class _ViewRow extends StatelessWidget {
   /// row, and a very small one cannot shrink it to a stamp.
   static double imageSize(BuildContext context) =>
       contentHeight(context).clamp(84.0, 132.0);
+
+  /// The picture exactly as the tile asks for it, so loading it ahead of the
+  /// card fills the same cache entry the tile then reads.
+  static ImageProvider imageOf(BuildContext context, String url) =>
+      AppImages.of(
+        url,
+        width: imageSize(context),
+        devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      );
 
   /// The slots the words sit in, scaled by the device's text setting so a
   /// larger one makes every card taller rather than clipping one.
@@ -384,12 +443,7 @@ class _ViewRow extends StatelessWidget {
                             // this tile, kept on disk, rather than the full
                             // photograph downloaded and decoded on every visit.
                             : Image(
-                                image: AppImages.of(
-                                  view.imageUrl!,
-                                  width: imageSize(context),
-                                  devicePixelRatio:
-                                      MediaQuery.devicePixelRatioOf(context),
-                                ),
+                                image: imageOf(context, view.imageUrl!),
                                 fit: BoxFit.contain,
                                 gaplessPlayback: true,
                                 errorBuilder: (_, _, _) =>

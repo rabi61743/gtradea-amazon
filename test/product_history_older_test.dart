@@ -331,9 +331,11 @@ void main() {
       _tall(tester);
 
       await tester.pumpWidget(_wrap());
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
 
+      // Well inside the five seconds the orders are held for.
       expect(find.text('Product 0'), findsOneWidget);
       await tester.pump(const Duration(seconds: 6));
       await tester.pumpAndSettle();

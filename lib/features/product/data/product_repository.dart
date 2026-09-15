@@ -54,6 +54,15 @@ class ProductRepository {
     });
   }
 
+  /// The remembered record for [numIid], if one is still fresh -- read without
+  /// waiting, so a card whose product was already fetched can draw complete on
+  /// its first frame instead of a frame later.
+  Map<String, dynamic>? cachedDetail(String numIid) {
+    final cached = _cache[numIid];
+    if (cached == null || now().difference(cached.at) >= cacheTtl) return null;
+    return cached.body;
+  }
+
   /// Warms the cache for a product that is about to be opened.
   ///
   /// Deliberately swallows everything: a prefetch that failed must never be

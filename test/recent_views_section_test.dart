@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -168,6 +170,188 @@ void main() {
     expect(find.text('Sound: High Sound Quality'), findsOneWidget);
     expect(find.text('Feature: Noise Cancellation'), findsOneWidget);
     expect(find.text('Rs. 2,850'), findsOneWidget);
+  });
+
+  testWidgets('a card appears whole: never a picture beside empty slots', (
+    tester,
+  ) async {
+    // The product record is slow, as on a poor connection.
+    stubApi().onCall('GET', '/api/1688/product', (call) {
+      return reply({
+        'item': {
+          'num_iid': '1',
+          'title': 'TWS Wireless Earbuds',
+          'category_name': 'Earphones',
+          'props': [
+            {'name': 'Sound', 'value': 'High Sound Quality'},
+          ],
+        },
+        'pricing': {'displayPrice': 2850},
+      }, delay: const Duration(seconds: 2));
+    });
+
+    tester.view.physicalSize = const Size(1200, 3000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: ListView(
+            children: [
+              RecentViewsSection(
+                views: [_view(id: '1', name: 'TWS Wireless Earbuds')],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Waiting: the whole card in outline, and none of its parts yet.
+    expect(find.byType(RecentViewsSkeleton), findsOneWidget);
+    expect(find.text('TWS Wireless Earbuds'), findsNothing);
+    expect(find.text('Buy Now'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    // Arrived: name, description, price and department in the same frame.
+    expect(find.byType(RecentViewsSkeleton), findsNothing);
+    expect(find.text('TWS Wireless Earbuds'), findsOneWidget);
+    expect(find.text('Sound: High Sound Quality'), findsOneWidget);
+    expect(find.text('Rs. 2,850'), findsOneWidget);
+    expect(find.text('Earphones'), findsOneWidget);
+  });
+
+  testWidgets('a product record already fetched draws complete, unasked', (
+    tester,
+  ) async {
+    var asked = 0;
+    stubApi().onCall('GET', '/api/1688/product', (call) {
+      asked++;
+      return reply({
+        'item': {'num_iid': '1', 'title': 'TWS Wireless Earbuds'},
+        'pricing': {'displayPrice': 2850},
+      });
+    });
+
+    await _pump(tester, [_view(id: '1', name: 'TWS Wireless Earbuds')]);
+    expect(asked, 1);
+
+    // A second visit within the cache's life: first frame is the full card.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: ListView(
+            children: [
+              RecentViewsSection(
+                views: [_view(id: '1', name: 'TWS Wireless Earbuds')],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(RecentViewsSkeleton), findsNothing);
+    expect(find.text('Rs. 2,850'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(asked, 1, reason: 'no second request');
+  });
+
+  testWidgets('and waits for its picture too, fetched alongside the details', (
+    tester,
+  ) async {
+    final picture = Completer<void>();
+    var pictureStarted = false;
+    final previous = RecentViewsSection.warmImage;
+    RecentViewsSection.warmImage = (_, _) {
+      pictureStarted = true;
+      return picture.future;
+    };
+    addTearDown(() => RecentViewsSection.warmImage = previous);
+    var detailStarted = false;
+    stubApi().onCall('GET', '/api/1688/product', (call) {
+      detailStarted = true;
+      return reply({
+        'item': {'num_iid': '1', 'title': 'TWS Wireless Earbuds'},
+        'pricing': {'displayPrice': 2850},
+      });
+    });
+
+    tester.view.physicalSize = const Size(1200, 3000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: ListView(
+            children: [
+              RecentViewsSection(
+                views: [_view(id: '1', name: 'TWS Wireless Earbuds')],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // Both began together; the details are in, the picture is not.
+    expect(pictureStarted, isTrue);
+    expect(detailStarted, isTrue);
+    expect(find.byType(RecentViewsSkeleton), findsOneWidget);
+    expect(find.text('Rs. 2,850'), findsNothing);
+
+    picture.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(RecentViewsSkeleton), findsNothing);
+    expect(find.text('Rs. 2,850'), findsOneWidget);
+  });
+
+  testWidgets('a batch asks for every record at once, each once', (
+    tester,
+  ) async {
+    final started = <String>[];
+    stubApi().onCall('GET', '/api/1688/product', (call) {
+      started.add('${call.query['num_iid']}');
+      return reply({
+        'item': {'num_iid': '${call.query['num_iid']}', 'title': 'x'},
+      }, delay: const Duration(seconds: 1));
+    });
+
+    tester.view.physicalSize = const Size(1200, 6000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: ListView(
+            children: [
+              RecentViewsSection(
+                views: [
+                  for (var i = 0; i < 10; i++)
+                    _view(id: 'b$i', name: 'Product $i', price: 100),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    expect(started.toSet(), {for (var i = 0; i < 10; i++) 'b$i'});
+    expect(started, hasLength(10), reason: 'each once');
+    expect(find.text('Product 9'), findsOneWidget);
   });
 
   testWidgets('a product with one specification prints it only once', (

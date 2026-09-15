@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:gtradea_amazon/core/images/app_images.dart';
+import 'package:gtradea_amazon/features/account/presentation/recent_views_section.dart';
 import 'package:gtradea_amazon/features/home/widgets/hero_banner.dart';
 import 'package:gtradea_amazon/features/tour/data/tour_store.dart';
 
@@ -30,6 +31,12 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // carousel. Nothing is mocked by this: those tests get the real clock at the
   // real interval, and the app is untouched.
   HeroBanner.autoplayEnabled = false;
+
+  // A Product History card waits for its picture as well as its details, and
+  // an image decode begun inside the test clock never finishes -- so every
+  // card would stay a skeleton. The picture is taken as loaded here; the card
+  // tests still exercise the details it waits on.
+  RecentViewsSection.warmImage = (_, _) async {};
 
   // The guided tour opens on a first launch, and every widget test seeds an
   // empty preference store -- which *is* a first launch. Left on, it would
