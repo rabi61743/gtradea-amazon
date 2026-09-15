@@ -519,20 +519,24 @@ void main() {
       );
     });
 
-    testWidgets('the rail is absent until something has been viewed', (
+    testWidgets('the account card no longer shows a recently viewed rail', (
       tester,
     ) async {
+      // Removed from the Account screen's card by request. Visits are still
+      // recorded -- the store and every other use of it are untouched -- the
+      // account page simply does not draw them any more.
       _useTallWindow(tester);
       await tester.pumpWidget(_wrap(const AccountScreen()));
       await tester.pumpAndSettle();
-      expect(find.text('Recently viewed'), findsNothing);
 
       RecentlyViewedStore.instance.record(jacket);
       await tester.pumpAndSettle();
 
-      expect(find.text('Recently viewed'), findsOneWidget);
-      expect(find.text('Ice silk jacket'), findsOneWidget);
-      expect(find.text('Rs. 1,130'), findsOneWidget);
+      expect(RecentlyViewedStore.instance.items.single.title, 'Ice silk jacket');
+      expect(find.text('Recently viewed'), findsNothing);
+      expect(find.text('Ice silk jacket'), findsNothing);
+      expect(find.text('Account settings'), findsOneWidget);
+      expect(find.text('Help and information'), findsOneWidget);
     });
 
     testWidgets('opening a product records the visit', (tester) async {

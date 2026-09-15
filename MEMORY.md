@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 16:20 — Recently Viewed removed from the account card
+- **What:** Removed the Recently viewed heading (with Clear) and product rail from `_AccountCard` on the Account screen. Also removed what only it used: the `viewed` local, the private `_RecentlyViewedRail` widget, four unused imports, and `_GroupLabel`'s optional Clear action. The other headings render identically (20/20 padding, no button).
+- **Why:** User request: remove only Recently Viewed from this card.
+- **Affected:** `lib/features/account/presentation/account_screen.dart`. Tests: `auth_test` (the account card no longer shows the rail; visits are still recorded), `account_cards_test` (comment).
+- **Impact & risk:** Account card only. `RecentlyViewedStore`, visit recording, the home recent-views section and product history are untouched. Profile, shortcuts, Account settings, Help and information and Sign out are unchanged.
+- **Verification:** analyze clean; account and related suites 124/124; `recent_views_section_test` 9/9. On the Redmi: Account settings follows the shortcuts with no rail.
+- **Commit:** see `git log` — `style(account): remove recently viewed from the account card`, pushed to origin `main`.
+
 ## 2026-09-15 16:10 — Account items combined into one card
 - **What:** On the Account screen the profile/guest card, the Orders/Saved/Cart/Support shortcuts, Recently viewed, Account settings and Help and information are wrapped, unchanged, in one `_AccountCard`. It uses the page's own card style (surface colour, `_cardShape`, horizontal hairline border, `_cardLift`) with 12 dp vertical inner padding and no horizontal padding, so nothing inside changes width or position. Sign out stays outside.
 - **Why:** User request: place these existing items in one unified card without repositioning or restyling anything.

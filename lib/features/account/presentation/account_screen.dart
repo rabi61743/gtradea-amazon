@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import '../../../core/audio/sound_settings.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/state_toggle.dart';
-import '../../../shared/widgets/artwork_panel.dart';
 import '../../../shared/widgets/brand_wordmark.dart';
 import '../../../core/l10n/app_strings.dart';
 import '../../address/data/address_store.dart';
@@ -22,12 +21,9 @@ import '../../help/presentation/contact_screen.dart';
 import '../../help/presentation/help_center_screen.dart';
 import '../../legal/presentation/legal_page_screen.dart';
 import '../../legal/presentation/terms_policies_screen.dart';
-import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../notifications/presentation/notification_settings_screen.dart';
 import '../../orders/data/order_store.dart';
 import '../../orders/presentation/orders_screen.dart';
-import '../../catalog/data/product.dart';
-import '../../product/presentation/product_detail_screen.dart';
 import '../../profile/data/profile_store.dart';
 import '../../profile/presentation/profile_settings_screen.dart';
 import '../../security/presentation/login_activity_screen.dart';
@@ -111,7 +107,6 @@ class _AccountScreenState extends State<AccountScreen> {
       ]),
       builder: (context, _) {
         final account = AuthStore.instance.account;
-        final viewed = RecentlyViewedStore.instance.items;
 
         return Scaffold(
           appBar: AppBar(
@@ -121,8 +116,8 @@ class _AccountScreenState extends State<AccountScreen> {
             padding: const EdgeInsets.only(top: 12, bottom: 32),
             children: [
               // The account's own items -- profile, the four shortcuts,
-              // recently viewed, settings and help -- in one card, each
-              // exactly as it was. Sign out stays outside it.
+              // settings and help -- in one card, each exactly as it was.
+              // Sign out stays outside it.
               _AccountCard(
                 children: [
                   if (account == null)
@@ -154,28 +149,6 @@ class _AccountScreenState extends State<AccountScreen> {
                     onCart: () => _push(const CartScreen()),
                     onHelp: _openContact,
                   ),
-
-                  if (viewed.isNotEmpty) ...[
-                    const SizedBox(height: 22),
-                    _GroupLabel(
-                      'Recently viewed',
-                      action: 'Clear',
-                      onAction: RecentlyViewedStore.instance.clear,
-                    ),
-                    _RecentlyViewedRail(
-                      items: viewed,
-                      onTap: (product) => _push(
-                        ProductDetailScreen(
-                          product: productStub(
-                            numIid: product.id,
-                            title: product.title,
-                            imageUrl: product.imageUrl,
-                            displayPrice: product.price,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
 
                   const SizedBox(height: 22),
                   const _GroupLabel('Account settings'),
@@ -375,7 +348,7 @@ class _AccountScreenState extends State<AccountScreen> {
 /// The guest state: what an account buys you, then both ways in.
 /// The lift on this page's four cards, and nowhere else.
 ///
-/// Account, Account settings, Help and information and Recently viewed carry
+/// Account, Account settings and Help and information carry
 /// it; the quick-action tiles, the rows inside a card and every button stay
 /// flat, which is what keeps the shadow meaning "this is a block" rather than
 /// becoming the page's default texture.
@@ -776,11 +749,9 @@ class _QuickAction extends StatelessWidget {
 
 /// A section heading, with an optional action on the right.
 class _GroupLabel extends StatelessWidget {
-  const _GroupLabel(this.label, {this.action, this.onAction});
+  const _GroupLabel(this.label);
 
   final String label;
-  final String? action;
-  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -789,7 +760,7 @@ class _GroupLabel extends StatelessWidget {
     return Padding(
       // Outside the card it labels, so the card stays a clean block and the
       // hierarchy is readable without a divider.
-      padding: EdgeInsets.fromLTRB(20, 0, action == null ? 20 : 8, 8),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       child: Row(
         children: [
           Expanded(
@@ -800,8 +771,6 @@ class _GroupLabel extends StatelessWidget {
               ),
             ),
           ),
-          if (action != null)
-            TextButton(onPressed: onAction, child: Text(action!)),
         ],
       ),
     );
@@ -972,92 +941,3 @@ class _SettingsRow extends StatelessWidget {
   }
 }
 
-/// Products the shopper opened, as a horizontal rail of small cards.
-class _RecentlyViewedRail extends StatelessWidget {
-  const _RecentlyViewedRail({required this.items, required this.onTap});
-
-  final List<SavedProduct> items;
-  final ValueChanged<SavedProduct> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return SizedBox(
-      width: double.infinity,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: _cardShape,
-          border: Border.symmetric(
-            horizontal: BorderSide(color: theme.colorScheme.outlineVariant),
-          ),
-          boxShadow: _cardLift,
-        ),
-        // So a thumbnail cannot paint over the rounded corner as it scrolls
-        // past the edge.
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(
-          // Grows with the device text scale, like the home rails: a fixed
-          // height clips the price line on a phone set to larger text.
-          height:
-              168 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.4),
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            // The card runs to the screen edges, so the rail carries the page
-            // margin itself and the first thumbnail lines up with the words
-            // above it.
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, i) {
-              final item = items[i];
-              return SizedBox(
-                width: 104,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-                  onTap: () => onTap(item),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          AppTheme.radiusControl,
-                        ),
-                        child: SizedBox(
-                          width: 104,
-                          height: 104,
-                          child: ArtworkPanel(
-                            icon: Icons.checkroom,
-                            tint: theme.colorScheme.primary,
-                            imageUrl: item.imageUrl,
-                            iconScale: 0.4,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        item.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      Text(
-                        formatRupees(item.price),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-}
