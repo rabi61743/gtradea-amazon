@@ -434,11 +434,33 @@ void main() {
       final actions = block(SupportButton);
       expect(actions.height, lessThanOrEqualTo(44));
       expect(
-        (actions.height - tester.getSize(find.byType(DeliveryPointsCard)).height)
-            .abs(),
-        lessThanOrEqualTo(2),
-        reason: 'level with the Delivery + Points card beside it',
+        actions.height,
+        tester.getSize(find.byType(DeliveryPointsCard)).height,
+        reason: 'exactly the Delivery + Points card''s height beside it',
       );
+    });
+
+    testWidgets('on a tablet the icon section still matches the card height', (
+      tester,
+    ) async {
+      // The card draws its reference size (56) off a phone; the icon section
+      // takes the same height from DeliveryPointsCard.rowHeight rather than
+      // keeping its own 44, so the two surfaces stay level at every width.
+      tester.view.physicalSize = const Size(1600, 1200);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      final card = tester.getRect(find.byType(DeliveryPointsCard));
+      final actions = tester.getRect(
+        find
+            .ancestor(of: find.byType(SupportButton), matching: find.byType(Container))
+            .first,
+      );
+      expect(card.height, closeTo(56, 0.01));
+      expect(actions.height, closeTo(card.height, 0.01));
+      expect(actions.top, closeTo(card.top, 0.5));
     });
   });
 

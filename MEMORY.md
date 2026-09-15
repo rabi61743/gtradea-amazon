@@ -18,6 +18,17 @@ Entry format:
 
 ---
 
+## 2026-09-15 15:45 — Equal heights for the header sections; right inset in the Points half
+- **What:**
+  - The Orders / Messages / Notifications section takes the Delivery + Points card's height from one shared `DeliveryPointsCard.rowHeight`: 44 on phones, 56 on tablet/desktop. Before, a phone had card 42 / icons 44 and a tablet had 56 / 44.
+  - The phone/tablet choice follows the screen width (< 600) so both sections agree.
+  - The Points half has a 10 dp right inset on phones (was 4) and 14 on tablet/desktop (was 10). The inner gaps beside the divider are 2 and 4 so the address keeps its width.
+- **Why:** User request: the icon section exactly matches the card's height and proportions, with comfortable right-side padding in Delivery/Points. Backgrounds and borders already matched and were not changed.
+- **Affected:** `delivery_points_card.dart` (`isDense`, `rowHeight`, `pointsPadding`, dense metrics); `search_header.dart` (`_Block` min height). Tests: `header_additions_test` (exact height match on phone + new tablet test); `delivery_points_card_test` (wrapper keeps the real screen size; explicit tablet size).
+- **Impact & risk:** Header row only. Icons, labels, text, colours and taps are unchanged; the icon section keeps its reduced padding and gap. Found while testing: the extra right inset truncated the address ("Ekantaku..."), fixed by tightening the inner gaps.
+- **Verification:** analyze clean; header, tour and home suites 148/148. On the Redmi both sections share top and bottom edges, the address reads "Ekantakuna" in full, and "1,000 Points" is inset from the right edge.
+- **Commit:** see `git log` — `style(home): level the header sections and inset the points`, pushed to origin `main`.
+
 ## 2026-09-15 15:30 — Icon section surface matches the Delivery + Points card
 - **What:** The Orders / Messages / Notifications section (`_Block` in `search_header.dart`) uses the card's surface: black at 22% fill, a 1px white-12% border, radius 14. It was a white-12% wash with no border. The card has no drop shadow, so none was added; fill and border are what give it its weight.
 - **Why:** User request: match the icon section's background/shadow to the Delivery and Points section.

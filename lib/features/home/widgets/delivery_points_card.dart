@@ -19,10 +19,10 @@ import 'product_rail.dart' show formatGrouped;
 /// coin are this card's wording only -- the wallet page still says coins.
 ///
 /// It shares its row with the Orders / Messages / Notifications group, so on
-/// a phone it has a little over half the header. Below [denseBelow] it draws
-/// its dense metrics -- tighter padding, slightly smaller glyphs, and the
-/// icon group's height -- and keeps the reference's layout; on a tablet or
-/// desktop it draws the reference's full size.
+/// a phone it has a little over half the header. On a screen narrower than
+/// [denseBelow] it draws its dense metrics -- tighter padding and slightly
+/// smaller glyphs -- and keeps the reference's layout; on a tablet or desktop
+/// it draws the reference's full size.
 class DeliveryPointsCard extends StatelessWidget {
   const DeliveryPointsCard({super.key});
 
@@ -30,16 +30,23 @@ class DeliveryPointsCard extends StatelessWidget {
 
   static const radius = 14.0;
 
-  /// Card width under which the dense metrics are used.
-  static const denseBelow = 360.0;
+  /// Screen width under which the dense metrics are used.
+  static const denseBelow = 600.0;
+
+  static bool isDense(BuildContext context) =>
+      MediaQuery.sizeOf(context).width < denseBelow;
+
+  /// The height this card is drawn at, and so the height the icon section
+  /// beside it takes too -- one number for both, so the two surfaces on the
+  /// row are exactly level.
+  static double rowHeight(BuildContext context) =>
+      (isDense(context) ? _Metrics.dense : _Metrics.regular).minHeight;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final m = constraints.maxWidth < denseBelow
-            ? _Metrics.dense
-            : _Metrics.regular;
+        final m = isDense(context) ? _Metrics.dense : _Metrics.regular;
         return ListenableBuilder(
           listenable: Listenable.merge([
             AddressStore.instance,
@@ -156,6 +163,7 @@ class _Metrics {
   const _Metrics({
     required this.minHeight,
     required this.padding,
+    required this.pointsPadding,
     required this.pin,
     required this.pinGap,
     required this.chevron,
@@ -170,6 +178,11 @@ class _Metrics {
 
   final double minHeight;
   final EdgeInsets padding;
+
+  /// The points half's padding. Its right side is the card's right edge, so
+  /// it keeps a comfortable inset there rather than the delivery half's
+  /// tight inner gap.
+  final EdgeInsets pointsPadding;
   final double pin;
   final double pinGap;
   final double chevron;
@@ -189,6 +202,7 @@ class _Metrics {
   static const regular = _Metrics(
     minHeight: 56,
     padding: EdgeInsets.fromLTRB(14, 9, 10, 9),
+    pointsPadding: EdgeInsets.fromLTRB(14, 9, 14, 9),
     pin: 22,
     pinGap: 10,
     chevron: 22,
@@ -201,10 +215,14 @@ class _Metrics {
     placeWithCity: true,
   );
 
-  /// 42 tall, the icon group's own floor, so the two sit level.
+  /// 44 tall: the icon section's own height on a phone, which the header also
+  /// gives that section through [DeliveryPointsCard.rowHeight].
   static const dense = _Metrics(
-    minHeight: 42,
-    padding: EdgeInsets.fromLTRB(8, 4, 4, 4),
+    minHeight: 44,
+    // The inner gaps either side of the divider are the tight ones (2 and 4),
+    // so the right-edge inset of 10 costs the address nothing.
+    padding: EdgeInsets.fromLTRB(8, 4, 2, 4),
+    pointsPadding: EdgeInsets.fromLTRB(4, 4, 10, 4),
     pin: 18,
     pinGap: 5,
     chevron: 18,
@@ -323,7 +341,7 @@ class _PointsHalf extends StatelessWidget {
           right: Radius.circular(DeliveryPointsCard.radius),
         ),
         child: Padding(
-          padding: m.padding,
+          padding: m.pointsPadding,
           child: FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,

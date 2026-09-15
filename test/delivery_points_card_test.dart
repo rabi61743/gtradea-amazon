@@ -10,15 +10,22 @@ import 'package:gtradea_amazon/features/home/widgets/product_rail.dart'
     show formatGrouped;
 import 'package:gtradea_amazon/features/wallet/data/coin_balance_store.dart';
 
+/// The card on a band-coloured page. The text scale is layered onto the real
+/// MediaQuery rather than replacing it: the card picks its phone or tablet
+/// form from the screen width, and a bare MediaQueryData reports a width of 0.
 Widget _wrap({double textScale = 1}) => MaterialApp(
   theme: AppTheme.light,
-  home: MediaQuery(
-    data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
-    child: const Scaffold(
-      backgroundColor: Color(0xFF1F6070),
-      body: Padding(
-        padding: EdgeInsets.all(12),
-        child: DeliveryPointsCard(),
+  home: Builder(
+    builder: (context) => MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: TextScaler.linear(textScale)),
+      child: const Scaffold(
+        backgroundColor: Color(0xFF1F6070),
+        body: Padding(
+          padding: EdgeInsets.all(12),
+          child: DeliveryPointsCard(),
+        ),
       ),
     ),
   ),
@@ -112,6 +119,10 @@ void main() {
   testWidgets('shows Deliver to, the place, the balance and Points', (
     tester,
   ) async {
+    // A tablet-width screen: the reference form, with the city and arrows.
+    tester.view.physicalSize = const Size(1600, 1200);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
     _jawalakhel();
     await tester.pumpWidget(_wrap());
 

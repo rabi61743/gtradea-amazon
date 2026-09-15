@@ -470,10 +470,13 @@ class _Block extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      // A floor rather than a fixed height, so the two blocks are the same
-      // size on a default text setting and both grow -- rather than one
-      // clipping -- on a large one.
-      constraints: const BoxConstraints(minHeight: 42),
+      // The Delivery + Points card's own height, from the one number both
+      // use, so the two surfaces on this row are exactly level: 44 on a
+      // phone, 56 on a tablet or desktop. A floor rather than a fixed height,
+      // so a large text setting grows it rather than clipping it.
+      constraints: BoxConstraints(
+        minHeight: DeliveryPointsCard.rowHeight(context),
+      ),
       // Tight by request: the three tiles already carry their own tap-target
       // padding, so the field around them only needs a sliver.
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
