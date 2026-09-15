@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/images/app_images.dart';
 import '../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
@@ -68,10 +69,36 @@ class _RecentViewsSectionState extends State<RecentViewsSection> {
   final Map<String, ProductDetail> _detail = {};
   final Set<String> _asked = {};
 
+  /// Product records waiting their turn, top card first.
+  final List<String> _queue = [];
+  int _running = 0;
+
+  /// How many product records are fetched at once.
+  ///
+  /// Each is a full catalogue record -- measured at 1.5 to 3.6 s and up to
+  /// 200 KB on the live route -- and every card used to start its own at the
+  /// same moment. A few at a time, in list order, lets the cards on screen
+  /// finish first instead of all of them crawling in together.
+  static const concurrency = 3;
+
   void _enrich(List<ProductView> views) {
     for (final view in views) {
       if (view.productId.isEmpty || !_asked.add(view.productId)) continue;
-      unawaited(_fetch(view.productId));
+      _queue.add(view.productId);
+    }
+    _pump();
+  }
+
+  void _pump() {
+    while (_running < concurrency && _queue.isNotEmpty) {
+      _running++;
+      final id = _queue.removeAt(0);
+      unawaited(
+        _fetch(id).whenComplete(() {
+          _running--;
+          if (mounted) _pump();
+        }),
+      );
     }
   }
 
@@ -353,9 +380,18 @@ class _ViewRow extends StatelessWidget {
                                 size: 24,
                                 color: theme.colorScheme.onSurfaceVariant,
                               )
-                            : Image.network(
-                                view.imageUrl!,
+                            // Through the app's image path: a variant sized to
+                            // this tile, kept on disk, rather than the full
+                            // photograph downloaded and decoded on every visit.
+                            : Image(
+                                image: AppImages.of(
+                                  view.imageUrl!,
+                                  width: imageSize(context),
+                                  devicePixelRatio:
+                                      MediaQuery.devicePixelRatioOf(context),
+                                ),
                                 fit: BoxFit.contain,
+                                gaplessPlayback: true,
                                 errorBuilder: (_, _, _) =>
                                     const SizedBox.shrink(),
                               ),
@@ -561,6 +597,17 @@ class RecentViewsSkeleton extends StatelessWidget {
 
   final int rows;
 
+  /// One card's full height: its padding, its border and its text block.
+  static double cardExtent(BuildContext context) =>
+      _ViewRow.contentHeight(context) + 16 + 2;
+
+  /// As many bones as [height] shows, plus one so the last is cut by the edge
+  /// rather than leaving a band of empty page under the bones.
+  static int rowsFor(BuildContext context, double height) {
+    if (!height.isFinite || height <= 0) return 3;
+    return (height / (cardExtent(context) + 8)).ceil().clamp(1, 16);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -580,7 +627,9 @@ class RecentViewsSkeleton extends StatelessWidget {
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: Padding(
-                    padding: const EdgeInsets.all(10),
+                    // The real card's own inset, so the bones and the cards
+                    // that replace them line up edge for edge.
+                    padding: const EdgeInsets.fromLTRB(4, 8, 8, 8),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

@@ -93,13 +93,17 @@ void main() {
   /// Answers with as many rows as were asked for, capped at [total].
   void wireHistory({required int total}) {
     api.onCall('GET', '/product-views', (call) {
-      final limit = int.tryParse('${call.query['limit']}') ?? 40;
+      final limit = int.tryParse('${call.query['limit']}') ?? 10;
       return reply(_views(total).take(limit).toList());
     });
   }
 
+  /// The calls that went to the history route, in order.
+  List<RecordedCall> historyCalls() =>
+      api.calls.where((c) => c.path == '/product-views').toList();
+
   group('older history', () {
-    testWidgets('the first load asks for one page, not the lot', (
+    testWidgets('the first load asks for one small batch, not the lot', (
       tester,
     ) async {
       wireHistory(total: 100);
@@ -108,12 +112,16 @@ void main() {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle();
 
-      expect(api.calls.first.query['limit'], 40);
+      expect(historyCalls().single.query['limit'], 10);
+      expect(find.text('Product 9'), findsOneWidget);
+      expect(find.text('Product 10'), findsNothing);
       await _toFooter(tester, find.text('Load More'));
       expect(find.text('Load More'), findsOneWidget);
     });
 
-    testWidgets('pressing it asks the server for more', (tester) async {
+    testWidgets('pressing it asks the server for the next batch', (
+      tester,
+    ) async {
       wireHistory(total: 100);
       _tall(tester);
 
@@ -124,71 +132,82 @@ void main() {
       await tester.tap(find.text('Load More'));
       await tester.pumpAndSettle();
 
-      final asked = api.calls
-          .where((c) => c.path == '/product-views')
-          .map((c) => c.query['limit'])
-          .toList();
-      expect(asked, [40, 80]);
+      expect(historyCalls().map((c) => c.query['limit']), [10, 20]);
     });
 
-    testWidgets('and shows the older rows without repeating the newer ones', (
+    testWidgets('appends the older rows without repeating the newer ones', (
       tester,
     ) async {
-      wireHistory(total: 45);
+      wireHistory(total: 15);
       _tall(tester);
 
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle();
-
-      // Row 42 is past the first page.
-      expect(find.text('Product 42'), findsNothing);
+      expect(find.text('Product 12'), findsNothing);
 
       await _toFooter(tester, find.text('Load More'));
       await tester.tap(find.text('Load More'));
       await tester.pumpAndSettle();
 
-      await _toFooter(tester, find.text('Product 42'));
-      expect(find.text('Product 42'), findsOneWidget);
+      await _toFooter(tester, find.text('Product 12'));
+      expect(find.text('Product 12'), findsOneWidget);
 
-      // Every row still appears exactly once.
+      // Every row exactly once.
       await _toTop(tester);
-      expect(find.text('Product 0'), findsWidgets);
-      await _toFooter(tester, find.text('Product 39'));
-      expect(find.text('Product 39'), findsOneWidget);
+      for (final name in ['Product 0', 'Product 9', 'Product 14']) {
+        await _toFooter(tester, find.text(name));
+        expect(find.text(name), findsOneWidget, reason: name);
+      }
     });
 
-    testWidgets('bones stand in for the older rows while they are fetched', (
+    testWidgets(
+      'the cards stay while the next batch loads, and one tap is one request',
+      (tester) async {
+        var call = 0;
+        api.onCall('GET', '/product-views', (c) {
+          call++;
+          final limit = int.tryParse('${c.query['limit']}') ?? 10;
+          return reply(
+            _views(40).take(limit).toList(),
+            // The second batch is held open, so the wait can be looked at.
+            delay: call == 1 ? null : const Duration(seconds: 2),
+          );
+        });
+        _tall(tester);
+        await tester.pumpWidget(_wrap());
+        await tester.pumpAndSettle();
+
+        await _toFooter(tester, find.text('Load More'));
+        await tester.tap(find.text('Load More'));
+        await tester.pump();
+
+        // A spinner on the button, which takes no second tap, and the cards
+        // already loaded untouched -- no bones standing in for them.
+        final button = tester.widget<ButtonStyleButton>(
+          find.byKey(const ValueKey('history-load-more')),
+        );
+        expect(button.onPressed, isNull);
+        expect(find.byType(CircularProgressIndicator), findsWidgets);
+        expect(find.byType(RecentViewsSkeleton), findsNothing);
+        expect(find.text('Product 9'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('history-load-more')),
+          warnIfMissed: false,
+        );
+        await tester.pump();
+
+        await tester.pump(const Duration(seconds: 3));
+        await tester.pumpAndSettle();
+        expect(historyCalls(), hasLength(2));
+        await _toFooter(tester, find.text('Product 19'));
+        expect(find.text('Product 19'), findsOneWidget);
+      },
+    );
+
+    testWidgets('when nothing older comes back, Load More goes away', (
       tester,
     ) async {
-      var call = 0;
-      api.onCall('GET', '/product-views', (_) {
-        call++;
-        return reply(
-          _views(call == 1 ? 40 : 60),
-          // The second page is held open, so the wait can be looked at.
-          delay: call == 1 ? null : const Duration(seconds: 2),
-        );
-      });
-      _tall(tester);
-      await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-
-      await _toFooter(tester, find.text('Load More'));
-      await tester.tap(find.text('Load More'));
-      await tester.pump();
-
-      // Rows in outline, not a spinner, and the button stands down while the
-      // page it would ask for is already on its way.
-      expect(find.byType(RecentViewsSkeleton), findsOneWidget);
-      expect(find.text('Load More'), findsNothing);
-
-      await tester.pump(const Duration(seconds: 3));
-      await tester.pumpAndSettle();
-      expect(find.byType(RecentViewsSkeleton), findsNothing);
-    });
-
-    testWidgets('when there is nothing older it says so, once', (tester) async {
-      wireHistory(total: 45);
+      wireHistory(total: 15);
       _tall(tester);
 
       await tester.pumpWidget(_wrap());
@@ -198,12 +217,32 @@ void main() {
       await tester.tap(find.text('Load More'));
       await tester.pumpAndSettle();
 
+      // Asked for 20, got 15: the server has nothing beyond them.
       await _toFooter(tester, find.text('That is the whole history.'));
       expect(find.text('That is the whole history.'), findsOneWidget);
       expect(find.text('Load More'), findsNothing);
     });
 
-    testWidgets('a short first page means there is nothing older at all', (
+    testWidgets("the server's own has_more is believed over the count", (
+      tester,
+    ) async {
+      api.onCall('GET', '/product-views', (c) {
+        final limit = int.tryParse('${c.query['limit']}') ?? 10;
+        return reply({
+          'views': _views(10).take(limit).toList(),
+          'has_more': false,
+        });
+      });
+      _tall(tester);
+
+      await tester.pumpWidget(_wrap());
+      await tester.pumpAndSettle();
+
+      await _toFooter(tester, find.text('That is the whole history.'));
+      expect(find.text('Load More'), findsNothing);
+    });
+
+    testWidgets('a short first batch means there is nothing older at all', (
       tester,
     ) async {
       wireHistory(total: 3);
@@ -224,7 +263,7 @@ void main() {
       api.onCall('GET', '/product-views', (call) {
         attempt++;
         if (attempt == 2) return reply({'message': 'boom'}, status: 500);
-        final limit = int.tryParse('${call.query['limit']}') ?? 40;
+        final limit = int.tryParse('${call.query['limit']}') ?? 10;
         return reply(_views(100).take(limit).toList());
       });
       _tall(tester);
@@ -238,7 +277,7 @@ void main() {
 
       await _toFooter(tester, find.text('Try again'));
       expect(find.text('Try again'), findsOneWidget);
-      // The page it already had is untouched.
+      // The batch it already had is untouched.
       await _toTop(tester);
       expect(find.text('Product 0'), findsWidgets);
 
@@ -246,9 +285,121 @@ void main() {
       await tester.tap(find.text('Try again'));
       await tester.pumpAndSettle();
 
-      await _toFooter(tester, find.text('Product 42'));
-      expect(find.text('Product 42'), findsOneWidget);
+      await _toFooter(tester, find.text('Product 12'));
+      expect(find.text('Product 12'), findsOneWidget);
     });
+
+    testWidgets('each product record is asked for once, and only when loaded', (
+      tester,
+    ) async {
+      wireHistory(total: 40);
+      api.onCall('GET', '/api/1688/product', (c) {
+        final id = '${c.query['num_iid']}';
+        return reply({
+          'item': {'num_iid': id, 'title': 'x'},
+        });
+      });
+      _tall(tester);
+
+      await tester.pumpWidget(_wrap());
+      await tester.pumpAndSettle();
+
+      List<String> detailIds() => [
+        for (final c in api.calls)
+          if (c.path == '/api/1688/product') '${c.query['num_iid']}',
+      ];
+      expect(detailIds().toSet(), {for (var i = 0; i < 10; i++) 'p$i'});
+
+      await _toFooter(tester, find.text('Load More'));
+      await tester.tap(find.text('Load More'));
+      await tester.pumpAndSettle();
+
+      final ids = detailIds();
+      expect(ids.toSet(), {for (var i = 0; i < 20; i++) 'p$i'});
+      expect(ids, hasLength(ids.toSet().length), reason: 'no id twice');
+    });
+
+    testWidgets('the purchased tab does not hold up the viewed one', (
+      tester,
+    ) async {
+      wireHistory(total: 5);
+      api.onCall(
+        'GET',
+        '/orders',
+        (_) => reply(const [], delay: const Duration(seconds: 5)),
+      );
+      _tall(tester);
+
+      await tester.pumpWidget(_wrap());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Product 0'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the first-load bones fill the space from the top', (
+      tester,
+    ) async {
+      api.onCall(
+        'GET',
+        '/product-views',
+        (_) => reply(_views(3), delay: const Duration(seconds: 2)),
+      );
+      _tall(tester);
+
+      await tester.pumpWidget(_wrap());
+      await tester.pump();
+
+      final skeleton = tester.widget<RecentViewsSkeleton>(
+        find.byType(RecentViewsSkeleton),
+      );
+      final context = tester.element(find.byType(RecentViewsSkeleton));
+      final listTop = tester.getTopLeft(find.byType(RecentViewsSkeleton)).dy;
+      final available = 2000 - listTop;
+      final perCard = RecentViewsSkeleton.cardExtent(context) + 8;
+      expect(skeleton.rows * perCard, greaterThanOrEqualTo(available * 0.9));
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(find.byType(RecentViewsSkeleton), findsNothing);
+      expect(find.text('Product 0'), findsOneWidget);
+    });
+  });
+
+  group('on a phone, a tablet and a desktop', () {
+    for (final size in const [
+      Size(360, 740),
+      Size(800, 1280),
+      Size(1400, 900),
+    ]) {
+      testWidgets('${size.width.toInt()} dp: bones, then cards, no overflow', (
+        tester,
+      ) async {
+        api.onCall('GET', '/product-views', (c) {
+          final limit = int.tryParse('${c.query['limit']}') ?? 10;
+          return reply(
+            _views(30).take(limit).toList(),
+            delay: const Duration(milliseconds: 500),
+          );
+        });
+        tester.view.physicalSize = size * 2;
+        tester.view.devicePixelRatio = 2;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(_wrap());
+        await tester.pump();
+        expect(find.byType(RecentViewsSkeleton), findsOneWidget);
+        expect(tester.takeException(), isNull);
+
+        await tester.pump(const Duration(seconds: 1));
+        await tester.pumpAndSettle();
+        expect(find.byType(RecentViewsSkeleton), findsNothing);
+        expect(find.text('Product 0'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   // The rows that were picked and swiped away are gone with the cards they

@@ -56,6 +56,26 @@ class ProductView {
   }
 }
 
+/// One answer from `/product-views`.
+class ProductViewsPage {
+  const ProductViewsPage({
+    required this.views,
+    required this.received,
+    this.hasMore,
+  });
+
+  /// The readable rows, newest first.
+  final List<ProductView> views;
+
+  /// How many rows the server sent, before unreadable ones were dropped -- the
+  /// figure to compare with what was asked for.
+  final int received;
+
+  /// The server's own word on whether older rows exist. Null when it did not
+  /// say, which is every answer the live route gives today.
+  final bool? hasMore;
+}
+
 /// The shopper's own view history, at `/product-views`.
 ///
 /// The app has posted to this route on every product open since it shipped and
@@ -71,18 +91,40 @@ class ProductViewsRepository {
 
   Dio get _dio => ApiClient.http;
 
+  /// The largest `limit` the route honours. Measured against the live gateway:
+  /// anything above 100 is not clamped but silently answered with its default
+  /// of 20 rows, which would read as a history that shrank.
+  static const maxLimit = 100;
+
   /// Most recently opened first.
-  Future<List<ProductView>> list({int limit = 100}) => guarded(() async {
+  Future<List<ProductView>> list({int limit = 100}) async =>
+      (await page(limit: limit)).views;
+
+  /// The newest [limit] rows, and whether the server says there are more.
+  ///
+  /// `/product-views` takes a limit and nothing else -- `offset`, `page`,
+  /// `cursor` and `before` are all ignored, measured on the live route -- and
+  /// answers a bare array with no count. [ProductViewsPage.hasMore] is
+  /// therefore null today; it is read from `has_more` / `hasMore` the day the
+  /// server wraps its answer and says so itself.
+  Future<ProductViewsPage> page({required int limit}) => guarded(() async {
     final res = await _dio.get(
       '/product-views',
-      queryParameters: {'limit': limit},
+      queryParameters: {'limit': limit.clamp(1, maxLimit)},
     );
-    final views = asRows(res.data, key: 'views')
+    final body = res.data;
+    final views = asRows(body, key: 'views')
         .map(ProductView.fromJson)
         .where((view) => view.productId.isNotEmpty && view.title.isNotEmpty)
         .toList();
     views.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
-    return List.unmodifiable(views);
+    final meta = asMap(body);
+    final more = meta['has_more'] ?? meta['hasMore'];
+    return ProductViewsPage(
+      views: List.unmodifiable(views),
+      received: asRows(body, key: 'views').length,
+      hasMore: more == null ? null : asBool(more),
+    );
   });
 
   /// Forgets one product, by the catalogue id the row was written with.

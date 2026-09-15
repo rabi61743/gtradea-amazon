@@ -18,6 +18,64 @@ Entry format:
 
 ---
 
+## 2026-09-15 23:45 — Product History: faster loading, full-screen card skeleton, append-only Load More
+- **Measured root cause** (live gateway, Redmi, temporary uncommitted logging):
+  - `/product-views?limit=40` took ~210 ms, so the list itself was not slow.
+  - The Recently Viewed tab also awaited the orders refresh (+~190 ms) though it doesn't show orders.
+  - **The slow part:** every card fetched its full product record from `/api/1688/product` for the grey description line and ✓ highlight. That was 40 requests fired at once, **1.5–3.6 s and up to 208 KB each**.
+- **Backend facts, measured:**
+  - `/product-views` ignores `offset`, `page`, `cursor` and `before`, and returns a bare array with no `has_more` or total.
+  - It holds or returns at most 50 rows; `limit` > 100 silently falls back to 20.
+  - The backend source isn't on this machine, so there's no DB index or query change.
+  - **Backend follow-up needed for true pagination:** accept `offset` or `cursor`, return `has_more` (or `next_cursor`), and index `(user_id, viewed_at DESC)`.
+- **What (app):**
+  - **First load:**
+    - batch of 10 (`pageSize`), fetched in parallel with the hidden-rows read
+    - the orders refresh runs alongside, for the Purchased tab only (own spinner)
+    - pull-to-refresh restarts at 10
+  - **Product details:**
+    - requested only for loaded rows, through a queue: 3 at a time, top card first
+    - each product asked once (`_asked` set, plus the `ProductRepository` 5-minute cache and in-flight sharing)
+    - 10 requests on open instead of 40
+  - **Images:** `AppImages.of` (resized to the tile, disk-cached) instead of full-size `Image.network`.
+  - **Load More:**
+    - asks for held + 10, since the route has no offset, and appends only rows whose key isn't already held
+    - existing cards are never replaced, and only the new rows fetch details
+    - the button keeps its place, shows a spinner and is disabled while loading (no double request)
+    - it hides when the server's `has_more` (read if ever sent) is false, when the batch came back short of what was asked, or when nothing new came back
+    - a failure keeps the cards and shows "Try again"
+    - `limit` is clamped to the route's 100 max
+  - **Skeleton:**
+    - `RecentViewsSkeleton.rowsFor(height)` fills the visible area from the top, up to 16 cards
+    - it uses the real card inset `fromLTRB(4,8,8,8)` and extent, fades into the cards (220 ms), and keeps its existing shimmer
+    - the error and Retry state is unchanged
+  - Card design and the earlier chip, padding and duplicate-spec fixes are unchanged.
+- **Why:** User request: make Product History actually faster, not just look faster; add a card skeleton and a real Load More without duplicates or reloads.
+- **Affected:**
+  - `lib/features/account/data/product_views_repository.dart`: `page()`, `ProductViewsPage`, `maxLimit`; `list()` kept
+  - `lib/features/account/presentation/product_history_screen.dart`
+  - `lib/features/account/presentation/recent_views_section.dart`
+  - `test/product_history_older_test.dart`, rewritten for the batch of 10 and append behaviour, with new tests for:
+    - no duplicate detail requests
+    - the Purchased tab not blocking the Viewed tab
+    - the skeleton filling the screen
+    - `has_more`
+    - phone, tablet and desktop widths
+- **Impact & risk:**
+  - Only 10 cards are shown until Load More.
+  - Descriptions fill in card by card, 3 at a time; slots are fixed height, so there's no layout jump.
+  - With a 50-row server history, the final Load More returns nothing new and the button then hides.
+- **Verification:**
+  - analyze clean; product history, older-history and recent views suites 42/42.
+  - On the Redmi:
+    - the skeleton shows immediately
+    - the first batch arrives in 318 ms
+    - all visible cards were complete by about 1.5 s (with 10 detail requests, instead of seconds of 40 parallel 1.5–3.6 s requests)
+    - Load More shows a spinner and disabled button, cards stay, 10 rows are appended in place, and only 10 new detail requests go out
+  - Detail timings in the after-run were partly warmed by the server's cache from the earlier probe, so the speedup comes from the request count (40 → 10 per batch), not those timings.
+  - Full suite: 2367 pass; only the 3 known `brand_system_test` failures.
+- **Commit:** see git log (`perf(history): batch Product History, throttle detail fetches, append-only Load More`) on main, pushed to origin
+
 ## 2026-09-15 23:10 — Product History cards: smaller red chip, image closer to edge, no duplicate spec
 - **What** (Recently Viewed cards, `_ViewRow` in `recent_views_section.dart`):
   - **Red-orange department chip** (`commerceOrange`): font 10.5 → 9.5, padding h8/v2 → h6/v1, one line with ellipsis. It stays on the price row instead of wrapping to two lines and making the card taller.

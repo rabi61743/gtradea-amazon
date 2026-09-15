@@ -90,22 +90,28 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
   /// How far back to show, or null for everything.
   Duration? _within;
 
-  /// How many rows to ask the server for.
+  /// One batch: a screen and a bit of cards.
   ///
-  /// The list is fetched whole at this size rather than stitched from pages:
-  /// `/product-views` takes a limit and nothing else, so asking for more and
-  /// replacing what is held is both the paging this endpoint supports and the
-  /// one arrangement that cannot show a row twice.
-  static const _pageSize = 40;
+  /// Small on purpose. The list itself is cheap (about 200 ms for 40 rows on
+  /// the live route); what made this page slow was every card then fetching
+  /// its full product record -- 40 of them at once, 1.5 to 3.6 s and up to
+  /// 200 KB each. A card only asks for that once it is loaded, so the batch
+  /// size is what bounds the work behind the first paint.
+  static const pageSize = 10;
 
-  int _limit = _pageSize;
+  /// How many rows are held, which is also what the next request extends.
+  int _limit = pageSize;
 
-  /// False once the server has answered with no more than it did last time --
-  /// which is what "there is nothing older" looks like on a limit-only route.
+  /// Whether older rows exist. The server's own `has_more` where it sends one;
+  /// otherwise a batch that came back short of what was asked, which is the
+  /// only end-of-list signal a limit-only route gives.
   bool _hasOlder = true;
 
   bool _loadingOlder = false;
   ApiError? _olderError;
+
+  /// The purchased tab's own wait. It no longer holds up the viewed tab.
+  bool _ordersLoading = true;
 
   @override
   void initState() {
@@ -134,20 +140,25 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
       _loading = true;
       _error = null;
     });
+
+    // The purchased tab reads the orders, and only it does. Started alongside
+    // the history rather than after it: the viewed tab used to wait out the
+    // whole orders refresh before drawing a single card.
+    unawaited(_loadOrders());
+
     try {
-      final views = await ProductViewsRepository.instance.list(limit: _limit);
-      // The rows this shopper has hidden from their own view. Read here so the
-      // first paint already has them filtered out.
-      await HiddenHistoryStore.instance.load();
-      // The purchased tab reads the orders this app already holds.
-      await OrderStore.instance.refreshFromServer();
+      // A pull-to-refresh starts over at one batch, like opening the page.
+      _limit = pageSize;
+      // The history and the rows this shopper has hidden, together, so the
+      // first paint already has the hidden ones filtered out.
+      final hidden = HiddenHistoryStore.instance.load();
+      final page = await ProductViewsRepository.instance.page(limit: _limit);
+      await hidden;
       if (!mounted) return;
       setState(() {
-        _views = views;
+        _views = page.views;
         _loading = false;
-        // A short answer to a full-size request means the server has nothing
-        // beyond it.
-        _hasOlder = views.length >= _limit;
+        _hasOlder = page.hasMore ?? page.received >= _limit;
         _olderError = null;
       });
     } on ApiError catch (e) {
@@ -159,32 +170,44 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
     }
   }
 
-  /// Asks for a page deeper into the same history.
+  Future<void> _loadOrders() async {
+    setState(() => _ordersLoading = true);
+    await OrderStore.instance.refreshFromServer();
+    if (mounted) setState(() => _ordersLoading = false);
+  }
+
+  /// The next batch, appended under the cards already on screen.
   ///
-  /// Nothing is appended: the bigger request is the same list plus what came
-  /// before it, so the answer replaces what is held. That is why this cannot
-  /// duplicate a row however many times it is pressed.
+  /// The route ignores offsets, so the request is for everything held plus one
+  /// batch; only rows not already held are appended, and the cards above are
+  /// never rebuilt from the answer. Only those new rows then fetch their
+  /// product records -- the ones already shown asked once and are cached.
   Future<void> _loadOlder() async {
     if (_loadingOlder || !_hasOlder) return;
+    final asked = _limit + pageSize;
+    if (asked > ProductViewsRepository.maxLimit) {
+      setState(() => _hasOlder = false);
+      return;
+    }
     setState(() {
       _loadingOlder = true;
       _olderError = null;
     });
 
-    final asked = _limit + _pageSize;
     try {
-      final views = await ProductViewsRepository.instance.list(limit: asked);
+      final page = await ProductViewsRepository.instance.page(limit: asked);
       if (!mounted) return;
+      final held = {for (final view in _views) _keyOf(view)};
+      final fresh = [
+        for (final view in page.views)
+          if (held.add(_keyOf(view))) view,
+      ];
       setState(() {
         _loadingOlder = false;
-        // Nothing new came back, so this is the end of the history.
-        _hasOlder = views.length > _views.length && views.length >= asked;
-        if (views.length > _views.length) {
-          _views = views;
-          _limit = asked;
-        } else {
-          _hasOlder = false;
-        }
+        _limit = asked;
+        if (fresh.isNotEmpty) _views = List.unmodifiable([..._views, ...fresh]);
+        _hasOlder =
+            fresh.isNotEmpty && (page.hasMore ?? page.received >= asked);
       });
     } on ApiError catch (e) {
       if (!mounted) return;
@@ -194,6 +217,9 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
       });
     }
   }
+
+  static String _keyOf(ProductView view) =>
+      HiddenHistoryStore.keyFor(productId: view.productId, at: view.viewedAt);
 
   /// The viewed tab: what the server remembers, newest first.
   List<_HistoryEntry> get _viewed => [
@@ -466,18 +492,42 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
         onAction: _signIn,
       );
     }
-    if (_loading) {
-      // The viewed tab is rows, so it waits as rows: bones at the same
-      // measurements, rather than a spinner the list then shoves aside.
-      return removable
-          ? ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.only(top: 4, bottom: 28),
-              children: const [RecentViewsSkeleton()],
-            )
-          : const Center(child: CircularProgressIndicator());
+    // The viewed tab fades from its bones into its cards rather than snapping.
+    if (removable) {
+      return AnimatedSwitcher(
+        duration: const Duration(milliseconds: 220),
+        child: KeyedSubtree(
+          key: ValueKey(_loading ? 'bones' : 'rows'),
+          child: _viewedTab(entries),
+        ),
+      );
     }
+    if (_loading || (_ordersLoading && entries.isEmpty)) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return _tabBody(entries, removable: false);
+  }
 
+  Widget _viewedTab(List<_HistoryEntry> entries) {
+    if (_loading) {
+      // The viewed tab is rows, so it waits as rows: bones at the card's own
+      // measurements, from the top of the list, as many as the space holds.
+      return LayoutBuilder(
+        builder: (context, constraints) => ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(top: 4, bottom: 28),
+          children: [
+            RecentViewsSkeleton(
+              rows: RecentViewsSkeleton.rowsFor(context, constraints.maxHeight),
+            ),
+          ],
+        ),
+      );
+    }
+    return _tabBody(entries, removable: true);
+  }
+
+  Widget _tabBody(List<_HistoryEntry> entries, {required bool removable}) {
     final error = _error;
     if (error != null) {
       return _Message(
@@ -592,15 +642,6 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
       );
     }
 
-    if (_loadingOlder) {
-      // Bones in the shape of the rows that are coming, so the list grows
-      // into them rather than jumping when the older page lands.
-      return const Padding(
-        padding: EdgeInsets.only(top: 2),
-        child: RecentViewsSkeleton(rows: 2),
-      );
-    }
-
     if (!_hasOlder) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(4, 22, 4, 4),
@@ -617,9 +658,18 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 16, 4, 4),
       child: Center(
+        // While a batch is on its way the button stays where it is, says so
+        // with a spinner in place of its icon, and takes no second tap -- the
+        // cards above stay exactly as they are.
         child: OutlinedButton.icon(
-          onPressed: _loadOlder,
-          icon: const Icon(Icons.history, size: 18),
+          key: const ValueKey('history-load-more'),
+          onPressed: _loadingOlder ? null : _loadOlder,
+          icon: _loadingOlder
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.history, size: 18),
           label: const Text('Load More'),
         ),
       ),
