@@ -23,6 +23,8 @@ import '../notifications/presentation/notifications_screen.dart';
 import '../notifications/data/notification_store.dart';
 import '../orders/data/order_store.dart';
 import '../promo/data/coupon_store.dart';
+import '../promo/data/popup_banner_store.dart';
+import '../promo/presentation/startup_popup_banner.dart';
 import '../search/data/recent_search_store.dart';
 import '../search/presentation/search_entry_screen.dart';
 import '../search/widgets/visual_search_sheet.dart';
@@ -206,12 +208,91 @@ class _HomeScreenState extends State<HomeScreen> {
       final pending = DeviceNotifications.instance.takePendingTap();
       if (pending != null) _onNotificationTap(pending);
     });
+
+    // The admin's startup popup, once the storefront is ready. See
+    // [_maybeShowPopup] for everything that has to be true first.
+    unawaited(PopupBannerStore.instance.load());
+    _popupTriggers.addListener(_schedulePopupCheck);
+    _schedulePopupCheck();
   }
 
   StreamSubscription<RealtimeEvent>? _realtime;
 
+  /// What can make the popup ready: the catalogue finishing its cold load, the
+  /// tour answering, and the setting arriving.
+  final Listenable _popupTriggers = Listenable.merge([
+    CatalogStore.instance.categories,
+    TourStore.instance,
+    PopupBannerStore.instance,
+  ]);
+
+  /// Decided at most once per launch, shown or not.
+  bool _popupDecided = false;
+
+  void _schedulePopupCheck() {
+    if (_popupDecided) return;
+    // After the frame: these stores can notify in the middle of a build.
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) => _maybeShowPopup())
+      // A still storefront has no frame coming to run the check in.
+      ..scheduleFrame();
+  }
+
+  /// Shows the popup straight after the loading screen, if there is one to show.
+  ///
+  /// Waits for the cold-start loader to be gone, for the tour to have read the
+  /// disk and for the setting to arrive. A launch that opens the tour keeps the
+  /// tour to itself: the popup waits for the next launch rather than stacking
+  /// two overlays on a first run.
+  Future<void> _maybeShowPopup() async {
+    if (_popupDecided || !mounted) return;
+
+    final tour = TourStore.instance;
+    if (!tour.isLoaded) return;
+    final catalogue = CatalogStore.instance.categories;
+    if (catalogue.value == null && catalogue.isLoading) return;
+    final store = PopupBannerStore.instance;
+    if (!store.isLoaded) return;
+
+    _popupDecided = true;
+    _popupTriggers.removeListener(_schedulePopupCheck);
+    final banner = store.banner;
+    if (tour.shouldStart || banner == null || !store.shouldShow()) return;
+
+    // Decoded before the card opens, so it never appears as an empty box. A
+    // picture that will not load means no popup at all.
+    final image = StartupPopupBanner.imageFor(context, banner);
+    final loaded = await StartupPopupBanner.decode(context, image);
+    if (!loaded || !mounted) return;
+    // Not over a page the shopper has already opened.
+    if (ModalRoute.of(context)?.isCurrent == false) return;
+
+    final result = await StartupPopupBanner.show(
+      context,
+      banner: banner,
+      image: image,
+    );
+    unawaited(store.markSeen(banner.id));
+    if (result == PopupResult.followed && mounted) {
+      _followPopupLink(banner.buttonLink);
+    }
+  }
+
+  /// The same links the hero banners follow: a search is the one web route
+  /// this app has a screen for. Anything else just closes the popup.
+  void _followPopupLink(String? link) {
+    if (link == null) return;
+    final uri = Uri.tryParse(link);
+    if (uri == null || !uri.path.startsWith('/search')) return;
+    _openPage(
+      context,
+      SearchResultsScreen(query: uri.queryParameters['q'] ?? ''),
+    );
+  }
+
   @override
   void dispose() {
+    _popupTriggers.removeListener(_schedulePopupCheck);
     AuthStore.instance.removeListener(_onAuthChanged);
     _realtime?.cancel();
     DeviceNotifications.instance.onTap = null;

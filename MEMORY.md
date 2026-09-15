@@ -18,6 +18,36 @@ Entry format:
 
 ---
 
+## 2026-09-15 19:15 — Startup promo popup banner (admin-managed site setting)
+- **What:**
+  - After the existing loading screen finishes, the home screen can open a promo popup: dimmed backdrop, portrait artwork card (radius 12), and a round white ✕ on its top-right corner.
+  - Tapping the artwork follows `button_link`. Like the hero banners, only `/search?q=` routes are followed (to SearchResultsScreen); any other link just closes the popup.
+  - The content comes only from the backend setting `GET /site-settings/app_popup_banner`, with nothing hardcoded. Null, invalid, inactive, expired, a failed request or artwork that won't load all mean no popup, silently.
+  - The artwork is decoded before the card opens, so it never shows as an empty box.
+  - Closing or following a campaign stores its `id` in SharedPreferences (`gtradea_popup_seen`), so each campaign shows once per device. A new `id` shows again.
+  - A launch that opens the guided tour skips the popup; it shows on the next launch.
+  - The popup is decided at most once per launch and won't open over a page the shopper has already navigated to.
+  - The card is 84% of the width, capped at 420 dp and at 78% of the height, and stays portrait 9:16. It's phone-sized on tablet and desktop.
+- **Backend contract** (the admin must seed this; the server currently returns `setting_value: null`):
+  `{"id":"campaign-id","image_url":"https://…portrait.png","button_link":"/search?q=sale","alt_text":"…","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","is_active":true}`.
+  - `end_date` as a bare date runs through the end of that day.
+  - The value may be JSON or a JSON string.
+- **Why:** User request: show a banner matching the reference right after startup. User's choices: new admin-managed site setting; once per banner until closed; tour first, popup on next launch.
+- **Affected:**
+  - new `lib/features/promo/data/popup_banner.dart`, `popup_banner_store.dart`, `lib/features/promo/presentation/startup_popup_banner.dart`
+  - `lib/features/home/home_screen.dart`: one-shot trigger in initState/dispose, nothing else changed
+  - new `test/startup_popup_test.dart`
+- **Impact & risk:**
+  - Additive; there's one extra public request at startup.
+  - Nothing is visible until the backend sets the key.
+  - Test seam `StartupPopupBanner.decodeOverride`: a decode inside the widget-test fake clock never finishes.
+- **Verification:**
+  - `flutter analyze` clean.
+  - `test/startup_popup_test.dart` 15/15: null, live, close persists, new id, inactive/expired, tour pending, image failure, server 500, CTA link, and 360/800/1400 dp with no overflow and the close button on screen.
+  - Full suite: 2355 pass; only the 3 known pre-existing `brand_system_test` failures.
+  - On the Redmi, startup is unchanged and there's no popup while the setting is null. The popup itself hasn't been seen on the device yet because no real campaign data exists.
+- **Commit:** see git log (`feat(promo): startup popup banner from site settings`) on main, pushed to origin
+
 ## 2026-09-15 17:25 — Account card runs to the bottom; greeting padding 11
 - **What:**
   - The page list's bottom padding went from 32 to 0, and `_AccountCard`'s bottom padding from 12 to `32 + MediaQuery.viewPaddingOf(context).bottom`, so the white card continues below Sign out to the foot of the screen, behind the navigation bar, and no grey page shows underneath.
