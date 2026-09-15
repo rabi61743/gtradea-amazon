@@ -18,6 +18,21 @@ Entry format:
 
 ---
 
+## 2026-09-15 13:15 — Remove "(Optional)" from the Location label
+- **What:** The Location row label in Profile Settings reads "Location"
+  instead of "Location (Optional)". Removed the now-unused `optional`
+  parameter from `_FieldRow`; it had no other user.
+- **Why:** User request: remove only the "Optional" text; keep the field.
+- **Affected:** `lib/features/profile/presentation/profile_settings_screen.dart`
+  (Location row, `_FieldRow`), `test/profile_settings_test.dart` (the
+  location test now asserts no "Optional").
+- **Impact & risk:** Minimal. The value, icon, "Change" button, address-book
+  link and layout are unchanged.
+- **Verification:** analyze clean; `profile_settings_test` 34/34; on the
+  Redmi the row shows "Location / Lalitpur, Bagmati" with the Change pill.
+- **Commit:** see `git log` — `style(profile): drop "(Optional)" from the
+  Location label`, pushed to origin `main`.
+
 ## 2026-09-15 12:58 — Two-factor authentication (TOTP) on GoTrue
 - **What:** Real 2FA using GoTrue v2.177.0 built-in MFA (`/factors`
   enroll/challenge/verify/delete). No separate 2FA system.

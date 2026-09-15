@@ -653,7 +653,8 @@ void main() {
       await _pump(tester);
 
       expect(find.text('Kathmandu, Bagmati'), findsOneWidget);
-      expect(find.textContaining('(Optional)'), findsOneWidget);
+      expect(find.text('Location'), findsOneWidget);
+      expect(find.textContaining('Optional'), findsNothing);
     });
 
     testWidgets('says "Not set" when there is none, and Change opens the book', (
@@ -664,7 +665,7 @@ void main() {
 
       expect(find.text('Not set'), findsOneWidget);
 
-      // The label reads "Location (Optional)" as one line of text.
+      // Tapping the row's value opens the address book.
       await tester.tap(find.text('Not set'));
       await tester.pumpAndSettle();
       expect(find.byType(AddressListScreen), findsOneWidget);

@@ -329,7 +329,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                           _FieldRow(
                             icon: Icons.location_on_outlined,
                             label: 'Location',
-                            optional: true,
                             value: location,
                             onEdit: _openLocation,
                             last: true,
@@ -974,7 +973,6 @@ class _FieldRow extends StatelessWidget {
     required this.value,
     required this.onEdit,
     this.empty = 'Not set',
-    this.optional = false,
     this.last = false,
   });
 
@@ -987,8 +985,6 @@ class _FieldRow extends StatelessWidget {
   final String empty;
   final VoidCallback onEdit;
 
-  /// Adds the reference's muted "(Optional)" after the label.
-  final bool optional;
   final bool last;
 
   @override
@@ -1010,19 +1006,7 @@ class _FieldRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text.rich(
-                        TextSpan(
-                          text: label,
-                          children: [
-                            if (optional)
-                              TextSpan(
-                                text: ' (Optional)',
-                                style: _Type.rowNote(theme),
-                              ),
-                          ],
-                        ),
-                        style: _Type.rowLabel(theme),
-                      ),
+                      Text(label, style: _Type.rowLabel(theme)),
                       const SizedBox(height: 3),
                       // One line that shrinks only when it must. An email is
                       // one unbreakable token: an ellipsis hides the half that
