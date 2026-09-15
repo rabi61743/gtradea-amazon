@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 15:25 — Fix truncated address in the Delivery + Points card on phones
+- **What:** In the card's dense (phone) form the arrows are hidden and the address shows the neighbourhood alone ("Ekantakuna"), falling back to the city. Tablet and desktop keep both arrows and "Neighbourhood, City". The screen reader always hears the full place.
+- **Why:** User asked to fix "Deliver ... / Ekant..." on the Redmi, where the card shares its row with the icon section.
+- **Affected:** `lib/features/home/widgets/delivery_points_card.dart` (`_Metrics.chevrons`/`placeWithCity`, `placeOf(withCity:)`). Tests: `delivery_points_card_test` (+2), `header_additions_test` (no arrows at phone width), `header_chrome_test` (neighbourhood alone at phone width).
+- **Impact & risk:** Card only; icons, labels and taps are unchanged. Both halves remain tappable without the arrows.
+- **Verification:** analyze clean; header, tour and home suites 147/147. On the Redmi: "Deliver to / Ekantakuna" and "1,000 Points" in full.
+- **Commit:** see `git log` — `fix(home): show the whole place in the phone-width delivery card`, pushed to origin `main`.
+
 ## 2026-09-15 15:05 — Home header: Delivery + Points card; compact icon section
 - **What:**
   - New `DeliveryPointsCard` from the reference: pin, "Deliver to" and the place, chevron-down | gold "P" coin, the balance, "Points", chevron-right.

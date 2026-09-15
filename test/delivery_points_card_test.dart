@@ -77,6 +77,38 @@ void main() {
     expect(DeliveryPointsCard.placeOf(bare), 'Lalitpur');
   });
 
+  test('the dense form names the neighbourhood alone, or the city', () {
+    expect(
+      DeliveryPointsCard.placeOf(_jawalakhel(), withCity: false),
+      'Jawalakhel',
+    );
+    const noArea = Address(
+      id: 'a3',
+      label: AddressLabel.home,
+      fullName: 'R',
+      phone: '',
+      province: 'Bagmati',
+      city: 'Lalitpur',
+      area: 'Bagmati Province 44600',
+    );
+    expect(DeliveryPointsCard.placeOf(noArea, withCity: false), 'Lalitpur');
+  });
+
+  testWidgets('a phone-width card drops the arrows for the address', (
+    tester,
+  ) async {
+    _jawalakhel();
+    tester.view.physicalSize = const Size(700, 900);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_wrap());
+
+    expect(find.text('Jawalakhel'), findsOneWidget);
+    expect(find.byIcon(Icons.keyboard_arrow_down), findsNothing);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
+    expect(find.text('Points'), findsOneWidget);
+  });
+
   testWidgets('shows Deliver to, the place, the balance and Points', (
     tester,
   ) async {

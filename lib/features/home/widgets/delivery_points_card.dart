@@ -121,8 +121,12 @@ class DeliveryPointsCard extends StatelessWidget {
   /// neighbourhood is the first part that is not the province, a postcode or
   /// the city -- taking the first part blindly put "Bagmati Provin..." in the
   /// header on a real device.
+  ///
+  /// [withCity] false gives the neighbourhood alone -- the dense phone layout,
+  /// where "Ekantakuna, Lalitpur" cut to "Ekant..." beside the icon section.
+  /// With no neighbourhood the city stands in, so it is never blank.
   @visibleForTesting
-  static String? placeOf(Address? address) {
+  static String? placeOf(Address? address, {bool withCity = true}) {
     if (address == null) return null;
     final city = address.city.trim();
     final province = address.province.trim().toLowerCase();
@@ -140,6 +144,7 @@ class DeliveryPointsCard extends StatelessWidget {
         .split(',')
         .map((part) => part.trim())
         .firstWhere(isPlace, orElse: () => '');
+    if (!withCity && neighbourhood.isNotEmpty) return neighbourhood;
     final parts = [neighbourhood, city].where((p) => p.isNotEmpty);
     return parts.isEmpty ? null : parts.join(', ');
   }
@@ -159,6 +164,8 @@ class _Metrics {
     required this.value,
     required this.figure,
     required this.dividerHeight,
+    required this.chevrons,
+    required this.placeWithCity,
   });
 
   final double minHeight;
@@ -172,6 +179,13 @@ class _Metrics {
   final double figure;
   final double dividerHeight;
 
+  /// The ⌄ and › glyphs. Both halves stay tappable without them; on a phone
+  /// their 36 points go to the address instead.
+  final bool chevrons;
+
+  /// "Ekantakuna, Lalitpur" rather than "Ekantakuna".
+  final bool placeWithCity;
+
   static const regular = _Metrics(
     minHeight: 56,
     padding: EdgeInsets.fromLTRB(14, 9, 10, 9),
@@ -183,6 +197,8 @@ class _Metrics {
     value: 15.5,
     figure: 17,
     dividerHeight: 34,
+    chevrons: true,
+    placeWithCity: true,
   );
 
   /// 42 tall, the icon group's own floor, so the two sit level.
@@ -197,6 +213,11 @@ class _Metrics {
     value: 13.5,
     figure: 15,
     dividerHeight: 28,
+    // Beside the icon section a phone leaves the address about 90 points:
+    // enough for "Deliver to" and a neighbourhood, not for the city and two
+    // arrows as well.
+    chevrons: false,
+    placeWithCity: false,
   );
 }
 
@@ -209,15 +230,19 @@ class _DeliveryHalf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final address = AddressStore.instance.defaultAddress;
     final place = DeliveryPointsCard.placeOf(
-      AddressStore.instance.defaultAddress,
+      address,
+      withCity: m.placeWithCity,
     );
+    // The screen reader always hears the whole place, dense or not.
+    final spoken = DeliveryPointsCard.placeOf(address);
 
     return Semantics(
       button: true,
-      label: place == null
+      label: spoken == null
           ? 'Set delivery location'
-          : 'Delivering to $place. Change delivery location.',
+          : 'Delivering to $spoken. Change delivery location.',
       excludeSemantics: true,
       child: InkWell(
         onTap: onTap,
@@ -261,12 +286,14 @@ class _DeliveryHalf extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 2),
-              Icon(
-                Icons.keyboard_arrow_down,
-                size: m.chevron,
-                color: AppColors.onPrimary,
-              ),
+              if (m.chevrons) ...[
+                const SizedBox(width: 2),
+                Icon(
+                  Icons.keyboard_arrow_down,
+                  size: m.chevron,
+                  color: AppColors.onPrimary,
+                ),
+              ],
             ],
           ),
         ),
@@ -330,12 +357,14 @@ class _PointsHalf extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(width: 2),
-                Icon(
-                  Icons.chevron_right,
-                  size: m.chevron,
-                  color: AppColors.onPrimary,
-                ),
+                if (m.chevrons) ...[
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.chevron_right,
+                    size: m.chevron,
+                    color: AppColors.onPrimary,
+                  ),
+                ],
               ],
             ),
           ),

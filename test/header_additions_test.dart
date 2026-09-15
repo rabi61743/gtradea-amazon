@@ -366,12 +366,16 @@ void main() {
         ),
       );
       expect(pin.size, lessThan(24));
+      // On a phone the card shares its row with the icon section, so it draws
+      // its dense form: no arrows, their room given to the address. The
+      // arrows are the tablet and desktop form -- see
+      // delivery_points_card_test.
       expect(
         find.descendant(
           of: find.byType(DeliveryPointsCard),
           matching: find.byIcon(Icons.keyboard_arrow_down),
         ),
-        findsOneWidget,
+        findsNothing,
       );
     });
 

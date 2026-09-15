@@ -234,13 +234,14 @@ void main() {
 
       await _pumpHeader(tester);
 
-      // The address names the neighbourhood and the city, as the reference
-      // does -- not the full line with the province.
+      // On a phone the card shares the row with the icon section, so the
+      // address is the neighbourhood alone -- whole, not "Jawal..." -- and never
+      // the full line with the province.
       final points = tester.getRect(find.text('Points'));
       final card = tester.getRect(find.byType(DeliveryPointsCard));
       expect(points.right, lessThanOrEqualTo(card.right));
-      expect(find.text('Jawalakhel, Lalitpur'), findsOneWidget);
-      expect(find.text('Jawalakhel, Lalitpur, Bagmati'), findsNothing);
+      expect(find.text('Jawalakhel'), findsOneWidget);
+      expect(find.textContaining('Bagmati'), findsNothing);
     });
 
     testWidgets('a zero balance is still the truth, and is shown', (
