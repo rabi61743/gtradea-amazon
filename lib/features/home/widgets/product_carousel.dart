@@ -30,6 +30,7 @@ class ProductCarousel extends StatelessWidget {
     this.leadingIcon,
     this.onSeeAll,
     this.onAddToCart,
+    this.width = cardWidth,
   });
 
   final String title;
@@ -38,13 +39,18 @@ class ProductCarousel extends StatelessWidget {
   final VoidCallback? onSeeAll;
   final void Function(Product product)? onAddToCart;
 
+  /// This rail's card width. [cardWidth] everywhere unless a caller asks for a
+  /// more compact rail; the picture is square and the card's height is asked
+  /// of the card, so both follow it proportionally.
+  final double width;
+
   /// One card, at the width the grid would give it on a phone.
   static const cardWidth = ProductResultCard.targetWidth;
   static const gap = ProductResultCard.gridGap;
 
   /// Exactly how tall the rail is, asked of the card rather than assumed.
-  static double heightFor(BuildContext context) =>
-      ProductResultCard.heightFor(context, cardWidth);
+  static double heightFor(BuildContext context, {double width = cardWidth}) =>
+      ProductResultCard.heightFor(context, width);
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +67,7 @@ class ProductCarousel extends StatelessWidget {
             onSeeAll: onSeeAll,
           ),
         SizedBox(
-          height: heightFor(context),
+          height: heightFor(context, width: width),
           // One listener for the whole rail rather than one per card: the
           // hearts all read the same store, and a card each would be a dozen
           // subscriptions per department.
@@ -72,7 +78,7 @@ class ProductCarousel extends StatelessWidget {
               // Snaps to a card rather than drifting to a half-shown one,
               // which is what makes a rail feel like a set of things rather
               // than a strip that slid.
-              physics: const SnapPhysics(step: cardWidth + gap),
+              physics: SnapPhysics(step: width + gap),
               padding: const EdgeInsets.symmetric(
                 horizontal: SectionHeader.edge,
               ),
@@ -81,7 +87,7 @@ class ProductCarousel extends StatelessWidget {
               itemBuilder: (context, i) {
                 final product = products[i];
                 return SizedBox(
-                  width: cardWidth,
+                  width: width,
                   child: ProductResultCard(
                     product: product,
                     saved: WishlistStore.instance.contains(product.numIid),
@@ -141,10 +147,18 @@ void toggleSavedProduct(BuildContext context, Product product) {
 /// copied, and a copied rhythm is one that drifts the first time the card
 /// changes -- a placeholder claiming a shape the card no longer has.
 class ProductCarouselSkeleton extends StatelessWidget {
-  const ProductCarouselSkeleton({super.key, this.title, this.count = 4});
+  const ProductCarouselSkeleton({
+    super.key,
+    this.title,
+    this.count = 4,
+    this.width = ProductCarousel.cardWidth,
+  });
 
   final String? title;
   final int count;
+
+  /// The card width of the rail this stands in for.
+  final double width;
 
   @override
   Widget build(BuildContext context) {
@@ -155,7 +169,7 @@ class ProductCarouselSkeleton extends StatelessWidget {
       children: [
         if (title != null) SectionHeader(title: title),
         SizedBox(
-          height: ProductCarousel.heightFor(context),
+          height: ProductCarousel.heightFor(context, width: width),
           child: Shimmer(
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
@@ -167,8 +181,8 @@ class ProductCarouselSkeleton extends StatelessWidget {
               separatorBuilder: (_, _) =>
                   const SizedBox(width: ProductCarousel.gap),
               itemBuilder: (context, _) => ShimmerBone.block(
-                width: ProductCarousel.cardWidth,
-                height: ProductCarousel.heightFor(context),
+                width: width,
+                height: ProductCarousel.heightFor(context, width: width),
                 radius: AppTheme.radiusCard,
               ),
             ),

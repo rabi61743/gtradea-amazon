@@ -18,6 +18,45 @@ Entry format:
 
 ---
 
+## 2026-09-16 00:55 — Discover more products: brand-blue text, compact cards, fetched early and once
+- **Measured root cause of slow rendering** (Redmi, temporary uncommitted logging):
+  - The `/search/products?sort=sales` request itself answers in ~200 ms.
+  - **Late start:** the section sits at the foot of the lazily built history `ListView`, so its `initState` fetch only started when the shopper scrolled down (7.6 s after opening in the run).
+  - **Refetch:** scrolling away and back disposed and rebuilt it, fetching again (a duplicate request).
+  - Images already went through `ArtworkPanel` / `AppImages`, so they were not the cause.
+- **What:**
+  - **Shared fetch:** `DiscoverMoreSection.prefetch()` is a static in-memory result with a 5-minute TTL, a single in-flight future and the same query (sort by sales, 12 → first 8 priced).
+    - `ProductHistoryScreen.initState` calls it unawaited, with errors swallowed, so the fetch starts as the page opens without blocking the history.
+    - The section's state initialises from `cached`: if the result is in, it draws on the first frame with no skeleton or request. Otherwise it shows `ProductCarouselSkeleton` at the compact width until the shared future answers.
+    - An error still hides the shelf, as before.
+  - **Colours:** the heading, See all and category-chip text use `colorScheme.primary` (brand blue, the user's choice), and the chip tint is primary at 8%. The explore icon stays orange (icons unchanged), and the subtitle is unchanged.
+  - **Compact cards:** `ProductCarousel` / `ProductCarouselSkeleton` gained an optional `width` (default `cardWidth` 190, so the home page and quote screen are unchanged). Discover uses `DiscoverMoreSection.cardWidth = 150`, so the square picture and the card height (`heightFor(width:)`) shrink proportionally with the same layout.
+- **Why:** User request: change heading, See all and category colours; smaller images and cards; fix slow rendering with real data, no duplicate requests, no page blocking.
+- **Affected:**
+  - `lib/features/account/presentation/discover_more_section.dart`
+  - `lib/features/home/widgets/product_carousel.dart` (optional width only)
+  - `lib/features/account/presentation/product_history_screen.dart` (one prefetch line)
+  - `test/discover_more_test.dart`, new tests:
+    - colours
+    - the card is smaller than the storefront card
+    - one request across rebuilds
+    - a prefetched shelf draws on the first frame
+    - compact skeleton while loading
+    - 360/800/1400 dp with no overflow
+- **Impact & risk:**
+  - The trending shelf can be up to 5 minutes old within a session.
+  - The Product History screen makes this one request on open even if the shopper never scrolls down (~200 ms, tiny payload).
+- **Verification:**
+  - analyze clean. Discover tests 12/12; history, recent views and quote tests 84/84.
+  - On the Redmi:
+    - one fetch at page open
+    - the section built with data ready (no skeleton) when scrolled to
+    - no second fetch after scrolling away and back
+    - blue heading, See all and chips, and smaller cards (about 2.4 per screen width vs 2)
+  - Not run: tablet and desktop on physical devices (widget tests cover widths).
+  - Full suite: 2380 pass; only the 3 known `brand_system_test` failures.
+- **Commit:** see git log (`perf(history): compact brand-blue Discover more shelf, fetched early and once`) on main, pushed to origin
+
 ## 2026-09-16 00:25 — Product History Load More button made clearly visible
 - **What:** The Load More `OutlinedButton` now uses the account card's Sign Up treatment:
   - `foregroundColor` and `side` = `colorScheme.primary`, `backgroundColor` = `colorScheme.surface`, w600 label

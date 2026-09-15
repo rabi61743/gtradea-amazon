@@ -118,6 +118,10 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
     super.initState();
     _tabs.addListener(() => setState(() {}));
     unawaited(_load());
+    // The Discover more shelf at the foot of the list, started now rather
+    // than when the lazily built list first reaches it. It does not hold up
+    // the history; a failure here is the section's own to stay quiet about.
+    unawaited(DiscoverMoreSection.prefetch().then((_) {}, onError: (_) {}));
   }
 
   @override

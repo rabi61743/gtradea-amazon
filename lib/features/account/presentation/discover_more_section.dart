@@ -31,18 +31,74 @@ class DiscoverMoreSection extends StatefulWidget {
   /// this stays a footer rather than a second storefront.
   static const shown = 8;
 
+  /// The card width of this rail: more compact than the storefront's 190, so
+  /// the picture and the card are about a fifth smaller in proportion.
+  static const cardWidth = 150.0;
+
+  /// How long a trending answer is reused before it is asked for again.
+  static const cacheTtl = Duration(minutes: 5);
+
+  static Future<List<Product>>? _inFlight;
+  static List<Product>? _cached;
+  static DateTime? _cachedAt;
+
+  /// The trending products, if a fresh answer is already held.
+  static List<Product>? get cached {
+    final at = _cachedAt;
+    if (_cached == null || at == null) return null;
+    return DateTime.now().difference(at) < cacheTtl ? _cached : null;
+  }
+
+  /// Starts fetching the trending shelf, or joins the fetch already running.
+  ///
+  /// Measured on the phone, the request itself answers in about 200 ms. What
+  /// made this section slow was when it was asked: it sits at the foot of a
+  /// lazily built list, so its fetch only began once the shopper scrolled down
+  /// to it -- and scrolling away and back rebuilt it and fetched again. The
+  /// history screen calls this as it opens, so the shelf is usually ready by
+  /// the time anybody reaches it, and every later build reuses the one answer.
+  static Future<List<Product>> prefetch() {
+    final fresh = cached;
+    if (fresh != null) return Future.value(fresh);
+    return _inFlight ??= _fetch().whenComplete(() => _inFlight = null);
+  }
+
+  static Future<List<Product>> _fetch() async {
+    final products = await CatalogRepository.instance.search(
+      query: '',
+      sort: ProductSort.sales,
+      pageSize: shown + 4,
+    );
+    final shelf = products
+        .where((p) => p.hasPrice)
+        .take(shown)
+        .toList(growable: false);
+    _cached = shelf;
+    _cachedAt = DateTime.now();
+    return shelf;
+  }
+
+  @visibleForTesting
+  static void resetForTest() {
+    _inFlight = null;
+    _cached = null;
+    _cachedAt = null;
+  }
+
   @override
   State<DiscoverMoreSection> createState() => _DiscoverMoreSectionState();
 }
 
 class _DiscoverMoreSectionState extends State<DiscoverMoreSection> {
-  List<Product> _trending = const [];
-  bool _loading = true;
+  /// Already fetched -- by the screen as it opened, or an earlier build of
+  /// this section -- draws on the first frame, with no request and no bones.
+  List<Product> _trending = DiscoverMoreSection.cached ?? const [];
+  late bool _loading = DiscoverMoreSection.cached == null;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    if (_loading) unawaited(_load());
     // The department tree is cached to disk and shared with the home page, so
     // this usually costs nothing; asking is what covers a cold start.
     unawaited(CatalogStore.instance.categories.load());
@@ -50,17 +106,10 @@ class _DiscoverMoreSectionState extends State<DiscoverMoreSection> {
 
   Future<void> _load() async {
     try {
-      final products = await CatalogRepository.instance.search(
-        query: '',
-        sort: ProductSort.sales,
-        pageSize: DiscoverMoreSection.shown + 4,
-      );
+      final products = await DiscoverMoreSection.prefetch();
       if (!mounted) return;
       setState(() {
-        _trending = products
-            .where((p) => p.hasPrice)
-            .take(DiscoverMoreSection.shown)
-            .toList(growable: false);
+        _trending = products;
         _loading = false;
       });
     } on ApiError {
@@ -116,14 +165,21 @@ class _DiscoverMoreSectionState extends State<DiscoverMoreSection> {
             ],
             const SizedBox(height: 14),
             if (_loading)
-              const ProductCarouselSkeleton(count: 3)
+              const ProductCarouselSkeleton(
+                count: 3,
+                width: DiscoverMoreSection.cardWidth,
+              )
             else if (_trending.isNotEmpty)
               SizedBox(
-                height: ProductCarousel.heightFor(context),
+                height: ProductCarousel.heightFor(
+                  context,
+                  width: DiscoverMoreSection.cardWidth,
+                ),
                 child: ProductCarousel(
                   title: '',
                   products: _trending,
                   onAddToCart: _addToCart,
+                  width: DiscoverMoreSection.cardWidth,
                 ),
               ),
           ],
@@ -142,6 +198,9 @@ class _Heading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // The brand blue the Load More button and the prices above use, so the
+    // section reads as part of the same page.
+    final ink = theme.colorScheme.primary;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
@@ -170,6 +229,7 @@ class _Heading extends StatelessWidget {
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
+                    color: ink,
                   ),
                 ),
                 Text(
@@ -186,7 +246,7 @@ class _Heading extends StatelessWidget {
             TextButton(
               onPressed: seeAll,
               style: TextButton.styleFrom(
-                foregroundColor: AppColors.commerceOrange,
+                foregroundColor: ink,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -213,6 +273,7 @@ class _Departments extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final ink = theme.colorScheme.primary;
 
     return SizedBox(
       height: 34,
@@ -224,7 +285,7 @@ class _Departments extends StatelessWidget {
         itemBuilder: (context, i) {
           final category = categories[i];
           return Material(
-            color: AppColors.commerceOrange.withValues(alpha: 0.08),
+            color: ink.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(AppTheme.radiusControl),
             child: InkWell(
               onTap: () => onOpen(category),
@@ -239,7 +300,7 @@ class _Departments extends StatelessWidget {
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.commerceOrange,
+                    color: ink,
                   ),
                 ),
               ),
