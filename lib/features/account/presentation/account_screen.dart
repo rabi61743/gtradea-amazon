@@ -572,14 +572,9 @@ class _ProfileCard extends StatelessWidget {
       width: double.infinity,
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: _cardShape,
-          color: _cardWash(theme),
-          border: Border.all(
-            color: theme.colorScheme.primary.withValues(alpha: 0.25),
-          ),
-          boxShadow: _cardLift,
-        ),
+        // No card of its own, by request -- like the settings, help and
+        // recently viewed sections, the greeting sits directly on the account
+        // card. Padding and content are unchanged.
         child: Row(
           children: [
             _AccountAvatar(url: photo, initial: initial),

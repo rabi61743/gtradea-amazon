@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 17:05 — Greeting block without its own card
+- **What:** `_ProfileCard` (avatar, "Hello, name", email, Switch) no longer draws its own tinted wash, border or shadow; it sits directly on the account card. Its 16 dp padding and all content are unchanged. The guest card (signed out) keeps its card.
+- **Why:** User request: remove the card from the greeting, email and Switch, as done for the other sections, nothing else.
+- **Affected:** `lib/features/account/presentation/account_screen.dart` (`_ProfileCard` decoration only). `test/account_cards_test.dart`: lifted surfaces 2 -> 1 (only the account card).
+- **Impact & risk:** Visual only, for the greeting. Name, email, avatar, Switch and routes are unchanged.
+- **Verification:** analyze clean; auth, account, login activity and profile photo sync suites 83/83. On the Redmi the greeting sits on the plain account card.
+- **Commit:** see `git log` — `style(account): drop the greeting block's own card`, pushed to origin `main`.
+
 ## 2026-09-15 16:58 — Recently viewed rail without its own card
 - **What:** `_RecentlyViewedRail` no longer draws its own surface, edge lines or shadow; its products sit directly on the account card, like Account settings and Help and information. Padding, height, horizontal scroll and the edge clip are kept, and tile images, names, prices and taps are unchanged.
 - **Why:** User request: remove the card from the recently viewed products, as done for the settings and help sections, nothing else.
