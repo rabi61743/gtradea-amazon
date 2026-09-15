@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../../../core/images/app_images.dart';
 import '../presentation/video_viewer_screen.dart';
@@ -116,8 +118,73 @@ class _ProductGalleryState extends State<ProductGallery>
       _index < _slideCount - 1 &&
       !_reducedMotion &&
       !_held &&
+      !_pageScrolledAway &&
       !_onVideo &&
       !_videoPlaying;
+
+  /// True while the page is scrolling, or has been left with the gallery's top
+  /// edge scrolled off the screen.
+  ///
+  /// The box follows each photograph's shape, so a slide change resizes the
+  /// card -- and everything below it moves. Rotating while somebody scrolls
+  /// the page moved the content under their finger (the jumping), and kept a
+  /// countdown animating against the scroll. Rotation waits until the page is
+  /// still and the gallery is back in full view.
+  bool _pageScrolledAway = false;
+
+  /// The page's own scroll position, not the gallery's PageView.
+  ScrollPosition? _page;
+
+  void _watchPage() {
+    final page = Scrollable.maybeOf(context, axis: Axis.vertical)?.position;
+    if (identical(page, _page)) return;
+    _page?.isScrollingNotifier.removeListener(_onPageScrolling);
+    _page = page;
+    page?.isScrollingNotifier.addListener(_onPageScrolling);
+    _pageScrolledAway = page != null && page.isScrollingNotifier.value;
+  }
+
+  /// Called when the page starts or stops scrolling -- twice per gesture, not
+  /// once per pixel.
+  void _onPageScrolling() {
+    // The scroll position can change state in the middle of a frame -- a
+    // layout that changes the content height settles the scroll -- and
+    // stopping the countdown there rebuilds the bar mid-layout. Anything that
+    // arrives during a frame is handled just after it instead.
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase != SchedulerPhase.idle &&
+        phase != SchedulerPhase.postFrameCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback(
+        (_) => _applyPageScrolling(),
+      );
+      return;
+    }
+    _applyPageScrolling();
+  }
+
+  void _applyPageScrolling() {
+    final page = _page;
+    if (!mounted || page == null) return;
+    final away = page.isScrollingNotifier.value || !_topInView(page);
+    if (away == _pageScrolledAway) return;
+    _pageScrolledAway = away;
+    _sync();
+  }
+
+  /// Whether the gallery's top edge is on screen.
+  ///
+  /// The edge that matters: a resize moves what is *below* the gallery, so
+  /// while its top is in view the reader is looking at the gallery itself. Once
+  /// it has scrolled up past the top, a resize would shift the very content on
+  /// screen. Not the whole gallery -- on a tablet or a desktop window a square
+  /// gallery can be taller than the screen, and would never rotate at all.
+  bool _topInView(ScrollPosition page) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached) return true;
+    final viewport = RenderAbstractViewport.maybeOf(box);
+    if (viewport == null) return true;
+    return page.pixels <= viewport.getOffsetToReveal(box, 0).offset + 1;
+  }
 
   bool _reducedMotion = false;
 
@@ -125,6 +192,7 @@ class _ProductGalleryState extends State<ProductGallery>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _reducedMotion = MediaQuery.of(context).disableAnimations;
+    _watchPage();
     _sync();
     // Needs a context to resolve against, which is why it is here rather than
     // in initState.
@@ -190,6 +258,7 @@ class _ProductGalleryState extends State<ProductGallery>
 
   @override
   void dispose() {
+    _page?.isScrollingNotifier.removeListener(_onPageScrolling);
     _dropStream();
     _timer?.cancel();
     _progress.dispose();
@@ -262,7 +331,13 @@ class _ProductGalleryState extends State<ProductGallery>
           // Directly below the image, as the design asks. Drawn at a constant
           // height whether or not it is running, so the page does not jump by
           // two pixels every time the rotation stops and starts.
-          _ProgressBar(progress: _progress, running: _shouldRotate),
+          // Its own layer. Without this, every frame of the countdown
+          // repainted the whole product card around it -- photograph and all
+          // -- which measured at 5-6 ms of raster a frame on a 120 Hz phone
+          // and put 15-44% of the frames at the top of the page over budget.
+          RepaintBoundary(
+            child: _ProgressBar(progress: _progress, running: _shouldRotate),
+          ),
           const SizedBox(height: 8),
           _Thumbnails(
             // Named so a test can count thumbnails rather than every tappable
@@ -485,9 +560,8 @@ class _ProductGalleryState extends State<ProductGallery>
   void _openVideoFullscreen() {
     final url = widget.videoUrl;
     if (url == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => VideoViewerScreen(url: url)),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => VideoViewerScreen(url: url)));
   }
 
   /// One photograph, at [i] counting images only.

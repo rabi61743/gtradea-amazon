@@ -18,6 +18,41 @@ Entry format:
 
 ---
 
+## 2026-09-16 01:40 — Product page scrolling: gallery no longer repaints the card or resizes during scroll
+- **Investigation:**
+  - Measured with a **profile** build on the Redmi (120 Hz, 8.3 ms budget), using the existing `FrameProbe` plus temporary uncommitted logging.
+  - **Note:** every APK installed in this session had been a *debug* build, which is inherently janky in Flutter. The user's experience was partly that.
+  - **Idle at the top** while the gallery auto-rotated: continuous 120 Hz frames, **15–42% over budget**, build ~2–3 ms and raster ~5–6 ms per frame. The 3 px countdown `LinearProgressIndicator` had no `RepaintBoundary`, so each tick repainted the whole product card, photo included.
+  - **Idle mid-page:** 0 frames. Scrolling mid-page was 0–1% over budget, so the rest of the page was fine.
+  - **Gallery resizes itself:** the box follows each photo's aspect ratio (`AspectRatio(_ratio)`) and auto-rotates every 2.5 s. A slide change resizes the card, and all content below shifts, including while the user scrolls. It also restarts rotation when rebuilt on scrolling back up. This is the jump/vibrate cause.
+  - **Detail images panel** (7 images) built them all at once when opened: one short over-budget stretch (10%), then 0–1%. Minor, so not changed.
+  - No scroll-driven API calls. Not applicable: DOM or CSS (Flutter app).
+- **What** (`lib/features/product/widgets/product_gallery.dart` only):
+  - **Repaint:** `RepaintBoundary` around the countdown bar.
+  - **Pause while scrolling:** auto-rotation pauses while the page's own vertical `ScrollPosition.isScrollingNotifier` is true, or while the gallery's top edge is scrolled off screen.
+    - It uses `RenderAbstractViewport.getOffsetToReveal`, evaluated only at scroll start/end, not per pixel.
+    - It resumes when the page is still with the top edge in view. Top edge rather than the whole gallery, so tall galleries on tablet or desktop still rotate.
+  - Manual swipe, thumbnails, video tab, tap-to-view and the design are unchanged.
+- **Why:** User reported product page scrolling that stutters, vibrates or jumps, and sometimes freezes. They asked for the real root cause and a minimal fix.
+- **Affected:**
+  - `lib/features/product/widgets/product_gallery.dart`
+  - new `test/product_gallery_scroll_test.dart`:
+    - the bar has its own repaint boundary
+    - no slide change during a 5 s drag
+    - scrolled past the top edge → stays put; back at the top → resumes
+    - idle at the top still rotates
+- **Impact & risk:**
+  - The gallery rotates only while its top is on screen and the page is still.
+  - The `_measure()` full-size decode for aspect ratio is left as is (800×800 on the tested listing).
+- **Verification:**
+  - Profile build, same steps before and after: idle at the top while rotating went from 15–42% to **5–17%** over budget, build p50 3.0 → 1.1 ms. Mid-page stays 0–1%.
+  - The remaining over-budget frames at the top are the slide animation's photo raster (~4–5 ms on this device).
+  - Product page suites (gallery scroll, video, images, detail, design, deal, MOQ) 93/93; analyze clean.
+  - The profile build (not debug) is left installed on the phone.
+  - Not run: tablet and desktop on physical devices.
+  - Full suite: 2377 pass plus the 3 known `brand_system_test` failures, and 1 real failure found by it: `cart_test` "quantity chosen on the page". The page-scroll notifier fired mid-layout and stopped the countdown inside a frame ("Build scheduled during frame"). Fixed by deferring the handler to a post-frame callback when the scheduler is mid-frame; `cart_test` plus the gallery, video, detail and images suites now pass (115).
+- **Commit:** see git log (`perf(product): stop gallery repaint and rotation from fighting page scroll`) on main, pushed to origin
+
 ## 2026-09-16 00:55 — Discover more products: brand-blue text, compact cards, fetched early and once
 - **Measured root cause of slow rendering** (Redmi, temporary uncommitted logging):
   - The `/search/products?sort=sales` request itself answers in ~200 ms.
