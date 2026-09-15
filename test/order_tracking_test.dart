@@ -7,6 +7,7 @@ import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/orders/data/order_store.dart';
 import 'package:gtradea_amazon/features/orders/presentation/order_detail_screen.dart';
+import 'package:gtradea_amazon/features/orders/widgets/order_detail_cards.dart';
 import 'package:gtradea_amazon/features/orders/presentation/orders_screen.dart';
 import 'package:gtradea_amazon/features/orders/widgets/order_timeline.dart';
 
@@ -92,9 +93,13 @@ void main() {
       await _open(tester, order);
 
       expect(_inTimeline(find.text('Held at customs')), findsOneWidget);
-      // And the invented ladder is not drawn alongside it.
-      expect(find.text('Packed'), findsNothing);
-      expect(find.text('Out for delivery'), findsNothing);
+      // The page now carries a six-stage rail as its summary, which is what
+      // the reference design asks for. The point this test exists for is
+      // unchanged and asserted where it matters: the carrier's own step is
+      // in the journey, and the ladder has not replaced it -- there is no
+      // ladder row in the journey, only the carrier's steps.
+      expect(_inTimeline(find.text('Packed')), findsNothing);
+      expect(_inTimeline(find.text('Out for delivery')), findsNothing);
     });
 
     testWidgets('the timeline is exactly the steps the server sent', (
@@ -119,9 +124,10 @@ void main() {
 
       expect(_inTimeline(find.text('Picked up')), findsOneWidget);
       expect(_inTimeline(find.text('At the depot')), findsOneWidget);
-      // Two steps in, two rows out. A fixed rail would draw six.
-      expect(find.text('Order placed'), findsNothing);
-      expect(find.text('Delivered'), findsNothing);
+      // Two steps in, two rows out. The rail above draws six stages by
+      // design; the journey draws only what the carrier sent.
+      expect(_inTimeline(find.text('Order placed')), findsNothing);
+      expect(_inTimeline(find.text('Delivered')), findsNothing);
     });
 
     testWidgets('the server decides which step is current', (tester) async {
@@ -240,11 +246,17 @@ void main() {
 
       await _open(tester, order);
 
-      expect(find.text('Updates'), findsOneWidget);
-      expect(find.text('Left the warehouse'), findsOneWidget);
+      expect(find.text('Latest updates'), findsOneWidget);
+      expect(find.text('Left the warehouse'), findsWidgets);
 
-      final newest = tester.getTopLeft(find.text('Arrived in Birgunj'));
-      final older = tester.getTopLeft(find.text('Left the warehouse'));
+      // Inside the card, which shows the two newest and keeps the rest behind
+      // its own link -- so 'first' means first in the card, not on the page.
+      Finder inCard(Finder matching) => find.descendant(
+        of: find.byType(OrderUpdatesCard),
+        matching: matching,
+      );
+      final newest = tester.getTopLeft(inCard(find.text('Arrived in Birgunj')));
+      final older = tester.getTopLeft(inCard(find.text('Left the warehouse')));
       expect(newest.dy, lessThan(older.dy), reason: 'newest first');
     });
 
@@ -303,8 +315,8 @@ void main() {
 
       await _open(tester, order);
 
-      expect(find.text('Tracking'), findsNothing);
-      expect(find.text('Updates'), findsNothing);
+      expect(find.text('Latest updates'), findsNothing);
+      expect(find.text('Journey'), findsNothing);
       expect(find.textContaining('Arriving'), findsNothing);
       expect(tester.takeException(), isNull);
     });

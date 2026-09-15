@@ -116,7 +116,9 @@ void main() {
     );
 
     // Two across, not the index's three: four tiles meant to be looked at.
-    expect(SubcategoryGrid.columns, 2);
+    // Read off the block itself now that the count is per-section -- the
+    // Browse sections below it run three across, and this one must not.
+    expect(grid.columns, 2);
     expect(grid.actionLabel, 'Shop more');
     expect(grid.children.map((c) => c.name), _picks.values);
   });

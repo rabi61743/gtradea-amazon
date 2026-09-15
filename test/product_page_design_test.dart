@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
+import 'package:gtradea_amazon/core/theme/colors.dart';
 import 'package:gtradea_amazon/features/product/data/product_detail_content.dart';
 import 'package:gtradea_amazon/features/product/presentation/product_detail_screen.dart';
-import 'package:gtradea_amazon/features/product/widgets/assurance_row.dart';
+import 'package:gtradea_amazon/features/product/widgets/logistics_trust_card.dart';
 
 import 'support/catalog.dart';
 
@@ -64,9 +65,13 @@ void main() {
       await pump(tester);
 
       expect(find.textContaining('Min. order:'), findsOneWidget);
-      expect(find.textContaining('500 pcs'), findsOneWidget);
+      // The pill beside the price says it, and the summary card below
+      // repeats the count it is buying -- so this asks for the pill.
+      expect(find.textContaining('Min. order: 500 pcs'), findsOneWidget);
 
-      final price = tester.getRect(find.text('Rs. 2').first);
+      final price = tester.getRect(
+        find.text('Rs. 2', findRichText: true).first,
+      );
       final pill = tester.getRect(find.textContaining('Min. order:'));
 
       // Beside the price rather than under it, and to its right.
@@ -87,7 +92,7 @@ void main() {
     testWidgets('are named, and nothing else', (tester) async {
       await pump(tester);
 
-      await tester.ensureVisible(find.byType(AssuranceRow));
+      await tester.ensureVisible(find.byType(LogisticsTrustCard));
       await tester.pumpAndSettle();
 
       expect(find.text('7-day returns'), findsOneWidget);
@@ -104,7 +109,7 @@ void main() {
     testWidgets('and the three sit level, in equal thirds', (tester) async {
       await pump(tester);
 
-      await tester.ensureVisible(find.byType(AssuranceRow));
+      await tester.ensureVisible(find.byType(LogisticsTrustCard));
       await tester.pumpAndSettle();
 
       final cells = [
@@ -120,11 +125,18 @@ void main() {
         expect(cell.top, closeTo(cells.first.top, 0.5), reason: 'level');
       }
 
-      // Equally spaced: the gap between the first and second centres is the
-      // gap between the second and third, so the three read as equal thirds
-      // however wide the card is.
-      final firstGap = cells[1].center.dx - cells[0].center.dx;
-      final secondGap = cells[2].center.dx - cells[1].center.dx;
+      // Equal thirds: each cell begins the same distance after the last, so
+      // the three read as one row however long their words are.
+      final marks = [
+        for (final icon in [
+          Icons.assignment_return_outlined,
+          Icons.payments_outlined,
+          Icons.verified_outlined,
+        ])
+          tester.getRect(find.byIcon(icon)),
+      ];
+      final firstGap = marks[1].left - marks[0].left;
+      final secondGap = marks[2].left - marks[1].left;
       expect(secondGap, closeTo(firstGap, 1));
     });
 
@@ -213,6 +225,77 @@ void main() {
       expect(find.text('Value 5'), findsOneWidget);
     });
 
+    testWidgets('is ruled: a line between the columns and between the rows', (
+      tester,
+    ) async {
+      await pump(tester);
+
+      await tester.ensureVisible(find.text('Highlights'));
+      await tester.pumpAndSettle();
+
+      final card = find.ancestor(
+        of: find.text('Product category'),
+        matching: find.byType(Column),
+      );
+      // Six facts: three rows of two, so two rules across and one down each
+      // row -- the grid the reference draws.
+      expect(
+        find.descendant(of: card.last, matching: find.byType(VerticalDivider)),
+        findsNWidgets(3),
+      );
+      expect(
+        find.descendant(of: card.last, matching: find.byType(Divider)),
+        findsNWidgets(2),
+      );
+    });
+
+    testWidgets('and the control sits in the header, right of the title', (
+      tester,
+    ) async {
+      await pump(tester);
+
+      await tester.ensureVisible(find.text('Highlights'));
+      await tester.pumpAndSettle();
+
+      final title = tester.getRect(find.text('Highlights'));
+      final control = tester.getRect(find.text('View more'));
+
+      expect(control.left, greaterThan(title.right), reason: 'to the right');
+      expect(control.center.dy, closeTo(title.center.dy, 6), reason: 'level');
+
+      // In the brand blue, so it reads as something to press rather than as
+      // a caption beside the heading.
+      final label = tester.widget<Text>(find.text('View more'));
+      expect(
+        label.style?.color ??
+            DefaultTextStyle.of(tester.element(find.text('View more')))
+                .style
+                .color,
+        AppColors.trustBlue,
+      );
+      // With its chevron, as the reference has it.
+      expect(find.byIcon(Icons.chevron_right), findsWidgets);
+    });
+
+    testWidgets('an odd fact out is not ruled against an empty half', (
+      tester,
+    ) async {
+      // A divider with nothing beyond it reads as something failing to load.
+      await pump(tester, detail: _detail(specCount: 5));
+
+      await tester.ensureVisible(find.text('Highlights'));
+      await tester.pumpAndSettle();
+
+      final card = find.ancestor(
+        of: find.text('Value 4'),
+        matching: find.byType(Column),
+      );
+      // Three rows, but the last holds one fact: two full rows are ruled.
+      expect(
+        find.descendant(of: card.last, matching: find.byType(VerticalDivider)),
+        findsNWidgets(2),
+      );
+    });
     testWidgets('and the Specifications panel is untouched by any of it', (
       tester,
     ) async {
@@ -319,5 +402,26 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Show less'), findsOneWidget);
     });
+  });
+
+  testWidgets('the seams between sections are the page own rhythm', (
+    tester,
+  ) async {
+    // Every seam used to carry its own number -- 16 here, 12 there, a 4 and an
+    // 8 stacked into a 12 nobody chose -- which read as a page assembled
+    // rather than composed, and made it longer than its content.
+    //
+    // Measured where it shows: between the guarantees strip and the card that
+    // follows it.
+    await pump(tester);
+
+    final strip = tester.getRect(find.byType(LogisticsTrustCard));
+    final next = tester.getRect(find.text('Highlights'));
+
+    final seam = next.top - strip.bottom;
+    expect(seam, greaterThan(0), reason: 'they do not overlap');
+    // The eight the page runs on, plus the card's own top padding. Anything
+    // near the old sixteen-plus-fourteen would be the band this removed.
+    expect(seam, lessThanOrEqualTo(26), reason: 'seam was $seam');
   });
 }

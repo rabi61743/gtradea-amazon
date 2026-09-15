@@ -12,7 +12,7 @@ import 'voice_search_sheet.dart';
 /// The pill is white in both brightnesses because it sits on the brand band,
 /// so every child pins its own colour instead of inheriting one that would
 /// vanish against it.
-class SearchField extends StatelessWidget {
+class SearchField extends StatefulWidget {
   const SearchField({
     super.key,
     required this.controller,
@@ -39,6 +39,29 @@ class SearchField extends StatelessWidget {
 
   /// Extra action to the right of the field, e.g. the cart.
   final Widget? trailing;
+
+  @override
+  State<SearchField> createState() => _SearchFieldState();
+}
+
+class _SearchFieldState extends State<SearchField> {
+  /// Held here so the trailing controls can tell composing a query apart from
+  /// merely reading one back: the results header keeps the query in the box
+  /// long after the shopper has stopped typing.
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  /// True while the shopper is writing a query: the box is theirs, it has
+  /// words in it, and the useful action is running the search.
+  bool get _typing =>
+      !widget.readOnly &&
+      _focus.hasFocus &&
+      widget.controller.text.trim().isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +106,7 @@ class SearchField extends StatelessWidget {
                             alignment: Alignment.centerLeft,
                             children: [
                               ValueListenableBuilder<TextEditingValue>(
-                                valueListenable: controller,
+                                valueListenable: widget.controller,
                                 builder: (context, value, _) =>
                                     value.text.isEmpty
                                     ? IgnorePointer(
@@ -97,12 +120,13 @@ class SearchField extends StatelessWidget {
                                     : const SizedBox.shrink(),
                               ),
                               TextField(
-                                controller: controller,
-                                autofocus: autofocus,
-                                readOnly: readOnly,
-                                onTap: onTap,
-                                onSubmitted: onSubmitted,
-                                onChanged: onChanged,
+                                controller: widget.controller,
+                                focusNode: _focus,
+                                autofocus: widget.autofocus,
+                                readOnly: widget.readOnly,
+                                onTap: widget.onTap,
+                                onSubmitted: widget.onSubmitted,
+                                onChanged: widget.onChanged,
                                 textInputAction: TextInputAction.search,
                                 style: TextStyle(
                                   fontSize: 15,
@@ -120,27 +144,78 @@ class SearchField extends StatelessWidget {
                             ],
                           ),
                         ),
-                        // Voice first, then image, matching the home header --
+                        // The other ways of asking, while the shopper is not
+                        // mid-query. Once there are words being typed they are
+                        // not what is wanted -- running the search is -- and
+                        // two ways to start a different search would sit where
+                        // the answer belongs.
+                        //
+                        // A query the shopper is only reading back, as the
+                        // results header shows it, keeps the pair: they have
+                        // finished asking, and asking again by voice or photo
+                        // is exactly what that header is for.
+                        //
+                        // Voice first, then image, matching the home header:
                         // a shopper sees both bands within a second of each
                         // other and the pair should not reorder between them.
-                        VoiceSearchButton(
-                          size: 20,
-                          color: onPill,
-                          onResult: (transcript) => _dictated(transcript),
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.photo_camera_outlined,
-                            size: 20,
-                            color: onPill,
+                        AnimatedBuilder(
+                          animation: Listenable.merge([
+                            widget.controller,
+                            _focus,
+                          ]),
+                          builder: (context, _) => AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 160),
+                            // Cross-faded in place: the pair and the submit
+                            // are the same width, so nothing in the pill
+                            // shifts as they swap.
+                            child: _typing
+                                ? IconButton(
+                                    key: const ValueKey('submit'),
+                                    icon: Icon(
+                                      Icons.arrow_forward,
+                                      size: 20,
+                                      color: onPill,
+                                    ),
+                                    tooltip: 'Search',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 34,
+                                      height: 34,
+                                    ),
+                                    // The same submission the keyboard's own
+                                    // search key runs, so both routes end in
+                                    // one place.
+                                    onPressed: () => widget.onSubmitted?.call(
+                                      widget.controller.text,
+                                    ),
+                                  )
+                                : Row(
+                                    key: const ValueKey('ask'),
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      VoiceSearchButton(
+                                        size: 20,
+                                        color: onPill,
+                                        onResult: _dictated,
+                                      ),
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.photo_camera_outlined,
+                                          size: 20,
+                                          color: onPill,
+                                        ),
+                                        tooltip: 'Search by image',
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            const BoxConstraints.tightFor(
+                                              width: 34,
+                                              height: 34,
+                                            ),
+                                        onPressed: widget.onImageSearch,
+                                      ),
+                                    ],
+                                  ),
                           ),
-                          tooltip: 'Search by image',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 34,
-                            height: 34,
-                          ),
-                          onPressed: onImageSearch,
                         ),
                         const SizedBox(width: 8),
                       ],
@@ -148,7 +223,10 @@ class SearchField extends StatelessWidget {
                   ),
                 ),
               ),
-              if (trailing != null) ...[const SizedBox(width: 4), trailing!],
+              if (widget.trailing != null) ...[
+                const SizedBox(width: 4),
+                widget.trailing!,
+              ],
             ],
           ),
         ),
@@ -164,10 +242,10 @@ class SearchField extends StatelessWidget {
   /// would read as broken; searching without filling it would leave them
   /// nothing to correct.
   void _dictated(String transcript) {
-    controller.value = TextEditingValue(
+    widget.controller.value = TextEditingValue(
       text: transcript,
       selection: TextSelection.collapsed(offset: transcript.length),
     );
-    onSubmitted?.call(transcript);
+    widget.onSubmitted?.call(transcript);
   }
 }

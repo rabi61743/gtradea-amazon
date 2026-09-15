@@ -173,6 +173,49 @@ void main() {
       expect(find.text('Photos 3/5'), findsOneWidget);
     });
 
+    testWidgets('the picture sets the shape of its own box', (tester) async {
+      // The defect: the box was a fixed 0.88, taller than every photograph in
+      // a catalogue that shoots square, so each one sat in a grey band top and
+      // bottom and read as not fitting the card.
+      await _pumpPage(tester, _withSpecs());
+
+      final box = tester.widget<AspectRatio>(
+        find
+            .descendant(
+              of: find.byType(ProductGallery),
+              matching: find.byType(AspectRatio),
+            )
+            .first,
+      );
+
+      // Bounded either way: a seller's panorama must not leave a strip three
+      // fingers tall, and a tall thin one must not push the price off screen.
+      expect(box.aspectRatio, greaterThanOrEqualTo(0.7));
+      expect(box.aspectRatio, lessThanOrEqualTo(1.4));
+    });
+
+    testWidgets('and what is left around it is the card, not a grey band', (
+      tester,
+    ) async {
+      // Whatever letterbox remains after the box is cut to the picture should
+      // read as the card rather than as a gap in it.
+      await _pumpPage(tester, _withSpecs());
+
+      final ground = tester
+          .widgetList<ColoredBox>(
+            find.descendant(
+              of: find.byType(ProductGallery),
+              matching: find.byType(ColoredBox),
+            ),
+          )
+          .map((b) => b.color);
+
+      // The stage itself, which is the one behind the photograph. The strip
+      // and the progress bar below it keep their own placeholder grey.
+      final theme = AppTheme.light.colorScheme;
+      expect(ground.first, theme.surface);
+    });
+
     testWidgets('a single photograph gets no strip at all', (tester) async {
       // One thumbnail under one picture is a control that cannot change
       // anything.

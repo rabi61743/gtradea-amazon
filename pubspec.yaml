@@ -75,6 +75,7 @@ dependencies:
   # reaches the notification centre and the lock screen rather than living
   # only inside the app.
   flutter_local_notifications: ^19.4.2
+  pdf: ^3.12.0
 
 dev_dependencies:
   flutter_test:
@@ -103,6 +104,8 @@ flutter:
     - assets/brand/
     - assets/images/
     - assets/sounds/
+    # Embedded in the invoice and receipt PDFs. See Roboto-LICENSE.txt.
+    - assets/fonts/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

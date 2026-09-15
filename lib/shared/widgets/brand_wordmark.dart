@@ -28,6 +28,16 @@ abstract final class AppBrand {
   /// own, which is what fits a header bar.
   static const lockupAsset = 'assets/brand/logo_lockup.png';
 
+  /// The same lockup drawn for a dark ground, when there is one.
+  ///
+  /// There is not yet: [lockupAsset] is light-ground artwork -- Trust Blue
+  /// name, black tagline -- so on the header's band its name would be the
+  /// colour of the band and its tagline would be invisible. [BrandLockup]
+  /// looks for this file and falls back to the mark plus type until it is
+  /// supplied. The asset folder is declared wholesale in the pubspec, so
+  /// dropping the artwork in at this path is the whole of the change.
+  static const lockupOnDarkAsset = 'assets/brand/logo_lockup_on_dark.png';
+
   /// The lockup's aspect ratio, from the artwork: 8073 by 1686.
   static const lockupAspectRatio = 8073 / 1686;
 

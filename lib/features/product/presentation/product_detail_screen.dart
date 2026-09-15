@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../restock/presentation/restock_request_bar.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/ui/action_status.dart';
@@ -22,10 +24,12 @@ import '../../../shared/widgets/loadable_view.dart';
 import '../data/product_detail_content.dart';
 import '../data/product_repository.dart';
 import '../../wishlist/data/wishlist_store.dart';
-import '../data/storefront_config.dart';
-import '../widgets/assurance_row.dart';
-import '../widgets/delivery_guarantee_card.dart';
+import '../widgets/product_logistics_section.dart';
+import '../widgets/logistics_trust_card.dart';
+import '../widgets/product_type_scale.dart';
 import '../widgets/product_detail_images.dart';
+import '../widgets/product_detail_skeleton.dart';
+import '../widgets/product_summary_card.dart';
 import '../widgets/product_gallery.dart';
 import '../widgets/product_section_panel.dart';
 import '../widgets/product_quote_sheet.dart';
@@ -100,15 +104,32 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         // having one. A row that reached this page without a
         // price seeds the record with zero, and printing that
         // told the shopper the product was free.
-        Text(
-          product.price > 0 ? formatRupees(product.price) : _priceUnknownLabel,
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: product.price > 0
-                ? theme.colorScheme.primary
-                : theme.colorScheme.onSurfaceVariant,
+        // The price of one at the quantity in front of the shopper, not the
+        // listing's price of one. On a laddered listing those differ the
+        // moment the stepper crosses a rung, and a headline that kept saying
+        // the one-piece figure disagreed with the total on the buy bar.
+        if (product.price > 0)
+          // "Rs." and the figure are one line of text in two sizes, so the
+          // prefix rides the digits' baseline however the number wraps.
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: 'Rs. ', style: ProductType.currency(theme)),
+                TextSpan(
+                  text: formatRupees(_headlinePrice).substring(4),
+                  style: ProductType.price(theme),
+                ),
+              ],
+            ),
+          )
+        else
+          // A row that reached this page without a price seeds the record
+          // with zero, and printing that told the shopper it was free.
+          Text(
+            _priceUnknownLabel,
+            style: ProductType.price(theme)
+                .copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
-        ),
         if (list != null && discount != null) ...[
           Text(
             formatRupees(list),
@@ -163,20 +184,31 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// exists or it does not.
   final Map<String, int> _picked = {};
 
-  /// Set when the full record could not be fetched. The page keeps rendering
-  /// the card's own data underneath it -- a title and a price the shopper just
-  /// saw are worth more than an error page.
+  /// Set when the full record could not be fetched. The page then falls
+  /// back to the card's own data underneath the error -- a title and a
+  /// price the shopper just saw are worth more than an error page.
   ApiError? _detailError;
+
+  /// Which fetch the page is waiting on.
+  ///
+  /// Bumped every time one starts, so a response that arrives after another
+  /// has been asked for is dropped rather than painted. Without it, a slow
+  /// answer for the product looked at a moment ago can land on the product
+  /// being looked at now.
+  int _fetch = 0;
+
+  /// True until the record for [widget.product] is on screen.
+  ///
+  /// The page is opened from a catalogue row, which carries a title, a price
+  /// and one picture -- and nothing of the gallery, the options, the facts or
+  /// the photographs. Rendering that row means a page that is half built and
+  /// then rearranges itself as the record lands. The skeleton holds the shape
+  /// instead, and nothing product-specific is drawn until the record for this
+  /// product is in hand.
+  bool get _loadingDetail => _detail.isPreview && _detailError == null;
 
   /// The rest of this department, for the rail at the bottom.
   List<Product> _similar = const [];
-
-  /// The site's shipping settings, which the delivery card is drawn from.
-  ///
-  /// Null until they arrive, and the card is simply not drawn until then --
-  /// there is no skeleton, because a delivery window that appears and then
-  /// changes is worse than one that appears a moment late.
-  ShippingEstimate? _shipping;
 
   @override
   void initState() {
@@ -194,7 +226,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (firstInStock > 0) _variant = firstInStock;
 
     if (widget.detail == null) unawaited(_loadDetail());
-    unawaited(_loadShipping());
 
     // Opening the page is the visit. Recorded after the first frame so it
     // never competes with building it.
@@ -217,16 +248,55 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     });
   }
 
+  /// A different product handed to a page that is already on screen.
+  ///
+  /// Ordinarily each product is its own route and this never runs. It runs
+  /// when something swaps the product underneath the page -- a deep link
+  /// resolving, a route replaced rather than pushed -- and without it every
+  /// piece of state below belongs to the product before: the record, the
+  /// options, the quantities typed into the grid, the department rail. All of
+  /// it is dropped, and the page goes back to its skeleton until the new
+  /// record lands.
+  @override
+  void didUpdateWidget(covariant ProductDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.product.numIid == widget.product.numIid &&
+        oldWidget.detail == widget.detail) {
+      return;
+    }
+
+    setState(() {
+      _detail = widget.detail ?? ProductDetail.fromProduct(widget.product);
+      _matrix = VariantMatrix.from(_detail.variants);
+      _picked.clear();
+      _variant = 0;
+      _quantity = _detail.minOrder > 0 ? _detail.minOrder : 1;
+      _detailError = null;
+      _similar = const [];
+      _descriptionExpanded = false;
+      _highlightsExpanded = false;
+      _dealEnded = false;
+    });
+
+    if (widget.detail == null) unawaited(_loadDetail());
+  }
+
   ProductDetail get _product => _detail;
 
   /// Fetches the full record and, once it lands, the rest of its department.
   Future<void> _loadDetail() async {
+    final fetch = ++_fetch;
+    final wanted = widget.product.numIid;
+    if (_detailError != null) setState(() => _detailError = null);
+
     try {
-      final body = await ProductRepository.instance.detail(
-        widget.product.numIid,
-      );
-      if (!mounted) return;
+      final body = await ProductRepository.instance.detail(wanted);
+      // Three ways this answer can be the wrong one to paint: the page is
+      // gone, another fetch has been asked for since, or the service
+      // answered about a different product than the one asked for.
+      if (!mounted || fetch != _fetch) return;
       final detail = ProductDetail.fromApi(body, fallback: widget.product);
+      if (detail.numIid.isNotEmpty && detail.numIid != wanted) return;
       setState(() {
         _detail = detail;
         _detailError = null;
@@ -241,20 +311,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         _variant = firstInStock < 0 ? 0 : firstInStock;
         _quantity = detail.minOrder > 0 ? detail.minOrder : 1;
       });
+      // The rest of the department, after the product itself is on screen.
+      // Never before it: nothing about this page waits on a request for
+      // anything other than the product being looked at.
       unawaited(_loadSimilar(detail));
     } on ApiError catch (e) {
-      if (mounted) setState(() => _detailError = e);
-    }
-  }
-
-  /// The site's shipping settings, cached across the run by the repository.
-  Future<void> _loadShipping() async {
-    try {
-      final shipping = await StorefrontConfigRepository.instance.shipping();
-      if (mounted) setState(() => _shipping = shipping);
-    } on ApiError {
-      // Silent, and the card stays away. A promise about delivery that could
-      // not be fetched is one the page should not be making up.
+      if (mounted && fetch == _fetch) setState(() => _detailError = e);
     }
   }
 
@@ -356,7 +418,23 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     source: '1688',
     skuId: _selectedVariant?.skuId,
     specId: _selectedVariant?.specId,
+    // The ladder travels with the line when the price came from it, so the
+    // cart reprices as the quantity changes there. An option the seller
+    // prices on its own is not on the ladder.
+    tiers: _selectedVariant?.price == null ? _product.tiers : const [],
   );
+
+  /// What the freight quote is asked about.
+  ///
+  /// The same lines the cart would receive, so a figure the logistics section
+  /// shows is a figure for this order rather than for a rounded-off version of
+  /// it: a grid listing quotes every square that has a quantity typed into it,
+  /// and everything else quotes the one line it would add.
+  ///
+  /// Empty while a grid has nothing typed in yet -- there is no order to price
+  /// until there is.
+  List<CartLine> get _quoteLines =>
+      _matrix == null ? [_cartLine] : _pickedCartLines;
 
   void _openCart() {
     Navigator.of(context)
@@ -427,6 +505,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           source: '1688',
           skuId: line.$1.skuId,
           specId: line.$1.specId,
+          // As on the single-option line: the ladder goes with the line when
+          // the price came from it.
+          tiers: line.$1.price == null ? _product.tiers : const [],
         ),
       )
       .toList(growable: false);
@@ -541,6 +622,38 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// disagree about it.
   num get _unitPrice => _selectedVariant?.price ?? _product.priceAt(_quantity);
 
+  /// The quantity the bulk ladder is read at.
+  ///
+  /// The same one [_unitPrice] and [_pickedUnitPrice] pass to
+  /// [ProductDetail.priceAt], so the rung drawn as current is the rung being
+  /// charged: the stepper's count normally, and the pieces typed into the grid
+  /// where there is one.
+  int get _tierQuantity => _matrix == null ? _quantity : _pickedPieces;
+
+  /// Whether the ladder is what the shopper will actually be charged.
+  ///
+  /// A single rung is just the headline price again, and a variant that
+  /// carries its own price overrides the ladder entirely -- drawing it in
+  /// either case would put a table on the page that the total underneath
+  /// contradicts.
+  bool get _tiersGovernPrice {
+    if (_product.tiers.length < 2) return false;
+    if (_matrix == null) return _selectedVariant?.price == null;
+    // A grid can price individual squares. Where any square does, the ladder
+    // is not the whole story.
+    return _product.variants.every((v) => v.price == null);
+  }
+
+  /// The price of one to print at the top of the page.
+  ///
+  /// The rung the current quantity reaches where the ladder governs the price,
+  /// the record's own figure otherwise. The headline used to be fixed at the
+  /// listing's one-piece price, which contradicted both the ladder drawn
+  /// beneath it -- whose current rung had moved -- and the total on the buy
+  /// bar, the moment the stepper crossed a boundary.
+  num get _headlinePrice =>
+      _tiersGovernPrice ? _product.priceAt(_tierQuantity) : _product.price;
+
   /// Whether this page knows what the thing in front of the shopper costs.
   ///
   /// A catalogue row without a price seeds the preview record with zero
@@ -587,6 +700,28 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// True when the page is sitting on an option that cannot be bought -- every
   /// variant sold out, so there is nothing to default to.
   bool get _selectionUnavailable => _selectedVariant?.inStock == false;
+
+  /// Why nothing on this page can be bought right now, or null when something
+  /// can -- in which case the page keeps its buy bar.
+  ///
+  /// Only what the catalogue actually says: the product itself gone, a grid
+  /// with no option in stock, or every option sold out. One sold-out option
+  /// beside others that are in stock is not this; the others can be bought.
+  String? get _unavailableReason {
+    if (_loadingDetail) return null;
+    if (_detailError?.isNotFound ?? false) {
+      return 'This product is no longer available.';
+    }
+    final matrix = _matrix;
+    if (matrix != null) {
+      return matrix.buyable.isEmpty ? 'Every option is sold out.' : null;
+    }
+    final variants = _product.variants;
+    if (variants.isNotEmpty && variants.every((variant) => !variant.inStock)) {
+      return 'Every option is sold out.';
+    }
+    return null;
+  }
 
   void _addToCart() {
     if (_matrix != null) {
@@ -679,7 +814,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final discount = _discountPercent;
     final list = _listPrice;
     final deal = _deal;
-    final vat = product.vatIncluded;
+    // The tax inside the figure the price block is about to print, which on a
+    // laddered listing is the rung, not the record's price of one.
+    final vat = ProductDetail.vatInside(_headlinePrice);
     final sold = product.soldCount;
     final matrix = _matrix;
 
@@ -745,345 +882,504 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ),
             ],
           ),
-          SliverList.list(
-            children: [
-              // The gallery is untouched; the badge is laid over its corner and
-              // the band added beneath it.
-              if (deal == null)
-                ProductGallery(
-                  images: product.images,
-                  videoUrl: product.videoUrl,
-                  onImageTap: _openViewer,
-                  onSearchImage: _searchByImage,
-                )
-              else ...[
-                Stack(
-                  children: [
-                    ProductGallery(
-                      images: product.images,
-                      videoUrl: product.videoUrl,
-                      onImageTap: _openViewer,
-                      onSearchImage: _searchByImage,
+          if (_loadingDetail)
+            // Nothing of this product -- or of the last one -- until the
+            // record for it is in hand.
+            const SliverToBoxAdapter(child: ProductDetailSkeleton())
+          else
+            SliverList.list(
+              children: [
+                if (_detailError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: LoadFailed(
+                      compact: true,
+                      // The card's own title, price and photograph are still on
+                      // screen underneath. Saying what is missing beats replacing
+                      // a usable page with an error.
+                      message: _detailError!.isNetwork
+                          ? 'No connection, so options and specifications could '
+                                'not be loaded.'
+                          : _detailError!.message,
+                      onRetry: _loadDetail,
                     ),
-                    if (deal.discountPercent > 0)
-                      Positioned(
-                        top: 12,
-                        left: 12,
-                        child: ProductDealBadge(percent: deal.discountPercent),
+                  ),
+                Center(
+                  // 97% of the page, centred in it, which is the measure every
+                  // card down this page shares -- see [cardWidthFactor]. A
+                  // share of the width rather than a fixed inset, so it sits
+                  // right on a phone, a tablet and a desktop window.
+                  child: FractionallySizedBox(
+                    widthFactor: cardWidthFactor,
+                    // One card for everything about the thing being bought:
+                    // its photographs, its name, what it costs, which option,
+                    // how many, the summary of that choice, and how it will be
+                    // carried. They are one decision, and each of those in a
+                    // card of its own read as several.
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        // All four corners now that the card no longer runs to
+                        // the screen edges: the top-only rounding existed
+                        // because a rounded corner against the edge reads as a
+                        // card that failed to reach it.
+                        borderRadius: BorderRadius.circular(
+                          AppTheme.radiusSection,
+                        ),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant,
+                        ),
                       ),
-                  ],
-                ),
-                ProductDealBanner(
-                  deal: deal,
-                  now: widget.now,
-                  onEnded: () {
-                    if (mounted) setState(() => _dealEnded = true);
-                  },
-                ),
-              ],
-              if (_detailError != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: LoadFailed(
-                    compact: true,
-                    // The card's own title, price and photograph are still on
-                    // screen underneath. Saying what is missing beats replacing
-                    // a usable page with an error.
-                    message: _detailError!.isNetwork
-                        ? 'No connection, so options and specifications could '
-                              'not be loaded.'
-                        : _detailError!.message,
-                    onRetry: _loadDetail,
+                      // So a photograph cannot paint over the rounded top.
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // The photographs, at the top of the card and the
+                          // full width of it. The gallery is unchanged: same
+                          // aspect, same swiping, same video tab, same tap to
+                          // the full-screen viewer.
+                          if (deal == null)
+                            ProductGallery(
+                              images: product.images,
+                              videoUrl: product.videoUrl,
+                              onImageTap: _openViewer,
+                              onSearchImage: _searchByImage,
+                            )
+                          else ...[
+                            Stack(
+                              children: [
+                                ProductGallery(
+                                  images: product.images,
+                                  videoUrl: product.videoUrl,
+                                  onImageTap: _openViewer,
+                                  onSearchImage: _searchByImage,
+                                ),
+                                if (deal.discountPercent > 0)
+                                  Positioned(
+                                    top: 12,
+                                    left: 12,
+                                    child: ProductDealBadge(
+                                      percent: deal.discountPercent,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            ProductDealBanner(
+                              deal: deal,
+                              now: widget.now,
+                              onEnded: () {
+                                if (mounted) setState(() => _dealEnded = true);
+                              },
+                            ),
+                          ],
+                          // Everything the card says in words keeps its own
+                          // padding, so only the photographs touch the edges.
+                          Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  product.title,
+                                  // Three lines and then an ellipsis: wholesale titles
+                                  // run to forty words of keywords, and the price
+                                  // below is what the shopper came for.
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: ProductType.title(theme),
+                                ),
+                                const SizedBox(height: 8),
+                                // What is known about this product, beside the name where
+                                // it reads as fact rather than as a badge stuck on the
+                                // photograph.
+                                //
+                                // The rating appears only when there is one. A catalogue
+                                // with no reviews would otherwise show every product as
+                                // zero stars, and "0.0 (0)" reads as rated badly rather
+                                // than as not rated.
+                                Row(
+                                  children: [
+                                    if (product.reviewCount > 0) ...[
+                                      const Icon(
+                                        Icons.star,
+                                        size: 16,
+                                        color: AppColors.star,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        product.rating.toStringAsFixed(1),
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        '(${product.reviewCount})',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                    ],
+                                    if (sold != null)
+                                      Text(
+                                        '${_compact(sold)} sold',
+                                        style: ProductType.meta(theme),
+                                      ),
+                                    if (product.sellerName != null) ...[
+                                      const SizedBox(width: 10),
+                                      Flexible(
+                                        child: Text(
+                                          product.sellerName!,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: ProductType.meta(theme),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                // Price, saving and tax on one block so nothing about what is
+                                // owed is discoverable only further down the page.
+                                // Wrap, not Row: price + struck price + saving overflows a
+                                // 360pt phone by ~90px, and dropping the saving to a second
+                                // line beats shrinking the price until it cannot be read.
+                                // The price at the left, the minimum order at the right:
+                                // the two halves of what a wholesale listing costs, on one
+                                // line. The pill keeps its own width and the price takes
+                                // what is left, so neither pushes the other off the edge.
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: _priceBlock(
+                                        theme,
+                                        product: product,
+                                        list: list,
+                                        discount: discount,
+                                      ),
+                                    ),
+                                    if (product.minOrder > 1) ...[
+                                      const SizedBox(width: 12),
+                                      _MinOrderPill(minOrder: product.minOrder),
+                                    ],
+                                  ],
+                                ),
+                                if (vat != null) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Includes ${formatRupees(vat)} VAT',
+                                    style: ProductType.meta(theme),
+                                  ),
+                                ],
+                                // The seller's bulk ladder, where the seller
+                                // published one and where it is what decides
+                                // the price. Beside the headline figure rather
+                                // than further down the page: it explains that
+                                // figure, and it changes as the stepper below
+                                // it moves.
+                                if (_tiersGovernPrice) ...[
+                                  const SizedBox(height: 10),
+                                  _PriceTiers(
+                                    tiers: _product.tiers,
+                                    unitLabel: _product.unitLabel,
+                                    quantity: _tierQuantity,
+                                  ),
+                                ],
+                                // Only where the offer published them. The catalogue has
+                                // neither figure, so on a real payload this draws nothing
+                                // rather than a meter with nothing behind it.
+                                if (deal != null &&
+                                    (deal.item.soldPercent != null ||
+                                        deal.item.stock != null)) ...[
+                                  const SizedBox(height: 12),
+                                  ProductDealStock(
+                                    soldPercent: deal.item.soldPercent,
+                                    stock: deal.item.stock,
+                                  ),
+                                ],
+                                const SizedBox(height: 12),
+                                // Two axes are bought by the tableful; one is bought by
+                                // picking it. The grid is not forced onto a listing that
+                                // does not have the shape for it -- see [VariantMatrix].
+                                if (matrix != null) ...[
+                                  VariantMatrixTable(
+                                    matrix: matrix,
+                                    quantities: _picked,
+                                    total: _pickedTotal,
+                                    minOrder: product.minOrder,
+                                    onChanged: _setPicked,
+                                    onImageTap: _openVariantImage,
+                                  ),
+                                ] else ...[
+                                  VariantPicker(
+                                    label: product.variantLabel,
+                                    variants: product.variants,
+                                    selectedIndex: _variant,
+                                    onSelected: (i) =>
+                                        setState(() => _variant = i),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _QuantityRow(
+                                    quantity: _quantity,
+                                    minOrder: product.minOrder,
+                                    onChanged: (value) =>
+                                        setState(() => _quantity = value),
+                                  ),
+                                ],
+                                // What is about to be bought, gathered up after the
+                                // options and the count have been chosen. Inside the
+                                // same card, under a rule: the summary is a recap of
+                                // the choices above it, not a separate section.
+                                const SizedBox(height: 12),
+                                Divider(
+                                  height: 1,
+                                  thickness: 1,
+                                  color: theme.colorScheme.outlineVariant,
+                                ),
+                                const SizedBox(height: 10),
+                                ProductSummaryCard(
+                                  imageUrl:
+                                      _selectedVariant?.imageUrl ??
+                                      (product.images.isEmpty
+                                          ? null
+                                          : product.images.first),
+                                  title: product.title,
+                                  // A grid listing is bought by the tableful, so no
+                                  // single option is 'the' one -- and the grid's own
+                                  // labels carry the fitting guides it deliberately
+                                  // trims from its headers.
+                                  variantLabel: matrix == null
+                                      ? _selectedVariant?.label
+                                      : null,
+                                  // A grid listing is priced per square, so its
+                                  // summary is the pieces typed into it rather than
+                                  // the stepper's count.
+                                  unitPrice: matrix == null
+                                      ? _unitPrice
+                                      : (_pickedPieces == 0
+                                            ? 0
+                                            : _pickedTotal / _pickedPieces),
+                                  quantity: matrix == null
+                                      ? _quantity
+                                      : _pickedPieces,
+                                  unitLabel: product.unitLabel,
+                                  priceKnown: _priceKnown,
+                                ),
+                                // How it gets here, in the same card and under
+                                // the same rule as the summary: the way an order
+                                // is carried is part of what is being bought,
+                                // and a card of its own read as a separate
+                                // offer. Priced for the choices made above it.
+                                const SizedBox(height: 10),
+                                Divider(
+                                  height: 1,
+                                  thickness: 1,
+                                  color: theme.colorScheme.outlineVariant,
+                                ),
+                                const SizedBox(height: 4),
+                                ProductLogisticsSection(lines: _quoteLines),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      product.title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
-                      ),
+                // Close under the card above, by request. Sixteen left a band
+                // of empty page between the delivery options and the terms
+                // that qualify them, which read as two unrelated sections.
+                const SizedBox(height: 8),
+                // The standing guarantees, and only those. The delivery window
+                // moved into the product card with the rest of the logistics
+                // line -- drawing it here as well would be the same promise
+                // made twice, in two places that could disagree.
+                LogisticsTrustCard(assurances: product.assurances),
+                if (product.highlights.isNotEmpty) ...[
+                  // Eight between sections, everywhere down this page. It was
+                  // sixteen here and twelve below, which read as two different
+                  // rules rather than one rhythm -- and put a band of empty
+                  // page between things that describe the same product.
+                  const SizedBox(height: 8),
+                  _PanelCard(
+                    title: 'Highlights',
+                    // In the header, on the right, as the reference has it.
+                    // Null where there is nothing left to reveal: a control
+                    // that opens onto nothing is worse than none.
+                    trailing:
+                        product.highlights.length > _HighlightsGrid.compactCount
+                        ? _ViewMoreButton(
+                            expanded: _highlightsExpanded,
+                            onPressed: () => setState(
+                              () => _highlightsExpanded = !_highlightsExpanded,
+                            ),
+                          )
+                        : null,
+                    child: _HighlightsGrid(
+                      highlights: product.highlights,
+                      expanded: _highlightsExpanded,
                     ),
-                    const SizedBox(height: 8),
-                    // What is known about this product, beside the name where
-                    // it reads as fact rather than as a badge stuck on the
-                    // photograph.
-                    //
-                    // The rating appears only when there is one. A catalogue
-                    // with no reviews would otherwise show every product as
-                    // zero stars, and "0.0 (0)" reads as rated badly rather
-                    // than as not rated.
-                    Row(
-                      children: [
-                        if (product.reviewCount > 0) ...[
-                          const Icon(
-                            Icons.star,
-                            size: 16,
-                            color: AppColors.star,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            product.rating.toStringAsFixed(1),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
+                  ),
+                ],
+                const SizedBox(height: 8),
+                // Always below the Highlights card, as the design has it -- and
+                // present even when the seller wrote nothing, which on this
+                // catalogue is most of them: 1688 returns the description as a
+                // block of images with no prose in it at all. Saying so is the
+                // storefront's own answer, and it beats a section that silently
+                // is not there on one product and is on the next.
+                _PanelCard(
+                  title: 'Description',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_hasDescription) ...[
+                        Text(
+                          product.description,
+                          maxLines: _descriptionExpanded ? null : 3,
+                          overflow: _descriptionExpanded
+                              ? TextOverflow.visible
+                              : TextOverflow.ellipsis,
+                          style: ProductType.description(theme),
+                        ),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () => setState(
+                              () =>
+                                  _descriptionExpanded = !_descriptionExpanded,
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '(${product.reviewCount})',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                            // Reads as a link, like the card headers' own
+                            // control. A default text button carries a 48pt
+                            // padded tap target and a gutter of its own, which
+                            // put most of the gap between the description and
+                            // the panel below it -- and set the label in from
+                            // the prose it belongs to. Forty keeps a thumb
+                            // target; the flush left edge lines it up with the
+                            // text it opens.
+                            style: TextButton.styleFrom(
+                              foregroundColor: theme.colorScheme.primary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 0,
+                                vertical: 4,
+                              ),
+                              minimumSize: const Size(0, 40),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              textStyle: theme.textTheme.bodyMedium?.copyWith(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                        ],
-                        if (sold != null)
-                          Text(
-                            '${_compact(sold)} sold',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        if (product.sellerName != null) ...[
-                          const SizedBox(width: 10),
-                          Flexible(
                             child: Text(
-                              product.sellerName!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
+                              _descriptionExpanded ? 'Show less' : 'Read more',
+                            ),
+                          ),
+                        ),
+                      ] else ...[
+                        Text(
+                          'The seller has not written a description for this '
+                          'product.',
+                          style: ProductType.description(
+                            theme,
+                          ).copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                        // Where the rest of what they did supply actually is.
+                        // Both are real sections on this page, and neither is
+                        // opened for them: this only says where to look.
+                        if (product.specs.isNotEmpty ||
+                            product.detailImages.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            _elsewhere(product),
+                            style: ProductType.meta(theme)
+                                .copyWith(height: 1.35),
+                          ),
+                        ],
+                      ],
+                    ],
+                  ),
+                ),
+                // Two panels rather than a strip of tabs. Both start closed:
+                // between them they run to a screen or three of table and
+                // photography, and a shopper looking for the ratings below
+                // should not have to scroll past all of it.
+                //
+                // Each is drawn only when the listing has something to put in
+                // it, so neither is ever a control that opens onto nothing.
+                //
+                // One gap, not two: this was a 4 and an 8 stacked, which is a
+                // twelve nobody chose.
+                const SizedBox(height: 8),
+                if (product.specs.isNotEmpty)
+                  ProductSectionPanel(
+                    title: 'Specifications',
+                    child: _SpecTable(specs: product.specs),
+                  ),
+                if (product.detailImages.isNotEmpty)
+                  ProductSectionPanel(
+                    title: 'Detail images',
+                    // Said on the closed panel, so the count is known before it
+                    // is opened -- which is what the old tab label carried.
+                    trailingLabel: '${product.detailImages.length}',
+                    child: ProductDetailImages(
+                      images: product.detailImages,
+                      onImageTap: _openDetailImage,
+                    ),
+                  ),
+                if (product.ratingSummary != null) ...[
+                  _SectionTitle('Ratings and reviews'),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                    child: RatingsSummary(
+                      summary: product.ratingSummary!,
+                      reviews: product.reviews,
+                    ),
+                  ),
+                ],
+                if (_similar.isNotEmpty)
+                  // A grid rather than a rail: two cards across, the same shape
+                  // the home page's "Discover something new" uses, so the shelf
+                  // reads as a set to browse rather than one more thing to swipe
+                  // at the bottom of a long page. The column count is the card's
+                  // own `columnsFor`, so it stays right on a wider screen.
+                  ProductGrid(
+                    title: 'More in ${product.category ?? 'this department'}',
+                    leadingIcon: Icons.compare_arrows,
+                    products: _similar,
+                    onSeeAll: product.categoryCid == null
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => SearchResultsScreen(
+                                query: '',
+                                categoryCid: product.categoryCid,
                               ),
                             ),
                           ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    // Price, saving and tax on one block so nothing about what is
-                    // owed is discoverable only further down the page.
-                    // Wrap, not Row: price + struck price + saving overflows a
-                    // 360pt phone by ~90px, and dropping the saving to a second
-                    // line beats shrinking the price until it cannot be read.
-                    // The price at the left, the minimum order at the right:
-                    // the two halves of what a wholesale listing costs, on one
-                    // line. The pill keeps its own width and the price takes
-                    // what is left, so neither pushes the other off the edge.
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: _priceBlock(
-                            theme,
-                            product: product,
-                            list: list,
-                            discount: discount,
-                          ),
-                        ),
-                        if (product.minOrder > 1) ...[
-                          const SizedBox(width: 12),
-                          _MinOrderPill(minOrder: product.minOrder),
-                        ],
-                      ],
-                    ),
-                    if (vat != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Includes ${formatRupees(vat)} VAT',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    // Only where the offer published them. The catalogue has
-                    // neither figure, so on a real payload this draws nothing
-                    // rather than a meter with nothing behind it.
-                    if (deal != null &&
-                        (deal.item.soldPercent != null ||
-                            deal.item.stock != null)) ...[
-                      const SizedBox(height: 12),
-                      ProductDealStock(
-                        soldPercent: deal.item.soldPercent,
-                        stock: deal.item.stock,
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    // Two axes are bought by the tableful; one is bought by
-                    // picking it. The grid is not forced onto a listing that
-                    // does not have the shape for it -- see [VariantMatrix].
-                    if (matrix != null) ...[
-                      VariantMatrixTable(
-                        matrix: matrix,
-                        quantities: _picked,
-                        total: _pickedTotal,
-                        minOrder: product.minOrder,
-                        onChanged: _setPicked,
-                        onImageTap: _openVariantImage,
-                      ),
-                    ] else ...[
-                      VariantPicker(
-                        label: product.variantLabel,
-                        variants: product.variants,
-                        selectedIndex: _variant,
-                        onSelected: (i) => setState(() => _variant = i),
-                      ),
-                      const SizedBox(height: 16),
-                      _QuantityRow(
-                        quantity: _quantity,
-                        minOrder: product.minOrder,
-                        onChanged: (value) => setState(() => _quantity = value),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Directly above the returns and warranty row, which is the rest
-              // of what a buyer checks before committing.
-              if (_shipping != null)
-                DeliveryGuaranteeCard(guarantee: _shipping!.guarantee),
-              const SizedBox(height: 14),
-              AssuranceRow(assurances: product.assurances),
-              if (product.highlights.isNotEmpty) ...[
+                  ),
                 const SizedBox(height: 16),
-                _PanelCard(
-                  title: 'Highlights',
-                  child: _HighlightsGrid(
-                    highlights: product.highlights,
-                    expanded: _highlightsExpanded,
-                    onToggle: () => setState(
-                      () => _highlightsExpanded = !_highlightsExpanded,
-                    ),
-                  ),
-                ),
               ],
-              const SizedBox(height: 12),
-              // Always below the Highlights card, as the design has it -- and
-              // present even when the seller wrote nothing, which on this
-              // catalogue is most of them: 1688 returns the description as a
-              // block of images with no prose in it at all. Saying so is the
-              // storefront's own answer, and it beats a section that silently
-              // is not there on one product and is on the next.
-              _PanelCard(
-                title: 'Description',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_hasDescription) ...[
-                      Text(
-                        product.description,
-                        maxLines: _descriptionExpanded ? null : 3,
-                        overflow: _descriptionExpanded
-                            ? TextOverflow.visible
-                            : TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          height: 1.4,
-                        ),
-                      ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton(
-                          onPressed: () => setState(
-                            () => _descriptionExpanded = !_descriptionExpanded,
-                          ),
-                          child: Text(
-                            _descriptionExpanded ? 'Show less' : 'Read more',
-                          ),
-                        ),
-                      ),
-                    ] else ...[
-                      Text(
-                        'The seller has not written a description for this '
-                        'product.',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          height: 1.4,
-                        ),
-                      ),
-                      // Where the rest of what they did supply actually is.
-                      // Both are real sections on this page, and neither is
-                      // opened for them: this only says where to look.
-                      if (product.specs.isNotEmpty ||
-                          product.detailImages.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          _elsewhere(product),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 4),
-              // Two panels rather than a strip of tabs. Both start closed:
-              // between them they run to a screen or three of table and
-              // photography, and a shopper looking for the ratings below
-              // should not have to scroll past all of it.
-              //
-              // Each is drawn only when the listing has something to put in
-              // it, so neither is ever a control that opens onto nothing.
-              const SizedBox(height: 8),
-              if (product.specs.isNotEmpty)
-                ProductSectionPanel(
-                  title: 'Specifications',
-                  child: _SpecTable(specs: product.specs),
-                ),
-              if (product.detailImages.isNotEmpty)
-                ProductSectionPanel(
-                  title: 'Detail images',
-                  // Said on the closed panel, so the count is known before it
-                  // is opened -- which is what the old tab label carried.
-                  trailingLabel: '${product.detailImages.length}',
-                  child: ProductDetailImages(
-                    images: product.detailImages,
-                    onImageTap: _openDetailImage,
-                  ),
-                ),
-              if (product.ratingSummary != null) ...[
-                _SectionTitle('Ratings and reviews'),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                  child: RatingsSummary(
-                    summary: product.ratingSummary!,
-                    reviews: product.reviews,
-                  ),
-                ),
-              ],
-              if (_similar.isNotEmpty)
-                // A grid rather than a rail: two cards across, the same shape
-                // the home page's "Discover something new" uses, so the shelf
-                // reads as a set to browse rather than one more thing to swipe
-                // at the bottom of a long page. The column count is the card's
-                // own `columnsFor`, so it stays right on a wider screen.
-                ProductGrid(
-                  title: 'More in ${product.category ?? 'this department'}',
-                  leadingIcon: Icons.compare_arrows,
-                  products: _similar,
-                  onSeeAll: product.categoryCid == null
-                      ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => SearchResultsScreen(
-                              query: '',
-                              categoryCid: product.categoryCid,
-                            ),
-                          ),
-                        ),
-                ),
-              const SizedBox(height: 24),
-            ],
-          ),
+            ),
         ],
       ),
-      bottomNavigationBar: _BuyBar(
+      // A product nobody can buy right now gets the one thing that can be
+      // done about it, in the place the buttons that would refuse used to be.
+      bottomNavigationBar: _unavailableReason != null
+          ? RestockRequestBar(product: _product, reason: _unavailableReason!)
+          : _BuyBar(
+        // Held back while the record is in flight: the bar buys a variant
+        // and a quantity this page does not know yet, and a price that
+        // changes under a finger already on the button is worse than a
+        // button that waits a moment for its figure.
+        loading: _loadingDetail,
         total: matrix == null ? _unitPrice * _quantity : _pickedTotal,
         // What the bar is about to buy, when that is more than one thing. The
         // picker path buys the one option named above it and needs no caption.
@@ -1096,7 +1392,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         // in the summary directly above, so a dead button here is not a dead
         // end. Refusing the tap is also what stops a Rs. 0 line reaching the
         // cart, where it would be charged as free.
-        enabled: (matrix == null || _pickedPieces > 0) && _priceKnown,
+        enabled:
+            !_loadingDetail &&
+            (matrix == null || _pickedPieces > 0) &&
+            _priceKnown,
         // Until there is a price to show, the button asks for one instead of
         // printing Rs. 0 -- which reads as a free product rather than as a
         // question the shopper has not answered yet.
@@ -1117,25 +1416,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 /// them behind a chevron saves a few hundred pixels and costs the shopper
 /// the tap that answers "is this the right thing".
 class _HighlightsGrid extends StatelessWidget {
-  const _HighlightsGrid({
-    required this.highlights,
-    this.expanded = false,
-    this.onToggle,
-  });
+  const _HighlightsGrid({required this.highlights, this.expanded = false});
 
   final List<ProductSpec> highlights;
 
   /// Whether every fact is on screen, or only the first [compactCount].
   final bool expanded;
 
-  /// Null where there is nothing to expand -- and then no control is drawn,
-  /// because a "View more" that reveals nothing is worse than none.
-  final VoidCallback? onToggle;
-
   /// Three rows of two: enough to answer "is this the right thing" without
   /// pushing the description off the screen.
   static const compactCount = 6;
 
+  /// The reference draws the facts as a ruled table: two columns split by a
+  /// hairline, a hairline between each pair of rows, and the control in the
+  /// card's own header rather than under the grid.
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1143,95 +1437,91 @@ class _HighlightsGrid extends StatelessWidget {
     final shown = expanded
         ? highlights
         : highlights.take(compactCount).toList(growable: false);
-    final more = highlights.length - compactCount;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const gap = 12.0;
-        final columnWidth = (constraints.maxWidth - gap) / 2;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // The grid itself, unchanged: same two columns, same gaps, same
-            // type. Only how many rows it is given changes.
-            AnimatedSize(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: _grid(theme, shown, columnWidth, gap),
-            ),
-            if (onToggle != null && more > 0) ...[
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: onToggle,
-                  child: Text(expanded ? 'View less' : 'View more'),
-                ),
+    // Two at a time, because the rule between the columns has to run the
+    // full height of the pair it separates.
+    final rows = <List<ProductSpec>>[
+      for (var i = 0; i < shown.length; i += 2)
+        shown.sublist(i, i + 2 > shown.length ? shown.length : i + 2),
+    ];
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final row in rows) ...[
+            if (row != rows.first)
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: theme.colorScheme.outlineVariant,
               ),
-            ],
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _cell(theme, row.first, first: true)),
+                  // No rule against an empty half: an odd number of facts
+                  // leaves the last row single, and a divider with nothing
+                  // beyond it reads as something failing to load.
+                  if (row.length > 1) ...[
+                    VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: theme.colorScheme.outlineVariant,
+                    ),
+                    Expanded(child: _cell(theme, row[1], first: false)),
+                  ] else
+                    const Expanded(child: SizedBox.shrink()),
+                ],
+              ),
+            ),
           ],
-        );
-      },
+        ],
+      ),
     );
   }
 
-  Widget _grid(
-    ThemeData theme,
-    List<ProductSpec> items,
-    double columnWidth,
-    double gap,
-  ) {
-    return Wrap(
-      spacing: gap,
-      runSpacing: 16,
-      children: [
-        for (final item in items)
-          SizedBox(
-            width: columnWidth,
-            child: Row(
+  /// One fact: its mark, what it is called, and what it says.
+  Widget _cell(ThemeData theme, ProductSpec item, {required bool first}) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(first ? 0 : 14, 10, first ? 14 : 0, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // A mark for the kind of fact this is, as the design has it.
+          // Chosen from the label the seller filed it under, and a neutral
+          // one where that says nothing recognisable -- the icon is a hint,
+          // never the information.
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(
+              _iconFor(item.label),
+              size: 22,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // A mark for the kind of fact this is, as the design has
-                // it. Chosen from the label the seller filed it under, and
-                // a neutral one where that says nothing recognisable --
-                // the icon is a hint, never the information.
-                Icon(
-                  _iconFor(item.label),
-                  size: 18,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // The caption, one step up from 11pt: it names what
-                      // the fact underneath it is -- Brand, Model -- and at
-                      // the old size it was the smallest type on the page.
-                      Text(
-                        item.label,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      // The fact itself, which is what a shopper is
-                      // scanning this block for.
-                      Text(
-                        item.value,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // The caption: it names what the fact underneath it is --
+                // Brand, Origin -- and is the quieter of the two.
+                Text(item.label, style: ProductType.attributeLabel(theme)),
+                const SizedBox(height: 2),
+                // The fact itself, which is what a shopper is scanning this
+                // block for.
+                Text(item.value, style: ProductType.attributeValue(theme)),
               ],
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1272,6 +1562,48 @@ class _HighlightsGrid extends StatelessWidget {
   }
 }
 
+/// The header control that opens the rest of a card.
+///
+/// A text button stripped to its label and chevron: the reference sets it
+/// in the header's quiet colour rather than as a filled control, and it is
+/// meant to be read as a link.
+class _ViewMoreButton extends StatelessWidget {
+  const _ViewMoreButton({required this.expanded, required this.onPressed});
+
+  final bool expanded;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        // Trust Blue, as every other thing on this page that can be pressed
+        // is: the header's quiet grey read as a caption rather than as a
+        // control, so nobody knew there was anything to open.
+        foregroundColor: theme.colorScheme.primary,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: theme.textTheme.bodyMedium?.copyWith(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(expanded ? 'View less' : 'View more'),
+          const SizedBox(width: 2),
+          Icon(expanded ? Icons.chevron_left : Icons.chevron_right, size: 18),
+        ],
+      ),
+    );
+  }
+}
+
 /// "Min. order: 500 pcs".
 class _MinOrderPill extends StatelessWidget {
   const _MinOrderPill({required this.minOrder});
@@ -1295,15 +1627,11 @@ class _MinOrderPill extends StatelessWidget {
             children: [
               TextSpan(
                 text: 'Min. order: ',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                style: ProductType.minOrder(theme),
               ),
               TextSpan(
                 text: '$minOrder pcs',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+                style: ProductType.minOrderValue(theme),
               ),
             ],
           ),
@@ -1313,39 +1641,60 @@ class _MinOrderPill extends StatelessWidget {
   }
 }
 
+/// The width the cards down this page share.
+const cardWidthFactor = 0.97;
+
 /// A titled white card, which is the shape the design gives Highlights and
 /// Description.
 class _PanelCard extends StatelessWidget {
-  const _PanelCard({required this.title, required this.child});
+  const _PanelCard({required this.title, required this.child, this.trailing});
 
   final String title;
   final Widget child;
+
+  /// Sits at the right of the header, level with the title.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+    // 97% of the page, centred in it: the margin is a share of the width
+    // rather than a fixed inset, so the card sits right on a phone, a tablet
+    // and a desktop window. The same measure as the two panels below it.
+    return Center(
+      child: FractionallySizedBox(
+        widthFactor: cardWidthFactor,
+        child: Container(
+          // 16 all round, and the same 16 corner the logistics block above it
+          // carries, so the three cards down this page read as one stack.
+          // Trimmed a little at top and bottom. The heading and the content
+          // keep their own spacing inside; what went was the card's own margin
+          // around them, which is what made every panel taller than its words.
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(AppTheme.radiusSection),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: ProductType.sectionHeading(theme),
+                    ),
+                  ),
+                  ?trailing,
+                ],
               ),
-            ),
-            const SizedBox(height: 12),
-            child,
-          ],
+              const SizedBox(height: 8),
+              child,
+            ],
+          ),
         ),
       ),
     );
@@ -1360,7 +1709,7 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: Text(
         label,
         style: Theme.of(context).textTheme.titleSmall
@@ -1392,12 +1741,7 @@ class _QuantityRow extends StatelessWidget {
 
     return Row(
       children: [
-        Text(
-          'Quantity',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        Text('Quantity', style: ProductType.quantityLabel(theme)),
         const SizedBox(width: 12),
         DecoratedBox(
           decoration: BoxDecoration(
@@ -1412,22 +1756,37 @@ class _QuantityRow extends StatelessWidget {
                 tooltip: 'Fewer',
                 onPressed: canDecrease ? () => onChanged(quantity - 1) : null,
               ),
-              ConstrainedBox(
-                // Room for a wholesale figure: a 500-piece minimum runs to
-                // four digits, and 28pt clipped it.
-                constraints: const BoxConstraints(minWidth: 44),
-                child: Text(
-                  '$quantity',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
+              // Tap to type. The upper rungs of a quantity ladder are hundreds
+              // or thousands of pieces, and the stepper alone is a thousand
+              // taps from the next price.
+              Semantics(
+                button: true,
+                label: 'Quantity $quantity. Tap to type a quantity.',
+                excludeSemantics: true,
+                child: InkWell(
+                  key: const ValueKey('quantity-value'),
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () => _type(context),
+                  child: ConstrainedBox(
+                    // Room for a wholesale figure: a 500-piece minimum runs to
+                    // four digits, and 28pt clipped it.
+                    constraints: const BoxConstraints(minWidth: 44),
+                    child: Text(
+                      '$quantity',
+                      textAlign: TextAlign.center,
+                      style: ProductType.quantityValue(theme),
+                    ),
                   ),
                 ),
               ),
               IconButton(
                 icon: const Icon(Icons.add, size: 18),
                 tooltip: 'More',
-                onPressed: () => onChanged(quantity + 1),
+                // The cart's own ceiling, so the page never offers a quantity
+                // the cart would quietly cut.
+                onPressed: quantity < CartStore.maxPerLine
+                    ? () => onChanged(quantity + 1)
+                    : null,
               ),
             ],
           ),
@@ -1436,6 +1795,89 @@ class _QuantityRow extends StatelessWidget {
         // The floor is stated up beside the price now, on the pill the design
         // puts there. Repeating it here was the same fact twice, and at four
         // digits it was what pushed this row off the edge.
+      ],
+    );
+  }
+
+  Future<void> _type(BuildContext context) async {
+    final value = await showDialog<int>(
+      context: context,
+      builder: (_) => _QuantityDialog(
+        initial: quantity,
+        minOrder: minOrder,
+        max: CartStore.maxPerLine,
+      ),
+    );
+    if (value != null && value != quantity) onChanged(value);
+  }
+}
+
+/// A typed quantity, refused with the reason when it cannot be ordered.
+class _QuantityDialog extends StatefulWidget {
+  const _QuantityDialog({
+    required this.initial,
+    required this.minOrder,
+    required this.max,
+  });
+
+  final int initial;
+  final int minOrder;
+  final int max;
+
+  @override
+  State<_QuantityDialog> createState() => _QuantityDialogState();
+}
+
+class _QuantityDialogState extends State<_QuantityDialog> {
+  late final _controller = TextEditingController(text: '${widget.initial}');
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final value = int.tryParse(_controller.text.trim());
+    final String? error;
+    if (value == null) {
+      error = 'Enter a whole number of pieces.';
+    } else if (value < widget.minOrder) {
+      error = 'The minimum order is ${widget.minOrder}.';
+    } else if (value > widget.max) {
+      error = 'The most one order can take is ${widget.max}.';
+    } else {
+      error = null;
+    }
+    if (error != null) {
+      setState(() => _error = error);
+      return;
+    }
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Quantity'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _submit(),
+        decoration: InputDecoration(
+          helperText: 'Minimum ${widget.minOrder}',
+          errorText: _error,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Set')),
       ],
     );
   }
@@ -1471,7 +1913,7 @@ class _SpecTable extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
-                  vertical: 10,
+                  vertical: 8,
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1515,7 +1957,13 @@ class _BuyBar extends StatelessWidget {
     this.subtitle,
     this.enabled = true,
     this.selectionPrompt,
+    this.loading = false,
   });
+
+  /// Whether the product this bar is for is still being fetched. The bar
+  /// keeps its height -- it is what the page is laid out against -- and
+  /// shows a bone where the total will be.
+  final bool loading;
 
   final num total;
 
@@ -1555,9 +2003,7 @@ class _BuyBar extends StatelessWidget {
                   subtitle!,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  style: ProductType.meta(theme),
                 ),
                 const SizedBox(height: 6),
               ],
@@ -1566,16 +2012,40 @@ class _BuyBar extends StatelessWidget {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: enabled ? onAddToCart : null,
+                      style: OutlinedButton.styleFrom(
+                        textStyle: ProductType.cta(theme),
+                      ),
                       icon: const Icon(Icons.add_shopping_cart, size: 18),
-                      label: const Text('Add to cart'),
+                      label: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Add to cart', maxLines: 1),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
                       onPressed: enabled ? onBuyNow : null,
-                      child: Text(
-                        selectionPrompt ?? 'Buy · ${formatRupees(total)}',
+                      style: ElevatedButton.styleFrom(
+                        // White on the brand blue, stated rather than
+                        // inherited: this is the one control on the page
+                        // that must not lose its contrast to a theme tweak.
+                        foregroundColor: Colors.white,
+                        textStyle: ProductType.cta(theme),
+                      ),
+                      // A six-figure wholesale total is wider than half a
+                      // phone at 15pt, and a button whose label wraps onto
+                      // two lines reads as broken. It shrinks to fit rather
+                      // than wrapping or clipping the figure being agreed.
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          loading
+                              ? 'Buy'
+                              : selectionPrompt ??
+                                    'Buy · ${formatRupees(total)}',
+                          maxLines: 1,
+                        ),
                       ),
                     ),
                   ),
@@ -1583,6 +2053,164 @@ class _BuyBar extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The seller's bulk ladder, as the backend published it.
+///
+/// Every figure here comes off `quantityTiers` in the product record --
+/// thresholds, prices, and the unit they are counted in. Nothing is computed
+/// except the top of each band, which is the next threshold less one, and the
+/// last band which has no top at all.
+///
+/// Drawn only where the ladder is what the shopper will actually be charged:
+/// [ProductDetail.priceAt] is the same function the cart line and the buy bar
+/// use, so the highlighted rung and the total below it cannot disagree.
+class _PriceTiers extends StatelessWidget {
+  const _PriceTiers({
+    required this.tiers,
+    required this.unitLabel,
+    required this.quantity,
+  });
+
+  final List<QuantityTier> tiers;
+
+  /// What the seller counts in -- pcs, pairs, sets. Theirs, not ours.
+  final String unitLabel;
+
+  /// What is currently being bought, which decides the rung.
+  final int quantity;
+
+  /// The rung this quantity falls on, or -1 while it is under the first one.
+  int get _activeIndex {
+    var active = -1;
+    for (var i = 0; i < tiers.length; i++) {
+      if (quantity >= tiers[i].minQuantity) active = i;
+    }
+    return active;
+  }
+
+  /// "100 - 9,999" for a band with a next rung above it, "10,000+" for the last.
+  String _band(int i) {
+    final from = _grouped(tiers[i].minQuantity);
+    if (i == tiers.length - 1) return '$from+';
+    return '$from - ${_grouped(tiers[i + 1].minQuantity - 1)}';
+  }
+
+  static String _grouped(int n) {
+    final digits = n.toString();
+    final out = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) out.write(',');
+      out.write(digits[i]);
+    }
+    return out.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final active = _activeIndex;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < tiers.length; i++) ...[
+            if (i > 0)
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: theme.colorScheme.outlineVariant,
+              ),
+            _TierRow(
+              band: '${_band(i)} $unitLabel',
+              price: tiers[i].price!,
+              // The tick and the tint say the same thing twice on purpose:
+              // colour alone is not an answer for a shopper who cannot see it.
+              current: i == active,
+              quantity: quantity,
+              first: i == 0,
+              last: i == tiers.length - 1,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TierRow extends StatelessWidget {
+  const _TierRow({
+    required this.band,
+    required this.price,
+    required this.current,
+    required this.quantity,
+    required this.first,
+    required this.last,
+  });
+
+  final String band;
+  final num price;
+  final bool current;
+  final int quantity;
+  final bool first;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ink = current
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurface;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: current
+            ? theme.colorScheme.primary.withValues(alpha: 0.06)
+            : null,
+        // Only the corners that are actually corners, so the tint does not
+        // square off the card it sits inside.
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(first ? AppTheme.radiusCard : 0),
+          bottom: Radius.circular(last ? AppTheme.radiusCard : 0),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Row(
+          children: [
+            if (current) ...[
+              Icon(Icons.check, size: 14, color: theme.colorScheme.primary),
+              const SizedBox(width: 5),
+            ],
+            Expanded(
+              child: Text(
+                band,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: current ? ink : theme.colorScheme.onSurfaceVariant,
+                  fontWeight: current ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              formatRupees(price),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: ink,
+                fontWeight: current ? FontWeight.w800 : FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );

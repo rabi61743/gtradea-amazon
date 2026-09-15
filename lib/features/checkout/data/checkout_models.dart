@@ -50,6 +50,39 @@ class CheckoutAddress {
   static String? _orNull(String? value) =>
       (value == null || value.isEmpty) ? null : value;
 
+  /// Just the digits, with a country code dropped.
+  ///
+  /// Shoppers type these every way there is -- `+977 9801-234567`,
+  /// `9779801234567`, `9801 234 567` -- and all three are the same number.
+  static String localDigits(String raw) {
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    return digits.startsWith('977') ? digits.substring(3) : digits;
+  }
+
+  /// What is wrong with [raw] as a number to ring about a delivery, or null
+  /// when nothing is.
+  ///
+  /// Lives here beside [fromAddress] rather than in the screen, because this
+  /// is the file that decides what the order actually carries: a number the
+  /// form accepted but this could not turn into an E.164 string would be an
+  /// order refused at the last step.
+  static String? phoneProblem(String raw) {
+    final local = localDigits(raw);
+    if (local.isEmpty) return 'Add a phone number the courier can ring.';
+
+    // Nepali mobiles are ten digits and begin with a 9. Landlines are shorter
+    // and begin with their area code, so they are checked by length alone --
+    // rejecting a valid landline because it is not a mobile would be worse
+    // than accepting one the courier has to ring twice.
+    if (local.startsWith('9') && local.length != 10) {
+      return 'A mobile number is 10 digits, e.g. 9801234567.';
+    }
+    if (local.length < 7 || local.length > 14) {
+      return 'That does not look like a complete phone number.';
+    }
+    return null;
+  }
+
   /// Built from a saved address.
   ///
   /// [fallbackPhone] is the account's own number, used when the address has

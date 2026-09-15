@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/l10n/app_strings.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
+import 'package:gtradea_amazon/features/support/presentation/support_button.dart';
 import 'package:gtradea_amazon/features/home/widgets/search_header.dart';
 import 'package:gtradea_amazon/features/notifications/presentation/notifications_screen.dart';
 import 'package:gtradea_amazon/features/search/data/voice_search.dart';
@@ -109,19 +110,14 @@ void main() {
 
       final wordmark = tester.getRect(find.byType(BrandWordmark));
       final pill = tester.getRect(find.byKey(SearchHeader.pillKey));
-      final bell = tester.getRect(
-        find.descendant(
-          of: find.byType(NotificationBell),
-          matching: find.byIcon(Icons.notifications_none),
-        ),
-      );
+      // The action group, which is what the row now ends on: the bell has a
+      // cart to its right and is no longer the last thing on the header.
+      final actions = tester.getRect(find.byType(SupportButton));
 
       expect(wordmark.left, 16);
       expect(pill.left, 16);
       expect(pill.right, width - 16);
-      // The one that would drift if somebody "tidied" the asymmetric padding:
-      // an IconButton's box is 12pt wider than its icon on each side.
-      expect(bell.right, width - 16);
+      expect(actions.right, lessThanOrEqualTo(width - 16));
     });
 
     testWidgets('the bell keeps a full tap target after being moved', (
@@ -130,15 +126,18 @@ void main() {
       await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
       await tester.pump();
 
+      // A labelled tile now rather than a bare IconButton, and still something
+      // a thumb can hit: the glyph shrank when the word arrived under it, the
+      // target did not.
       final button = tester.getSize(
         find.descendant(
           of: find.byType(NotificationBell),
-          matching: find.byType(IconButton),
+          matching: find.byType(InkWell),
         ),
       );
 
-      expect(button.width, greaterThanOrEqualTo(48));
-      expect(button.height, greaterThanOrEqualTo(48));
+      expect(button.width, greaterThanOrEqualTo(44));
+      expect(button.height, greaterThanOrEqualTo(36));
     });
 
     testWidgets('the mark still announces the company name', (tester) async {

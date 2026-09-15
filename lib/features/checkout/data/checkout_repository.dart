@@ -13,6 +13,14 @@ class DeliveryQuote {
     this.vat = 0,
     this.vatPercent = 13,
     this.mode = 'charge',
+    this.quoteId,
+    this.district,
+    this.chargeableKg,
+    this.weightBasis,
+    this.freightSubtotal,
+    this.freightSource,
+    this.combineDiscount = 0,
+    this.unpriceable = false,
   });
 
   /// The freight figure, VAT included.
@@ -30,21 +38,75 @@ class DeliveryQuote {
   /// does, 'off' means there is no quote at all.
   final String mode;
 
+  /// The server's own id for this quote, where it gave one.
+  final String? quoteId;
+
+  /// Where it was priced to. The server echoes the district back, which is the
+  /// only confirmation the app has that it priced the destination it was asked
+  /// about.
+  final String? district;
+
+  /// What the freight was actually charged on, and on which basis -- the
+  /// server compares real and volumetric weight and bills the higher.
+  final num? chargeableKg;
+  final String? weightBasis;
+
+  /// The carriage before tax, where the server itemised it.
+  final num? freightSubtotal;
+
+  /// Where the figure came from: 'api' is a live rate from the carrier,
+  /// anything else is the shop's own table. Null where the server did not say.
+  final String? freightSource;
+
+  /// What combining this order with others took off, where the shop runs that.
+  final num combineDiscount;
+
+  /// The server could not price the carriage upstream and fell back to its own
+  /// minimum. Its own flag, not a guess made here.
+  final bool unpriceable;
+
   bool get isCollectedUpfront => mode == 'charge';
+
+  /// Nothing to pay for carriage. Distinct from having no quote at all, which
+  /// is null -- see [fromJson].
+  bool get isFree => total <= 0;
 
   /// Null rather than an empty quote when there is nothing to quote: the
   /// delivery block is hidden entirely, and the VAT rate falls back.
   static DeliveryQuote? fromJson(Map<String, dynamic> json) {
     final mode = asString(json['mode']) ?? 'charge';
-    final total = asNum(json['total']) ?? 0;
-    if (mode == 'off' || total <= 0) return null;
+    // 'off' is the shop saying it does not quote carriage at all, and there is
+    // nothing to show. A total of zero is not that: it is a quote, and what it
+    // says is that carriage is free. Folding the two together hid free
+    // delivery behind the same silence as no delivery quote.
+    if (mode == 'off') return null;
 
+    final total = asNum(json['total']) ?? 0;
     final breakdown = asMap(json['breakdown']);
+    final flags = asMap(breakdown['flags']);
+    final lines = breakdown['lines'];
+
     return DeliveryQuote(
       total: total,
       vat: asNum(breakdown['vat']) ?? 0,
       vatPercent: asNum(breakdown['vat_pct']) ?? 13,
       mode: mode,
+      quoteId: asString(json['quote_id']),
+      district: asString(breakdown['district']),
+      chargeableKg: asNum(breakdown['chargeable_kg']),
+      weightBasis: asString(breakdown['weight_basis']),
+      freightSubtotal: asNum(breakdown['logistic_subtotal']),
+      // The carrier the server priced the first line against. One source for
+      // the quote, because one quote is what the server returns.
+      freightSource: lines is List && lines.isNotEmpty && lines.first is Map
+          ? asString(
+              (lines.first as Map).cast<String, dynamic>()['freight_source'],
+            )
+          : null,
+      combineDiscount: asNum(breakdown['combine_discount']) ?? 0,
+      unpriceable:
+          asBool(flags['china_freight_unavailable']) ||
+          asBool(flags['china_freight_missing']),
     );
   }
 }
@@ -148,15 +210,28 @@ class CheckoutRepository {
   ///
   /// Every failure falls back to no quote rather than blocking checkout: a
   /// shopper who cannot get a freight estimate should still be able to order.
+  ///
+  /// [rethrowFailures] is for the one caller that has somewhere to say so --
+  /// the logistics flyout, which offers a retry. Everywhere else a failed
+  /// quote and an unpriced one are the same thing: no figure to show.
   Future<DeliveryQuote?> deliveryCharge({
     required String district,
     required String shippingMode,
     List<String> selectedCartItemIds = const [],
     List<CartLine> guestLines = const [],
+    bool rethrowFailures = false,
+    bool asGuest = false,
   }) async {
     try {
       final res = await _dio.post(
         '/checkout/delivery-charge',
+        // Unauthenticated on request. The endpoint honours `guestCartItems`
+        // only for an anonymous call -- with a credential it prices the
+        // account's own basket and ignores what it is handed. A product page
+        // wants the freight for the lines in front of the shopper, so it asks
+        // without one; the cart and the checkout, which do want the account's
+        // basket, ask with one.
+        options: asGuest ? guestCall : null,
         data: {
           'district': district,
           'shippingMode': shippingMode,
@@ -183,7 +258,18 @@ class CheckoutRepository {
         },
       );
       return DeliveryQuote.fromJson(asMap(res.data));
-    } catch (_) {
+    } catch (error) {
+      if (rethrowFailures) {
+        throw switch (error) {
+          ApiError() => error,
+          DioException() => ApiError.fromDio(error),
+          _ => ApiError(
+            statusCode: null,
+            message: 'The freight quote could not be read.',
+            local: true,
+          ),
+        };
+      }
       return null;
     }
   }

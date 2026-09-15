@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/images/app_images.dart';
+import '../presentation/video_viewer_screen.dart';
 import 'product_video.dart';
 
 /// Swipeable product photography.
@@ -125,6 +126,9 @@ class _ProductGalleryState extends State<ProductGallery>
     super.didChangeDependencies();
     _reducedMotion = MediaQuery.of(context).disableAnimations;
     _sync();
+    // Needs a context to resolve against, which is why it is here rather than
+    // in initState.
+    _measure();
   }
 
   @override
@@ -186,6 +190,7 @@ class _ProductGalleryState extends State<ProductGallery>
 
   @override
   void dispose() {
+    _dropStream();
     _timer?.cancel();
     _progress.dispose();
     _controller.dispose();
@@ -194,6 +199,10 @@ class _ProductGalleryState extends State<ProductGallery>
 
   void _onPageChanged(int i) {
     setState(() => _index = i);
+    // The box follows the picture on screen: a square photograph and a portrait
+    // one in the same gallery are two shapes, and holding one box for both is
+    // what put a band around them.
+    _measure();
     // Restart the countdown from the picture now on screen, whether it arrived
     // by timer, by swipe or by thumbnail. Anything else leaves the bar
     // describing the previous picture's remaining time.
@@ -270,6 +279,61 @@ class _ProductGalleryState extends State<ProductGallery>
     );
   }
 
+  /// The shape of the photograph on show, once it has decoded.
+  ///
+  /// Null until then, and null for a product with no photographs at all -- the
+  /// box falls back to [_defaultRatio], which is what it always was.
+  double? _ratio;
+
+  /// What the box is before a picture has been measured, and the bounds any
+  /// measurement is held to.
+  static const _defaultRatio = 0.88;
+  static const _minRatio = 0.7;
+  static const _maxRatio = 1.4;
+
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+
+  /// Measures the photograph now on show.
+  ///
+  /// The decoded size, from the image itself rather than from anything the
+  /// server said about it: the catalogue publishes no dimensions, and a shape
+  /// guessed wrong is exactly the band this is here to remove.
+  void _measure() {
+    final images = widget.images;
+    if (images.isEmpty) return;
+    final index = _index.clamp(0, images.length - 1);
+
+    final stream = AppImages.of(images[index])
+        .resolve(createLocalImageConfiguration(context));
+    if (stream.key == _stream?.key) return;
+
+    _dropStream();
+    _stream = stream;
+    _listener = ImageStreamListener(
+      (info, _) {
+        final ratio = info.image.width / info.image.height;
+        if (!mounted || !ratio.isFinite || ratio <= 0) return;
+        final held = ratio.clamp(_minRatio, _maxRatio);
+        if (_ratio == held) return;
+        setState(() => _ratio = held);
+      },
+      onError: (_, _) {
+        // A picture that will not decode leaves the box as it was rather than
+        // collapsing it. The image itself draws its own broken state.
+      },
+    );
+    stream.addListener(_listener!);
+  }
+
+  void _dropStream() {
+    if (_stream != null && _listener != null) {
+      _stream!.removeListener(_listener!);
+    }
+    _stream = null;
+    _listener = null;
+  }
+
   /// Moves between the photographs and the video.
   void _showTab(_MediaTab tab) {
     if (_tab == tab) return;
@@ -283,13 +347,25 @@ class _ProductGalleryState extends State<ProductGallery>
     final theme = Theme.of(context);
 
     return AspectRatio(
-      // Taller than square: clothing and appliances are both portrait
-      // subjects, and cropping them to a square loses the thing being sold.
-      aspectRatio: 0.88,
+      // The picture's own shape, once it is known.
+      //
+      // It was a fixed 0.88 -- taller than square, on the reasoning that
+      // clothing and appliances are portrait subjects. Most of this catalogue
+      // photographs square, so the box was taller than every picture in it and
+      // each one sat in a grey band top and bottom: the image looked like it
+      // did not fit the card, because it did not.
+      //
+      // Bounded either way. A seller's panorama would otherwise leave a strip
+      // three fingers tall, and a tall thin one would push the price and the
+      // options off the first screen.
+      aspectRatio: _ratio ?? _defaultRatio,
       child: Stack(
         children: [
           ColoredBox(
-            color: theme.colorScheme.surfaceContainerHighest,
+            // The page's own ground, not the placeholder grey. With the box cut
+            // to the picture there is little of this left to see, and what is
+            // left should read as the card rather than as a gap in it.
+            color: theme.colorScheme.surface,
             // Crossfaded rather than cut: moving between the two is a change
             // of subject, and a hard swap reads as the page reloading.
             child: AnimatedSwitcher(
@@ -392,6 +468,25 @@ class _ProductGalleryState extends State<ProductGallery>
       url: widget.videoUrl!,
       onUnavailable: _onVideoUnavailable,
       onPlayingChanged: _onVideoPlaying,
+      // A preview here, the whole thing full screen -- the same division the
+      // photographs on this gallery already make. The slide is a few hundred
+      // points tall with a tab pill across its foot; watching happens on the
+      // viewer, which has the room and the controls.
+      onRequestFullscreen: _openVideoFullscreen,
+    );
+  }
+
+  /// The seller's video, full screen and playing.
+  ///
+  /// A pushed route, like the photographs' viewer: it covers the product page
+  /// rather than floating over it, so nothing behind can be scrolled while it
+  /// is up, and popping it puts the shopper back on the same page at the same
+  /// offset with the same tab selected.
+  void _openVideoFullscreen() {
+    final url = widget.videoUrl;
+    if (url == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => VideoViewerScreen(url: url)),
     );
   }
 

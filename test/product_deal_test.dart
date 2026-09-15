@@ -139,7 +139,7 @@ void main() {
       expect(find.byTooltip('Share'), findsOneWidget);
       expect(find.byType(ProductGallery), findsOneWidget);
       expect(find.text('Add to cart'), findsOneWidget);
-      expect(find.text('Rs. 2,999'), findsWidgets);
+      expect(find.text('Rs. 2,999', findRichText: true), findsWidgets);
     });
   });
 

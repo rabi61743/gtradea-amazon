@@ -1,14 +1,18 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:gtradea_amazon/shared/widgets/page_width.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
+import 'package:gtradea_amazon/core/theme/colors.dart';
+import 'package:gtradea_amazon/features/product/data/product_detail_content.dart';
+import 'package:gtradea_amazon/features/logistics/data/shipping_mode_store.dart';
 import 'package:gtradea_amazon/features/product/data/storefront_config.dart';
 import 'package:gtradea_amazon/features/product/presentation/product_detail_screen.dart';
-import 'package:gtradea_amazon/features/product/widgets/delivery_guarantee_card.dart';
+import 'package:gtradea_amazon/features/product/widgets/logistics_trust_card.dart';
 
 import 'support/api.dart';
 import 'support/catalog.dart';
@@ -48,7 +52,7 @@ Future<void> _pumpPage(WidgetTester tester) async {
   );
   await tester.pump(const Duration(milliseconds: 300));
   await tester.scrollUntilVisible(
-    find.byType(DeliveryGuaranteeCard),
+    find.byType(LogisticsTrustCard),
     300,
     scrollable: find.byType(Scrollable).first,
     maxScrolls: 40,
@@ -62,6 +66,7 @@ void main() {
     api = stubCatalog();
     CartStore.instance.resetForTest();
     StorefrontConfigRepository.instance.resetForTest();
+    ShippingModeStore.instance.resetForTest();
     api.on('GET', '/site-settings', body: settings(liveNote));
   });
 
@@ -125,7 +130,7 @@ void main() {
         MaterialApp(
           theme: AppTheme.light,
           home: Scaffold(
-            body: DeliveryGuaranteeCard(
+            body: LogisticsTrustCard(
               guarantee: const DeliveryGuarantee(weeksMin: 3, weeksMax: 5),
               now: () => DateTime(2026, 8, 28),
             ),
@@ -144,7 +149,7 @@ void main() {
         MaterialApp(
           theme: AppTheme.light,
           home: const Scaffold(
-            body: DeliveryGuaranteeCard(
+            body: LogisticsTrustCard(
               guarantee: DeliveryGuarantee(enabled: false),
             ),
           ),
@@ -161,7 +166,7 @@ void main() {
         MaterialApp(
           theme: AppTheme.light,
           home: Scaffold(
-            body: DeliveryGuaranteeCard(
+            body: LogisticsTrustCard(
               guarantee: const DeliveryGuarantee(weeksMin: 3, weeksMax: 5),
               now: () => DateTime(2026, 8, 28),
             ),
@@ -178,13 +183,81 @@ void main() {
     });
   });
 
+  group('the guarantees strip', () {
+    testWidgets('takes the page own measure, like the card above it', (
+      tester,
+    ) async {
+      // A flat 16 left it inset further than the product card, and two blocks
+      // starting at different margins read as a mistake.
+      for (final width in [360.0, 412.0]) {
+        tester.view.physicalSize = Size(width * 3, 2600);
+        tester.view.devicePixelRatio = 3.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.light,
+            home: Scaffold(
+              body: LogisticsTrustCard(assurances: storeAssurances),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final strip = tester.getRect(
+          find
+              .descendant(
+                of: find.byType(LogisticsTrustCard),
+                matching: find.byType(Container),
+              )
+              .first,
+        );
+
+        final margin = width * (1 - PageWidth.factor) / 2;
+        expect(strip.left, closeTo(margin, 0.5), reason: '${width}dp');
+        expect(width - strip.right, closeTo(margin, 0.5), reason: '${width}dp');
+        expect(
+          strip.width,
+          closeTo(width * PageWidth.factor, 1),
+          reason: '97% at ${width}dp',
+        );
+      }
+    });
+
+    testWidgets('and stands tall enough not to feel cramped', (tester) async {
+      tester.view.physicalSize = const Size(360 * 3, 2600);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(body: LogisticsTrustCard(assurances: storeAssurances)),
+        ),
+      );
+      await tester.pump();
+
+      final strip = tester.getSize(
+        find
+            .descendant(
+              of: find.byType(LogisticsTrustCard),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+
+      // Its own cell padding, top and bottom, around a single line of label.
+      expect(strip.height, greaterThanOrEqualTo(56));
+    });
+  });
+
   group('on the product page', () {
     testWidgets('replaces the card that named a city nobody chose', (
       tester,
     ) async {
       await _pumpPage(tester);
 
-      expect(find.byType(DeliveryGuaranteeCard), findsOneWidget);
+      expect(find.byType(LogisticsTrustCard), findsOneWidget);
       // The old card was hardcoded to Lalitpur and its Change button was wired
       // to an empty callback.
       expect(find.text('Deliver to Lalitpur'), findsNothing);
@@ -215,8 +288,132 @@ void main() {
       // timer, so this page never comes to rest.
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.byType(DeliveryGuaranteeCard), findsNothing);
+      // The guarantees still stand -- they are the shop's own terms, not a
+      // setting -- but no window is drawn, which is the promise it could not
+      // fetch.
+      expect(find.textContaining('Guaranteed delivery'), findsNothing);
+      // The delivery options in the product card say they could not be read
+      // rather than naming a way of shipping nobody published.
+      expect(find.textContaining('unavailable just now'), findsOneWidget);
+      expect(find.textContaining('days'), findsNothing);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('the logistics and trust block', () {
+    /// The card on its own, so the assertions are about it rather than about
+    /// where the page happens to have scrolled to.
+    Future<void> pumpCard(
+      WidgetTester tester, {
+      DeliveryGuarantee? guarantee = const DeliveryGuarantee(
+        weeksMin: 3,
+        weeksMax: 5,
+      ),
+    }) async {
+      tester.view.physicalSize = const Size(1200, 1200);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: LogisticsTrustCard(
+              guarantee: guarantee,
+              assurances: storeAssurances,
+              now: () => DateTime(2026, 8, 28),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('is one card: the window and the guarantees together', (
+      tester,
+    ) async {
+      await pumpCard(tester);
+
+      expect(find.byType(LogisticsTrustCard), findsOneWidget);
+      expect(find.text('Standard gtradea.com Logistics'), findsOneWidget);
+      expect(find.text('Sep 18 – Oct 2'), findsOneWidget);
+      expect(find.text('7-day returns'), findsOneWidget);
+      expect(find.text('Cash on delivery'), findsOneWidget);
+      expect(find.text('Quality checked'), findsOneWidget);
+    });
+
+    testWidgets('with the truck beside the window, both in the brand blue', (
+      tester,
+    ) async {
+      await pumpCard(tester);
+
+      final truck = find.byIcon(Icons.local_shipping_outlined);
+      expect(truck, findsOneWidget);
+      expect(tester.widget<Icon>(truck).color, AppColors.trustBlue);
+
+      final dates = tester.widget<Text>(find.text('Sep 18 – Oct 2'));
+      expect(dates.style?.color, AppColors.trustBlue);
+      expect(dates.style?.fontSize, 13);
+      expect(dates.style?.fontWeight, FontWeight.w600);
+
+      // Beside, not above: the courier's mark stands to the left of the
+      // two lines it heads, and level with the pair of them.
+      final iconBox = tester.getRect(truck);
+      final titleBox = tester.getRect(
+        find.text('Standard gtradea.com Logistics'),
+      );
+      final dateBox = tester.getRect(find.text('Sep 18 – Oct 2'));
+      expect(iconBox.right, lessThanOrEqualTo(titleBox.left));
+      expect(iconBox.right, lessThanOrEqualTo(dateBox.left));
+      expect(
+        iconBox.center.dy,
+        closeTo((titleBox.top + dateBox.bottom) / 2, 6),
+      );
+
+      // And the card itself opens the same note, which is what the
+      // chevron at its right promises.
+      expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+    });
+
+    testWidgets('and the three guarantees in equal thirds', (tester) async {
+      await pumpCard(tester);
+
+      final cells = [
+        for (final label in [
+          '7-day returns',
+          'Cash on delivery',
+          'Quality checked',
+        ])
+          tester.getRect(find.text(label)),
+      ];
+      for (final cell in cells.skip(1)) {
+        expect(cell.top, closeTo(cells.first.top, 0.5), reason: 'level');
+      }
+      final firstGap = cells[1].center.dx - cells[0].center.dx;
+      final secondGap = cells[2].center.dx - cells[1].center.dx;
+      expect(secondGap, closeTo(firstGap, 1));
+    });
+
+    testWidgets('the guarantees stand even with no window to promise', (
+      tester,
+    ) async {
+      // The shop's own terms are not a site setting, so a settings failure
+      // takes the window away and leaves the promises.
+      await pumpCard(tester, guarantee: null);
+
+      expect(find.textContaining('Guaranteed delivery'), findsNothing);
+      expect(find.text('7-day returns'), findsOneWidget);
+      expect(find.text('Quality checked'), findsOneWidget);
+    });
+
+    testWidgets('and a guarantee still opens its terms', (tester) async {
+      await pumpCard(tester);
+
+      await tester.tap(find.text('Cash on delivery'));
+      await tester.pumpAndSettle();
+
+      // The row's own label, and the sheet's heading above the terms.
+      expect(find.text('Cash on delivery'), findsNWidgets(2));
+      expect(find.textContaining('Pay the courier'), findsOneWidget);
     });
   });
 }

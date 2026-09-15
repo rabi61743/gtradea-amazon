@@ -1,12 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!--
+  The window the system paints before any of this app's code runs, and the
+  variant every modern device uses.
+
+  The ground comes from the theme, which values/styles.xml and its night
+  counterpart both set to the app's own page colour. The mark sits on top of
+  it, so the first thing a shopper sees is the shop rather than a bare
+  rectangle. Flutter then replaces the whole thing with BrandLoaderScreen,
+  which draws the same mark inside a ring, so the hand off is the logo staying
+  where it is and a loading ring appearing around it.
+
+  splash_logo is the mark on its own, with no plate behind it. The launcher
+  icon was used here first and was wrong for exactly that reason.
+-->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="?android:colorBackground" />
-
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+    <item
+        android:drawable="@drawable/splash_logo"
+        android:gravity="center" />
 </layer-list>

@@ -53,7 +53,11 @@ void main() {
     // on where the animation has got to. What matters here is that the search
     // bar is on the page.
     expect(find.byType(AnimatedSearchHint), findsOneWidget);
+    // Once: the bottom bar's destination. The header's third tile is messages
+    // now, by request, and the cart's way in from the top of the page went with
+    // it -- the bar is where it lives.
     expect(find.text('Cart'), findsOneWidget);
+    expect(find.text('Messages'), findsOneWidget);
 
     // The feed itself. Scrolled to, because "Recommended for you" sits below
     // "Shop by category" now rather than near the top.
@@ -270,6 +274,17 @@ void main() {
       expect(formatRupees(999), 'Rs. 999');
       expect(formatRupees(0), 'Rs. 0');
       expect(formatRupees(1250.6), 'Rs. 1,251');
+    });
+
+    test('and a negative keeps its sign out of the grouping', () {
+      // The separator was counted from the start of the string with the minus
+      // sign included, so a four-character "-120" got one straight after the
+      // sign: "-,120". Nothing showed it while the only figures were prices,
+      // which are never negative. The coins page found it, printing what an
+      // account had spent through the same grouper underneath this.
+      expect(formatRupees(-120), 'Rs. -120');
+      expect(formatRupees(-27590), 'Rs. -27,590');
+      expect(formatRupees(-1), 'Rs. -1');
     });
   });
 

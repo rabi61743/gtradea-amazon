@@ -1,16 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/brand_wordmark.dart';
 import '../data/auth_store.dart';
+import 'provider_sign_in.dart';
 import '../data/remembered_email.dart';
 import 'forgot_password_screen.dart';
-import 'oauth_webview_screen.dart';
 
 /// Which half of the screen opens first.
 enum AuthMode { signIn, signUp }
@@ -24,9 +23,23 @@ enum AuthMode { signIn, signUp }
 /// Submits to GoTrue. The password is sent and never stored -- what comes back
 /// is a token pair, which lives in the keystore, not here.
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key, this.initialMode = AuthMode.signIn});
+  const AuthScreen({
+    super.key,
+    this.initialMode = AuthMode.signIn,
+    this.addingAccount = false,
+    this.initialEmail,
+  });
 
   final AuthMode initialMode;
+
+  /// Opened to add another account beside the one already signed in. The
+  /// same sign-in, sign-up and provider flows; the screen says what it is for
+  /// and hands back what happened so the account page can say it.
+  final bool addingAccount;
+
+  /// Filled in, for a saved account whose session ended and needs its
+  /// password again.
+  final String? initialEmail;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -70,6 +83,16 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _restoreEmail() async {
+    // A saved account signing in again: its own address, not the last one
+    // typed on this device.
+    final given = widget.initialEmail;
+    if (given != null && given.isNotEmpty) {
+      _email.text = given;
+      return;
+    }
+    // Adding another account: the remembered address is the one already
+    // signed in, which is exactly the one not being added.
+    if (widget.addingAccount) return;
     final remembered = await RememberedEmail.read();
     if (!mounted || remembered == null || _email.text.isNotEmpty) return;
     setState(() {
@@ -81,7 +104,9 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<void> _loadProviders() async {
     final providers = await AuthStore.instance.enabledProviders();
     if (!mounted) return;
-    setState(() => _googleEnabled = providers.contains('google'));
+    setState(() {
+      _googleEnabled = providers.contains('google');
+    });
   }
 
   @override
@@ -145,7 +170,7 @@ class _AuthScreenState extends State<AuthScreen> {
       // typo would prefill the mistake every time from then on.
       await _saveRemembered();
       if (!mounted) return;
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(_outcome());
     } on ApiError catch (e) {
       if (!mounted) return;
       setState(() {
@@ -159,6 +184,20 @@ class _AuthScreenState extends State<AuthScreen> {
         _error = 'Something went wrong. Please try again.';
       });
     }
+  }
+
+  /// What the account page should say once this screen closes signed in.
+  ///
+  /// Only when adding an account: an ordinary sign-in says nothing, as it
+  /// never did. An account that was already on the device is reported as
+  /// such -- it was switched to, not added twice.
+  String? _outcome() {
+    final already = AuthStore.instance.takeWasAlreadySaved();
+    if (!widget.addingAccount) return null;
+    final email = AuthStore.instance.account?.email ?? _email.text.trim();
+    return already
+        ? '$email was already on this device. Switched to it.'
+        : 'Added $email and switched to it.';
   }
 
   /// GoTrue's wording is accurate but terse. Two cases are worth rephrasing,
@@ -189,7 +228,20 @@ class _AuthScreenState extends State<AuthScreen> {
   /// URL with the tokens in its fragment, which [AuthStore.completeOAuth]
   /// turns into a session. Backing out of it is a cancellation, not a failure,
   /// and says nothing.
-  Future<void> _continueWithGoogle() async {
+  Future<void> _continueWithGoogle() =>
+      _continueWithProvider('google', 'Google');
+
+  /// Apple, through the same handshake. Nothing here is Apple-specific: the
+  /// server names its providers and GoTrue speaks the same flow for each, so
+  /// the only difference between this and Google is the word on the button.
+  Future<void> _continueWithApple() => _continueWithProvider('apple', 'Apple');
+
+  /// One provider handshake, whichever provider it is.
+  ///
+  /// Shared rather than copied so the second provider cannot drift from the
+  /// first: the same busy state, the same cancellation-is-not-a-failure rule,
+  /// and the same place errors are shown.
+  Future<void> _continueWithProvider(String provider, String label) async {
     if (_busy) return;
     setState(() {
       _busy = true;
@@ -197,32 +249,23 @@ class _AuthScreenState extends State<AuthScreen> {
       _notice = null;
     });
 
-    try {
-      final returned = await OAuthWebViewScreen.show(
-        context,
-        title: 'Continue with Google',
-        url: AuthStore.instance.authorizeUrl('google'),
-      );
-      if (!mounted) return;
-      if (returned == null) {
+    final result = await startProviderSignIn(
+      context,
+      provider: provider,
+      label: label,
+    );
+    if (!mounted) return;
+
+    switch (result.outcome) {
+      case ProviderSignInOutcome.signedIn:
+        Navigator.of(context).pop(_outcome());
+      case ProviderSignInOutcome.cancelled:
         setState(() => _busy = false);
-        return;
-      }
-      await AuthStore.instance.completeOAuth(returned);
-      if (!mounted) return;
-      Navigator.of(context).pop();
-    } on ApiError catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = e.message;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = 'Google sign-in did not complete. Please try again.';
-      });
+      case ProviderSignInOutcome.failed:
+        setState(() {
+          _busy = false;
+          _error = result.message;
+        });
     }
   }
 
@@ -274,7 +317,20 @@ class _AuthScreenState extends State<AuthScreen> {
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: _content(theme),
+                  children: [
+                    // The mark and the line under it are the page's headline,
+                    // so they stay on the page.
+                    ..._header(theme),
+                    const SizedBox(height: 28),
+                    // The form sits on the page itself, not in a card: the
+                    // fields are white and outlined, so they read against the
+                    // page ground without a second white surface around them.
+                    // The column above already caps and centres the width.
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: _form(theme),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -284,7 +340,9 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  List<Widget> _content(ThemeData theme) {
+  /// The page's headline: the lockup, and the line that says which mode this
+  /// is. Above the card rather than inside it.
+  List<Widget> _header(ThemeData theme) {
     return [
       const SizedBox(height: 8),
       // The supplied lockup, which carries the mark and the name together --
@@ -318,7 +376,13 @@ class _AuthScreenState extends State<AuthScreen> {
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
-      const SizedBox(height: 28),
+    ];
+  }
+
+  /// What the card holds: the fields, the submit, whatever providers the
+  /// server offers, and the way across to the other mode.
+  List<Widget> _form(ThemeData theme) {
+    return [
       if (_isSignUp) ...[
         TextFormField(
           controller: _name,
@@ -411,12 +475,18 @@ class _AuthScreenState extends State<AuthScreen> {
         busy: _busy,
         onPressed: _busy ? null : _submit,
       ),
+      // One divider for however many providers are offered, rather than one
+      // each: it separates the form from the alternatives, and there is only
+      // one form. Apple is always offered; whether the server will take it is
+      // checked when it is tapped, and a refusal lands in the banner above.
+      const SizedBox(height: 22),
+      const _OrDivider(),
+      const SizedBox(height: 16),
       if (_googleEnabled) ...[
-        const SizedBox(height: 22),
-        const _OrDivider(),
-        const SizedBox(height: 16),
-        _GoogleButton(onPressed: _busy ? null : _continueWithGoogle),
+        GoogleSignInButton(onPressed: _busy ? null : _continueWithGoogle),
+        const SizedBox(height: 12),
       ],
+      AppleSignInButton(onPressed: _busy ? null : _continueWithApple),
       const SizedBox(height: 22),
       const _SecurityNote(),
       const SizedBox(height: 10),
@@ -612,44 +682,6 @@ class _OrDivider extends StatelessWidget {
         ),
         const Expanded(child: Divider()),
       ],
-    );
-  }
-}
-
-/// The provider button, with Google's own mark on it.
-class _GoogleButton extends StatelessWidget {
-  const _GoogleButton({required this.onPressed});
-
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size.fromHeight(54),
-        backgroundColor: theme.colorScheme.surface,
-        side: BorderSide(color: theme.dividerColor),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          SvgPicture.asset('assets/brand/google_g.svg', height: 22),
-          const SizedBox(width: 12),
-          Text(
-            'Continue with Google',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

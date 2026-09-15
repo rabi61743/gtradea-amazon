@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../auth/data/auth_store.dart';
 import '../../wishlist/data/wishlist_store.dart' show SavedProduct;
 
 /// Products the shopper has opened, most recent first.
@@ -15,6 +16,9 @@ import '../../wishlist/data/wishlist_store.dart' show SavedProduct;
 /// Capped, and deliberately small. This is a way back to something half-looked
 /// at, not a browsing history -- an unbounded list would grow forever in
 /// SharedPreferences and bury the thing the shopper actually wants.
+///
+/// One list per account, and one for a guest. What somebody looked at is
+/// theirs: with two accounts on a device, each sees only its own.
 class RecentlyViewedStore extends ChangeNotifier {
   RecentlyViewedStore._();
 
@@ -22,22 +26,72 @@ class RecentlyViewedStore extends ChangeNotifier {
 
   static const _key = 'gtradea_recently_viewed';
 
+  /// Where [accountId]'s list lives. A guest's is the original key.
+  static String storageKeyFor(String? accountId) =>
+      (accountId == null || accountId.isEmpty) ? _key : '${_key}_$accountId';
+
   /// Enough to cover a session of browsing, few enough to stay scannable.
   static const maxEntries = 12;
 
   final List<SavedProduct> _items = [];
   bool _loaded = false;
 
+  /// The account whose list is held; null for a guest.
+  String? _scope;
+  bool _bound = false;
+
   List<SavedProduct> get items => List.unmodifiable(_items);
   int get count => _items.length;
   bool get isEmpty => _items.isEmpty;
   bool get isLoaded => _loaded;
 
+  /// Follows the active account for the rest of the app's life.
+  void bindToAuth([AuthStore? auth]) {
+    if (_bound) return;
+    _bound = true;
+    (auth ?? AuthStore.instance).addListener(_onIdentityChanged);
+  }
+
   Future<void> load() async {
     if (_loaded) return;
+    _scope = AuthStore.instance.account?.id;
+    await _readInto(storageKeyFor(_scope), migrateLegacy: true);
+    _loaded = true;
+    notifyListeners();
+  }
+
+  void _onIdentityChanged() {
+    final id = AuthStore.instance.account?.id;
+    if (id == _scope && _loaded) return;
+    _scope = id;
+    _items.clear();
+    // Cleared at once, read after: another account's history must not stay
+    // on screen for the length of a disk read.
+    notifyListeners();
+    unawaited(() async {
+      // The first account seen after an update may find its history still
+      // under the device-wide key, read before sign-in was known. It becomes
+      // this account's, once, only if it has none of its own yet.
+      await _readInto(storageKeyFor(id), migrateLegacy: true);
+      if (_scope != id) return;
+      _loaded = true;
+      notifyListeners();
+    }());
+  }
+
+  Future<void> _readInto(String key, {bool migrateLegacy = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_key);
+      var raw = prefs.getString(key);
+      // Before lists were kept per account there was one, and it was the
+      // history of whoever was signed in. It becomes that account's.
+      if (migrateLegacy && raw == null && key != _key) {
+        raw = prefs.getString(_key);
+        if (raw != null) {
+          await prefs.setString(key, raw);
+          await prefs.remove(_key);
+        }
+      }
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw);
         if (decoded is List) {
@@ -54,8 +108,6 @@ class RecentlyViewedStore extends ChangeNotifier {
     } catch (_) {
       // Unreadable history: start empty. Nothing here is worth blocking on.
     }
-    _loaded = true;
-    notifyListeners();
   }
 
   /// Records a visit, moving an already-seen product back to the front.
@@ -87,17 +139,18 @@ class RecentlyViewedStore extends ChangeNotifier {
   void resetForTest() {
     _items.clear();
     _loaded = false;
+    _scope = null;
   }
 
   Future<void> _persist() {
     final payload = jsonEncode(_items.map((item) => item.toJson()).toList());
-    return _write(payload);
+    return _write(storageKeyFor(_scope), payload);
   }
 
-  Future<void> _write(String payload) async {
+  Future<void> _write(String key, String payload) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_key, payload);
+      await prefs.setString(key, payload);
     } catch (_) {
       // Best effort, like the other stores.
     }

@@ -5,18 +5,20 @@ import 'package:flutter/material.dart';
 import '../../cart/presentation/cart_screen.dart';
 import '../../../core/ui/action_status.dart';
 import '../../../../core/network/api_error.dart';
-import '../../../core/theme/colors.dart';
 import '../../../core/time_format.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../auth/data/auth_store.dart';
 import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
 import '../../catalog/data/product.dart' show productStub;
+import '../../catalog/presentation/browse_screen.dart';
 import '../../catalog/presentation/catalog_visuals.dart' show openProduct;
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../orders/data/order_store.dart';
 import '../data/hidden_history_store.dart';
 import '../data/product_views_repository.dart';
+import 'discover_more_section.dart';
+import 'recent_views_section.dart';
 
 /// One line of the history, whichever tab it came from.
 ///
@@ -104,12 +106,6 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
 
   bool _loadingOlder = false;
   ApiError? _olderError;
-
-  /// True while the shopper is picking rows to hide.
-  bool _selecting = false;
-
-  /// The rows ticked, by [_HistoryEntry.key].
-  final Set<String> _selected = {};
 
   @override
   void initState() {
@@ -235,6 +231,25 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
     return entries;
   }
 
+  /// The views the tab is showing, as records rather than rows.
+  ///
+  /// The same search, period and hidden-row filtering the tab applies, so the
+  /// section below the list can never offer a product the shopper has just
+  /// hidden or filtered away.
+  List<ProductView> get _visibleViews {
+    final keys = {for (final entry in _visible(_viewed)) entry.key};
+    return [
+      for (final view in _views)
+        if (keys.contains(
+          HiddenHistoryStore.keyFor(
+            productId: view.productId,
+            at: view.viewedAt,
+          ),
+        ))
+          view,
+    ];
+  }
+
   /// What the search box and the period filter leave.
   List<_HistoryEntry> _visible(List<_HistoryEntry> all) {
     final query = _query.trim().toLowerCase();
@@ -295,113 +310,11 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
     );
   }
 
-  /// Enters selection mode on the row that was held down.
-  void _startSelecting(_HistoryEntry entry) {
-    setState(() {
-      _selecting = true;
-      _selected.add(entry.key);
-    });
-  }
-
-  void _toggle(_HistoryEntry entry) {
-    setState(() {
-      if (!_selected.remove(entry.key)) _selected.add(entry.key);
-      // The last one unticked leaves selection mode, so the list is not stuck
-      // in a mode with nothing in it.
-      if (_selected.isEmpty) _selecting = false;
-    });
-  }
-
-  void _endSelecting() {
-    setState(() {
-      _selecting = false;
-      _selected.clear();
-    });
-  }
-
-  /// Hides the ticked rows from this shopper's own history.
-  ///
-  /// **The server keeps them.** This list is the read side of
-  /// `/product-views`, and what is deleted here is the shopper's view of it --
-  /// see [HiddenHistoryStore]. Nothing is sent, no other account is touched,
-  /// and the product itself is not affected.
-  Future<void> _deleteSelected() async {
-    final count = _selected.length;
-    if (count == 0) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(count == 1 ? 'Remove 1 item?' : 'Remove $count items?'),
-        content: Text(
-          count == 1
-              ? 'It is removed from your history on this device. Your orders '
-                    'are not affected.'
-              : 'They are removed from your history on this device. Your '
-                    'orders are not affected.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Keep'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-    if (!(confirmed ?? false) || !mounted) return;
-
-    final hidden = Set<String>.from(_selected);
-    await HiddenHistoryStore.instance.hide(hidden);
-    if (!mounted) return;
-    setState(() {
-      _selecting = false;
-      _selected.clear();
-    });
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(count == 1 ? '1 item removed' : '$count items removed'),
-          action: SnackBarAction(
-            label: 'Undo',
-            onPressed: () async {
-              await HiddenHistoryStore.instance.show(hidden);
-              if (mounted) setState(() {});
-            },
-          ),
-        ),
-      );
-  }
-
   void _say(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _remove(_HistoryEntry entry) async {
-    final before = _views;
-    setState(
-      () => _views = [
-        for (final view in _views)
-          if (view.productId != entry.productId) view,
-      ],
-    );
-    try {
-      await ProductViewsRepository.instance.remove(entry.productId);
-    } on ApiError catch (e) {
-      // Put it back: a row that vanished here and stayed on the server would
-      // return on the next open, which reads as the removal being ignored.
-      if (!mounted) return;
-      setState(() => _views = before);
-      _say(e.message);
-    }
   }
 
   Future<void> _clear() async {
@@ -491,42 +404,6 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Selection owns the bar while it is on: the count is the title and the
-    // only actions are the two that apply to a selection.
-    if (_selecting) {
-      return Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: 'Cancel selection',
-            onPressed: _endSelecting,
-          ),
-          title: Text(
-            _selected.length == 1
-                ? '1 selected'
-                : '${_selected.length} selected',
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Remove from history',
-              onPressed: _selected.isEmpty ? null : _deleteSelected,
-            ),
-          ],
-        ),
-        // Back leaves selection rather than the page, which is what a shopper
-        // who pressed Back expects of a mode they are in.
-        body: PopScope(
-          canPop: false,
-          onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) _endSelecting();
-          },
-          child: _tab(_visible(_viewed), removable: true),
-        ),
-        backgroundColor: theme.scaffoldBackgroundColor,
-      );
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: _searching
@@ -589,7 +466,17 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
         onAction: _signIn,
       );
     }
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) {
+      // The viewed tab is rows, so it waits as rows: bones at the same
+      // measurements, rather than a spinner the list then shoves aside.
+      return removable
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(top: 4, bottom: 28),
+              children: const [RecentViewsSkeleton()],
+            )
+          : const Center(child: CircularProgressIndicator());
+    }
 
     final error = _error;
     if (error != null) {
@@ -613,6 +500,32 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
       );
     }
 
+    // The viewed tab is drawn by [RecentViewsSection] -- one row per product,
+    // with what the catalogue says about it and what to do about it. The
+    // date-grouped cards it used to draw are gone, and the swipe and the
+    // multi-select that lived on them went with them.
+    if (removable) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(top: 4, bottom: 28),
+        children: [
+          RecentViewsSection(
+            views: _visibleViews,
+            // Every row it is given: this is the history, not a taste of it.
+            limit: null,
+          ),
+          _olderFooter(),
+          // Below the history and the way past it: what is selling and where
+          // to look next, for the shopper who has reached the end of their
+          // own list and wants somewhere to go.
+          DiscoverMoreSection(
+            onSeeAll: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const BrowseScreen())),
+          ),
+        ],
+      );
+    }
+
     // Grouped by day, in the order the entries already carry -- newest first,
     // so the headings run Today, Yesterday, then dates.
     final groups = <String, List<_HistoryEntry>>{};
@@ -622,7 +535,9 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 28),
+      // No side inset of its own: each card takes its own share of the width
+      // and centres in it, so the margin scales with the screen.
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 28),
       children: [
         for (final group in groups.entries) ...[
           Padding(
@@ -634,39 +549,16 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
               ),
             ),
           ),
+          // Only the purchased tab reaches here now: the viewed tab is drawn
+          // by [RecentViewsSection] above, and an order line is not a row
+          // anybody removes from their own history.
           for (final entry in group.value)
-            if (!removable)
-              _HistoryCard(
-                entry: entry,
-                onTap: () => _open(entry),
-                onAdd: () => _addToCart(entry),
-              )
-            else if (_selecting)
-              // No swipe while selecting: the gesture would fight the tick,
-              // and the two mean different things -- one forgets the row on
-              // the server, the other hides it here.
-              _HistoryCard(
-                entry: entry,
-                selecting: true,
-                selected: _selected.contains(entry.key),
-                onTap: () => _toggle(entry),
-                onLongPress: () => _toggle(entry),
-              )
-            else
-              Dismissible(
-                key: ValueKey('history-${entry.productId}-${entry.at}'),
-                direction: DismissDirection.endToStart,
-                background: const _RemoveBackground(),
-                onDismissed: (_) => unawaited(_remove(entry)),
-                child: _HistoryCard(
-                  entry: entry,
-                  onTap: () => _open(entry),
-                  onAdd: () => _addToCart(entry),
-                  onLongPress: () => _startSelecting(entry),
-                ),
-              ),
+            _HistoryCard(
+              entry: entry,
+              onTap: () => _open(entry),
+              onAdd: () => _addToCart(entry),
+            ),
         ],
-        if (removable) _olderFooter(),
       ],
     );
   }
@@ -701,15 +593,11 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
     }
 
     if (_loadingOlder) {
+      // Bones in the shape of the rows that are coming, so the list grows
+      // into them rather than jumping when the older page lands.
       return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2.4),
-          ),
-        ),
+        padding: EdgeInsets.only(top: 2),
+        child: RecentViewsSkeleton(rows: 2),
       );
     }
 
@@ -732,7 +620,7 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
         child: OutlinedButton.icon(
           onPressed: _loadOlder,
           icon: const Icon(Icons.history, size: 18),
-          label: const Text('See older history'),
+          label: const Text('Load More'),
         ),
       ),
     );
@@ -742,149 +630,125 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
 /// One row, laid out as the reference has it: picture, title and category,
 /// price, attributes, the time it happened, and a way into the cart.
 class _HistoryCard extends StatelessWidget {
-  const _HistoryCard({
-    required this.entry,
-    required this.onTap,
-    this.onAdd,
-    this.onLongPress,
-    this.selecting = false,
-    this.selected = false,
-  });
+  const _HistoryCard({required this.entry, required this.onTap, this.onAdd});
 
   final _HistoryEntry entry;
   final VoidCallback onTap;
 
-  /// Null while picking rows: Add to cart is not what a tick is for, and a
-  /// button that still acted would fire on a press meant for the row.
+  /// Null where the row is not one to buy from.
   final VoidCallback? onAdd;
-
-  /// Long press to start picking -- and, with a mouse, a right-click, which is
-  /// the same intent on a desktop window.
-  final VoidCallback? onLongPress;
-
-  final bool selecting;
-  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final price = entry.priceText;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      // The picked state is the theme's own selection tint over the card
-      // colour, so nothing about the card's shape, radius or spacing moves as
-      // rows are ticked.
-      color: selected
-          ? theme.colorScheme.primary.withValues(alpha: 0.08)
-          : null,
-      child: GestureDetector(
-        onSecondaryTap: onLongPress,
-        child: InkWell(
-          onTap: onTap,
-          onLongPress: onLongPress,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (selecting) ...[
-                  // Drawn rather than tapped: the whole row is the target, so
-                  // the box says what state it is in and the row answers.
-                  Padding(
-                    padding: const EdgeInsets.only(top: 34),
-                    child: Icon(
-                      selected
-                          ? Icons.check_circle
-                          : Icons.radio_button_unchecked,
-                      size: 22,
-                      color: selected
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.outline,
+    // 97% of the page, centred in it, so the margin is a share of the screen
+    // rather than a fixed inset.
+    return Center(
+      child: FractionallySizedBox(
+        widthFactor: 0.97,
+        child: Card(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // One 92pt square for every row, whatever shape the
+                  // seller's photograph is: contained rather than cropped,
+                  // so nothing is cut off or stretched, and centred in a
+                  // tile of the page's own wash so the picture sits in the
+                  // same place on every card.
+                  Container(
+                    width: 92,
+                    height: 92,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: ArtworkPanel(
+                      icon: Icons.inventory_2_outlined,
+                      tint: theme.colorScheme.primary,
+                      imageUrl: entry.imageUrl,
+                      iconScale: 0.4,
+                      knownWidth: 92,
+                      fit: BoxFit.contain,
                     ),
                   ),
-                  const SizedBox(width: 10),
-                ],
-                SizedBox(
-                  width: 92,
-                  height: 92,
-                  child: ArtworkPanel(
-                    icon: Icons.inventory_2_outlined,
-                    tint: theme.colorScheme.primary,
-                    imageUrl: entry.imageUrl,
-                    iconScale: 0.4,
-                    knownWidth: 92,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entry.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                          ),
+                        ),
+                        if (entry.subtitle != null &&
+                            entry.subtitle!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            entry.subtitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        if (price != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            price,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                        if (entry.variant != null &&
+                            entry.variant!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            entry.variant!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        entry.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          height: 1.25,
+                        formatTime(entry.at),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      if (entry.subtitle != null &&
-                          entry.subtitle!.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          entry.subtitle!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                      if (price != null) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          price,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
-                      ],
-                      if (entry.variant != null &&
-                          entry.variant!.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          entry.variant!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
+                      if (onAdd case final add?) ...[
+                        const SizedBox(height: 10),
+                        _AddButton(onTap: add),
                       ],
                     ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      formatTime(entry.at),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    if (onAdd case final add?) ...[
-                      const SizedBox(height: 10),
-                      _AddButton(onTap: add),
-                    ],
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -938,24 +802,6 @@ class _AddButton extends StatelessWidget {
   }
 }
 
-/// What a swipe reveals, so the gesture says what it will do before it does it.
-class _RemoveBackground extends StatelessWidget {
-  const _RemoveBackground();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(bottom: 10),
-    padding: const EdgeInsets.only(right: 20),
-    alignment: Alignment.centerRight,
-    decoration: BoxDecoration(
-      color: AppColors.destructiveLight.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Icon(Icons.delete_outline, color: AppColors.destructiveLight),
-  );
-}
-
-/// The empty, signed-out and failed states.
 class _Message extends StatelessWidget {
   const _Message({
     required this.icon,

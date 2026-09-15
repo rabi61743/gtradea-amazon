@@ -2,10 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../../core/l10n/app_strings.dart';
 
-/// Five-destination bottom bar: Home, Saved, Account, Cart, Menu.
+/// Five-destination bottom bar: Home, Saved, Account, Cart, Categories.
 ///
-/// The cart carries a live count as a badge; it is shown even at zero so the
-/// bar does not reflow the first time something is added.
+/// New for You held the second slot until it moved to the department strip on
+/// the home page, immediately after Men. One destination reached from one
+/// place: carrying it in both was a duplicate, and the bar is the copy that
+/// went. The screen itself is untouched and the strip still opens it.
+///
+/// Back to five, which is Material's own ceiling for this control -- the sixth
+/// slot was one past it, and the labels had begun wrapping to two lines on an
+/// ordinary phone.
+///
+/// The cart and saved counts ride as badges, each shown only once there is
+/// something to count.
 class AppBottomNav extends StatelessWidget {
   const AppBottomNav({
     super.key,

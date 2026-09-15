@@ -168,6 +168,19 @@ void main() {
     await tester.pumpWidget(_wrap());
     await tester.pumpAndSettle();
 
+    // Scrolled to rather than expected on the first screen: the delivery
+    // section now carries the phone number the shop requires, which puts
+    // Payment below the fold on a screen this size. Reachable is the
+    // requirement -- a ListView builds what it is scrolled to, and the bug
+    // this catches was a page that could not be scrolled to it at all.
+    await tester.scrollUntilVisible(
+      find.text('Payment'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+      maxScrolls: 20,
+    );
+    await tester.pumpAndSettle();
+
     expect(
       find.text('Payment'),
       findsOneWidget,

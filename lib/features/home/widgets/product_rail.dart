@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/widgets/page_width.dart';
+
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../../shared/widgets/section_header.dart';
@@ -80,7 +82,12 @@ class ProductRail extends StatelessWidget {
               268 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5),
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            // The rail itself still runs edge to edge -- a card should be
+            // able to scroll off the screen rather than stopping short of it
+            // -- but its first and last card sit on the page's own margin.
+            padding: EdgeInsets.symmetric(
+              horizontal: PageWidth.marginOf(context),
+            ),
             itemCount: items.length,
             separatorBuilder: (_, _) => const SizedBox(width: 12),
             itemBuilder: (context, i) => _ProductCard(item: items[i]),
@@ -222,16 +229,29 @@ class _Stars extends StatelessWidget {
   }
 }
 
-/// Rupees with thousands separators, e.g. `Rs. 27,590`.
+/// A whole number with thousands separators, e.g. `27,590`.
 ///
-/// Hand-rolled rather than pulling in `intl` for one call site; NPR is shown
-/// without decimals across the GtradeA storefront.
-String formatRupees(num value) {
-  final digits = value.round().toString();
+/// The grouping on its own, for the few places that count something which is
+/// not money -- the coin chip in the header, where the glyph beside the figure
+/// already says what it counts and the `Rs.` would only cost the delivery
+/// address the room it needs to name a place.
+String formatGrouped(num value) {
+  final rounded = value.round();
+  // The sign is held back rather than grouped. A negative went through the loop
+  // as "-120", where the minus counts as a character and the separator lands
+  // straight after it: "-,120". Prices are never negative, so nothing showed it
+  // until the coins page came to print what an account had spent.
+  final digits = rounded.abs().toString();
   final buffer = StringBuffer();
   for (var i = 0; i < digits.length; i++) {
     if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
     buffer.write(digits[i]);
   }
-  return 'Rs. $buffer';
+  return rounded < 0 ? '-$buffer' : buffer.toString();
 }
+
+/// Rupees with thousands separators, e.g. `Rs. 27,590`.
+///
+/// Hand-rolled rather than pulling in `intl` for one call site; NPR is shown
+/// without decimals across the GtradeA storefront.
+String formatRupees(num value) => 'Rs. ${formatGrouped(value)}';

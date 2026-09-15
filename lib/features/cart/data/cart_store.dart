@@ -8,8 +8,11 @@ import '../../../core/audio/app_sounds.dart';
 import '../../../core/network/api_error.dart';
 import '../../../core/network/json.dart';
 import '../../auth/data/auth_store.dart';
+import '../../logistics/data/shipping_mode_store.dart';
 import '../../checkout/data/checkout_repository.dart';
 import '../../promo/data/coupon_store.dart';
+import '../../product/data/product_detail_content.dart'
+    show QuantityTier, quantityTiersFrom, quantityTiersJson, tierPriceAt;
 import 'cart_repository.dart';
 
 /// One line of the cart: a product in a chosen variant, with a quantity.
@@ -18,12 +21,16 @@ import 'cart_repository.dart';
 /// when the line is added, so the cart renders on a dead connection and so the
 /// shopper is charged the price they agreed to rather than one that moved
 /// underneath them.
+///
+/// Except where the price is meant to move: a product sold on a quantity
+/// ladder carries the ladder with it, and the line's price is the rung its
+/// quantity reaches. See [unitPrice].
 @immutable
 class CartLine {
   const CartLine({
     required this.productId,
     required this.title,
-    required this.unitPrice,
+    required num unitPrice,
     this.variantLabel,
     this.listPrice,
     this.imageUrl,
@@ -31,11 +38,13 @@ class CartLine {
     this.minOrder = 1,
     this.freeDelivery = false,
     this.category,
+    this.categoryCid,
     this.source = 'local',
     this.skuId,
     this.specId,
     this.serverId,
-  });
+    this.tiers = const [],
+  }) : basePrice = unitPrice;
 
   final String productId;
 
@@ -44,7 +53,36 @@ class CartLine {
   final String? variantLabel;
 
   final String title;
-  final num unitPrice;
+
+  /// The price the line was added at, or last confirmed at by the server.
+  /// What [unitPrice] falls back to below the ladder's first rung, and all it
+  /// is when there is no ladder.
+  final num basePrice;
+
+  /// The product's quantity ladder, from its record. Empty when the price does
+  /// not step with quantity: an option the seller prices on its own, or a line
+  /// added somewhere that did not carry the ladder.
+  final List<QuantityTier> tiers;
+
+  /// What one piece costs at this line's quantity.
+  ///
+  /// The rung the quantity reaches, read the same way the product page reads
+  /// it and the way the server reprices this row: crossing a boundary in the
+  /// cart changes the price there and then, not on the next reload.
+  num get unitPrice =>
+      tiers.isEmpty ? basePrice : tierPriceAt(tiers, basePrice, quantity);
+
+  /// Where the rung being charged starts -- "50+" -- when the product has a
+  /// ladder worth naming. Null for a single price.
+  int? get appliedTierFrom {
+    if (tiers.length < 2) return null;
+    int? from;
+    for (final tier in tiers) {
+      if (quantity >= tier.minQuantity) from = tier.minQuantity;
+    }
+    return from;
+  }
+
   final num? listPrice;
   final String? imageUrl;
   final int quantity;
@@ -55,6 +93,20 @@ class CartLine {
   /// Null on a line saved before categories existed, which simply means no
   /// category-restricted coupon matches it.
   final String? category;
+
+  /// The catalogue's own id for that category, where the product carried one.
+  ///
+  /// Kept beside [category] rather than instead of it: the name is what a
+  /// coupon rule reads and what a shopper would recognise, and the id is what
+  /// the catalogue can actually be queried with. Recommending from a cart line
+  /// used to mean matching [category] against the department tree by name, and
+  /// most of this catalogue's labels -- "Display rack", "flange" -- are leaves
+  /// the tree does not carry, so the match failed silently and the shelf fell
+  /// back to a general feed.
+  ///
+  /// Null for a line added before this existed, or from a source that keeps no
+  /// id (the history screens). Those still fall back to the name.
+  final String? categoryCid;
 
   /// Which catalogue the product came from. The server routes an order for an
   /// imported product differently from a local one.
@@ -94,34 +146,45 @@ class CartLine {
   /// the displayed price includes it, and adding it again would double-charge.
   num get vatIncluded => lineTotal * 13 / 113;
 
-  CartLine copyWith({int? quantity, String? serverId}) => CartLine(
+  /// The same line with a new quantity -- whose price then follows the ladder
+  /// by itself -- or with the price the server confirmed for it.
+  CartLine copyWith({
+    int? quantity,
+    String? serverId,
+    num? basePrice,
+    List<QuantityTier>? tiers,
+  }) => CartLine(
     productId: productId,
     variantLabel: variantLabel,
     title: title,
-    unitPrice: unitPrice,
+    unitPrice: basePrice ?? this.basePrice,
     listPrice: listPrice,
     imageUrl: imageUrl,
     quantity: quantity ?? this.quantity,
     minOrder: minOrder,
     freeDelivery: freeDelivery,
     category: category,
+    categoryCid: categoryCid,
     source: source,
     skuId: skuId,
     specId: specId,
     serverId: serverId ?? this.serverId,
+    tiers: tiers ?? this.tiers,
   );
 
   Map<String, dynamic> toJson() => {
     'productId': productId,
     'variantLabel': variantLabel,
     'title': title,
-    'unitPrice': unitPrice,
+    'unitPrice': basePrice,
+    if (tiers.isNotEmpty) 'quantityTiers': quantityTiersJson(tiers),
     'listPrice': listPrice,
     'imageUrl': imageUrl,
     'quantity': quantity,
     'minOrder': minOrder,
     'freeDelivery': freeDelivery,
     'category': category,
+    'categoryCid': categoryCid,
     'source': source,
     'skuId': skuId,
     'specId': specId,
@@ -161,10 +224,17 @@ class CartLine {
       minOrder: minOrder,
       freeDelivery: json['freeDelivery'] == true,
       category: json['category'] is String ? json['category'] as String : null,
+      // Absent from every cart written before this field existed, which is the
+      // ordinary case on an upgrade: the line still loads and simply falls
+      // back to matching by name.
+      categoryCid: json['categoryCid'] is String
+          ? json['categoryCid'] as String
+          : null,
       source: json['source'] is String ? json['source'] as String : 'local',
       skuId: json['skuId'] is String ? json['skuId'] as String : null,
       specId: json['specId'] is String ? json['specId'] as String : null,
       serverId: json['serverId'] is String ? json['serverId'] as String : null,
+      tiers: quantityTiersFrom(json['quantityTiers']),
     );
   }
 }
@@ -379,7 +449,9 @@ class CartStore extends ChangeNotifier {
       // off. A parallel copy here would be a second answer to one question.
       final quote = await CheckoutRepository.instance.deliveryCharge(
         district: district,
-        shippingMode: 'air',
+        // What the shopper chose on the product page, so the freight the
+        // cart quotes is the freight for the way they asked it to come.
+        shippingMode: ShippingModeStore.instance.checkoutMode,
         guestLines: List.unmodifiable(_lines),
       );
       // The basket can change while the request is out; a quote for a cart
@@ -398,9 +470,15 @@ class CartStore extends ChangeNotifier {
     }
   }
 
-  /// Upper bound per line. Not a stock rule -- a guard against a stuck finger
-  /// on the stepper turning into a four-figure order.
-  static const maxPerLine = 99;
+  /// Upper bound per line. Not a stock rule -- a sanity guard, and the same
+  /// ceiling the storefront applies.
+  ///
+  /// It was 99, which made every quantity ladder rung from 100 up unreachable
+  /// in the cart -- a wholesale listing priced for 350, 960 or 1,000 pieces
+  /// could not be ordered at that price, and a larger quantity chosen on the
+  /// product page was cut to 99 without a word. Four figures is a deliberate
+  /// wholesale order, not a stuck finger.
+  static const maxPerLine = 9999;
 
   final List<CartLine> _lines = [];
   String? _scope;
@@ -453,7 +531,14 @@ class CartStore extends ChangeNotifier {
   void bindToAuth([AuthStore? auth]) {
     if (_bound) return;
     _bound = true;
-    (auth ?? AuthStore.instance).addListener(_onIdentityChanged);
+    final store = auth ?? AuthStore.instance;
+    store.addListener(_onIdentityChanged);
+    // A change of quantity still inside the debounce belongs to the account
+    // it was made in. Sent now, while requests still go out as that account,
+    // rather than landing in whichever one is active when the timer fires.
+    store.addBeforeAccountChange(() async {
+      if (_syncDebounce?.isActive ?? false) await syncNow();
+    });
   }
 
   /// Reads the stored cart, merging rather than replacing.
@@ -514,8 +599,23 @@ class CartStore extends ChangeNotifier {
     unawaited(_switchTo(AuthStore.instance.account?.email));
   }
 
+  /// Bumped on every change of account.
+  ///
+  /// A request started for one account can answer after the shopper has
+  /// switched to another. Everything that awaits the server notes this first
+  /// and drops its answer if it has moved -- otherwise one account's cart
+  /// would land in the next one's.
+  int _epoch = 0;
+
   Future<void> _switchTo(String? email) async {
     if (email == _scope) return;
+    _epoch++;
+    // Nothing owed to the last account is sent as this one.
+    _syncDebounce?.cancel();
+    _syncDebounce = null;
+    _syncing = false;
+    _syncError = null;
+    _rejected = const {};
 
     final wasGuest = _scope == null || _scope!.isEmpty;
     final carried = wasGuest ? List<CartLine>.from(_lines) : const <CartLine>[];
@@ -612,6 +712,104 @@ class CartStore extends ChangeNotifier {
     if (line != null) setQuantity(key, line.quantity - 1);
   }
 
+  /// Swaps a line for the same product in a different variant.
+  ///
+  /// A colourway is a different physical good, so this is not an edit of a
+  /// line -- it is one line out and another in, which is exactly what the
+  /// account sees: the old row is deleted and a new one created by the next
+  /// reconcile. [serverId] is dropped for that reason; keeping it would have
+  /// the sync update the old row in place and the shopper would end up with a
+  /// row on the server that says one thing and a line here that says another.
+  ///
+  /// The quantity and the line's place in the list are kept: the shopper
+  /// changed which one they want, not how many or where it sits.
+  ///
+  /// If the cart already holds the variant being switched to, the two are one
+  /// line and the quantities add up -- the same rule [add] follows.
+  ///
+  /// Returns the resulting line, or null when there was nothing to change.
+  CartLine? changeVariant(
+    String key, {
+    required String? variantLabel,
+    String? skuId,
+    String? specId,
+    num? unitPrice,
+    num? listPrice,
+    String? imageUrl,
+  }) {
+    final index = _lines.indexWhere((line) => line.key == key);
+    if (index == -1) return null;
+    final line = _lines[index];
+
+    final next = CartLine(
+      productId: line.productId,
+      title: line.title,
+      // The variant's own price when the seller prices them apart, and the
+      // line's when they do not. A null here would quote nothing.
+      unitPrice: unitPrice ?? line.basePrice,
+      variantLabel: variantLabel,
+      listPrice: listPrice ?? line.listPrice,
+      imageUrl: imageUrl ?? line.imageUrl,
+      quantity: line.quantity,
+      minOrder: line.minOrder,
+      freeDelivery: line.freeDelivery,
+      category: line.category,
+      source: line.source,
+      skuId: skuId,
+      specId: specId,
+      // An option with a price of its own is off the ladder; one priced from
+      // the listing stays on it.
+      tiers: unitPrice == null ? line.tiers : const [],
+    );
+
+    if (next.key == line.key &&
+        next.unitPrice == line.unitPrice &&
+        next.skuId == line.skuId &&
+        next.imageUrl == line.imageUrl) {
+      return null;
+    }
+
+    if (next.key == line.key) {
+      // The same variant with fresher figures: the row on the server still
+      // stands for it, so its id is kept.
+      _lines[index] = CartLine(
+        productId: next.productId,
+        title: next.title,
+        unitPrice: next.unitPrice,
+        variantLabel: next.variantLabel,
+        listPrice: next.listPrice,
+        imageUrl: next.imageUrl,
+        quantity: next.quantity,
+        minOrder: next.minOrder,
+        freeDelivery: next.freeDelivery,
+        category: next.category,
+        source: next.source,
+        skuId: next.skuId,
+        specId: next.specId,
+        serverId: line.serverId,
+      );
+    } else {
+      final existing = _lines.indexWhere((other) => other.key == next.key);
+      _lines.removeAt(index);
+      if (existing == -1) {
+        _lines.insert(index, next);
+      } else {
+        // Merged into the line that is already there, wherever it sits.
+        final at = existing > index ? existing - 1 : existing;
+        final merged = (_lines[at].quantity + next.quantity).clamp(
+          _lines[at].minOrder,
+          maxPerLine,
+        );
+        _lines[at] = _lines[at].copyWith(quantity: merged);
+      }
+    }
+
+    notifyListeners();
+    unawaited(_persist());
+    _scheduleSync();
+    return _lineByKey(next.key);
+  }
+
   /// Takes a line out of the cart.
   ///
   /// [announce] is false where the line is being removed by the app rather
@@ -671,6 +869,16 @@ class CartStore extends ChangeNotifier {
   ApiError? _syncError;
 
   ApiError? get syncError => _syncError;
+
+  /// The lines the account refused, by [CartLine.key], with the reason each
+  /// was refused.
+  ///
+  /// Empty when the failure was not about particular lines -- no connection,
+  /// or a session the server would not accept -- which is what tells the
+  /// banner whether it can name the item.
+  Map<String, ApiError> _rejected = const {};
+
+  Map<String, ApiError> get rejected => Map.unmodifiable(_rejected);
   bool get isSyncing => _syncing;
 
   /// True when this cart lives only on the device.
@@ -686,51 +894,112 @@ class CartStore extends ChangeNotifier {
     _syncing = true;
     notifyListeners();
 
+    // Which account this reconcile is for. Checked after every answer: once
+    // the shopper has switched, the rest of it belongs to nobody.
+    final epoch = _epoch;
+    final rejected = <String, ApiError>{};
+
     try {
       final server = await CartRepository.instance.list();
+      if (epoch != _epoch) return;
       final remaining = {for (final item in server.items) item.id: item};
 
       for (var i = 0; i < _lines.length; i++) {
         final line = _lines[i];
         final match = _matchOnServer(line, remaining.values);
 
-        if (match == null) {
-          final created = await CartRepository.instance.add(
-            quantity: line.quantity,
-            source: line.source,
-            sourceProductId: line.source == 'local' ? null : line.productId,
-            productId: line.source == 'local' ? line.productId : null,
-            variantLabel: line.variantLabel,
-            productData: _snapshotOf(line),
-          );
-          _lines[i] = line.copyWith(serverId: created.id);
-          continue;
-        }
+        // Each line stands or falls on its own. One product the account will
+        // not take used to abort this whole loop: every line after it was
+        // never even attempted, no removal was carried out, and the banner
+        // then said the cart was not saved to the account -- about nineteen
+        // lines that were fine and two that had already been written.
+        try {
+          if (match == null) {
+            final created = await CartRepository.instance.add(
+              quantity: line.quantity,
+              source: line.source,
+              sourceProductId: line.source == 'local' ? null : line.productId,
+              productId: line.source == 'local' ? line.productId : null,
+              variantLabel: line.variantLabel,
+              productData: _snapshotOf(line),
+            );
+            // Switched away while that was in flight: the lines on screen are
+            // another account's now, and none of this loop is theirs.
+            if (epoch != _epoch) return;
+            _lines[i] = line.copyWith(serverId: created.id);
+            continue;
+          }
 
-        remaining.remove(match.id);
-        if (match.quantity != line.quantity) {
-          await CartRepository.instance.setQuantity(match.id, line.quantity);
-        }
-        if (line.serverId != match.id) {
-          _lines[i] = line.copyWith(serverId: match.id);
+          remaining.remove(match.id);
+          if (match.quantity != line.quantity) {
+            await CartRepository.instance.setQuantity(match.id, line.quantity);
+            if (epoch != _epoch) return;
+          }
+          if (line.serverId != match.id) {
+            _lines[i] = line.copyWith(serverId: match.id);
+          }
+        } on ApiError catch (e) {
+          // A refused session is not a refused product: nothing here can be
+          // saved, so stop instead of asking twenty more times and reporting
+          // twenty rejections for one expired token.
+          if (e.statusCode == 401 || e.statusCode == 403) rethrow;
+          rejected[line.key] = e;
         }
       }
 
       // Rows the shopper removed on this device. Removed one at a time because
       // there is no batch delete.
       for (final orphan in remaining.values) {
-        await CartRepository.instance.remove(orphan.id);
+        // These rows were read from the account this began in. Once the
+        // shopper has switched, removing them would be removing from nobody's
+        // cart on screen -- and the requests would go out as the new one.
+        if (epoch != _epoch) return;
+        try {
+          await CartRepository.instance.remove(orphan.id);
+        } on ApiError catch (e) {
+          if (e.statusCode == 401 || e.statusCode == 403) rethrow;
+          // A row that will not delete is not a line the shopper is holding,
+          // so there is nothing on screen to report it against. The next
+          // reconcile tries again.
+        }
+      }
+      if (epoch != _epoch) return;
+
+      // What the server now charges for each row. It reprices a row to its
+      // own ladder when the quantity changes, so a quantity pushed just now
+      // is read back rather than assumed: the cart shows the figure checkout
+      // will charge, not the one this device last worked out.
+      try {
+        final confirmed = await CartRepository.instance.list();
+        if (epoch != _epoch) return;
+        _adoptServerPrices(confirmed);
+      } on ApiError catch (e) {
+        // The pushes stood; only the read-back failed. A refused session is
+        // still a refused session, and the rest waits for the next read.
+        if (e.statusCode == 401 || e.statusCode == 403) rethrow;
       }
 
-      _syncError = null;
+      _rejected = rejected;
+      // Only what was actually refused. The first reason stands for the
+      // banner; [rejected] says exactly which lines it was.
+      _syncError = rejected.isEmpty ? null : rejected.values.first;
     } on ApiError catch (e) {
-      // The cart on screen is still what the shopper wants; it just is not
-      // saved yet. Kept, not rolled back.
-      _syncError = e;
+      // The account could not be reached, or would not talk to us at all --
+      // as opposed to taking most of the cart and refusing one line. The cart
+      // on screen is still what the shopper wants; it just is not saved yet.
+      // Kept, not rolled back.
+      if (epoch == _epoch) {
+        _syncError = e;
+        _rejected = const {};
+      }
     } finally {
-      _syncing = false;
-      notifyListeners();
-      unawaited(_persist());
+      // After a switch the new account's cart owns these; this reconcile has
+      // nothing left to say about it.
+      if (epoch == _epoch) {
+        _syncing = false;
+        notifyListeners();
+        unawaited(_persist());
+      }
     }
   }
 
@@ -762,6 +1031,10 @@ class CartStore extends ChangeNotifier {
     'skuId': ?line.skuId,
     'specId': ?line.specId,
     'variantLabel': ?line.variantLabel,
+    // The ladder, in the product record's shape and under the name the
+    // storefront stores it by, so a line rebuilt from the account keeps
+    // repricing as its quantity changes.
+    if (line.tiers.isNotEmpty) 'quantityTiers': quantityTiersJson(line.tiers),
   };
 
   /// Replaces the cart with the account's, keeping local snapshots for the
@@ -798,7 +1071,16 @@ class CartStore extends ChangeNotifier {
         cached?.unitPrice ??
         0;
 
+    // The ladder the row was stored with, or this device's copy of it.
+    final ladder = quantityTiersFrom(data['quantityTiers']);
+    final tiers = _ladderAgreeing(
+      ladder.isNotEmpty ? ladder : (cached?.tiers ?? const []),
+      price,
+      item.quantity,
+    );
+
     return CartLine(
+      tiers: tiers,
       productId: item.key,
       variantLabel: item.variantLabel,
       title:
@@ -822,6 +1104,49 @@ class CartStore extends ChangeNotifier {
     );
   }
 
+  /// [ladder] when it charges [price] at [quantity], and nothing when it
+  /// does not.
+  ///
+  /// The server's price for a row is the price. A ladder that disagrees with
+  /// it -- the seller moved a rung since this device stored it -- would
+  /// reprice the row to a figure nobody will charge, so it is dropped and the
+  /// server's price stands until the next sync brings a fresh one.
+  static List<QuantityTier> _ladderAgreeing(
+    List<QuantityTier> ladder,
+    num price,
+    int quantity,
+  ) {
+    if (ladder.isEmpty || price <= 0) return const [];
+    return tierPriceAt(ladder, price, quantity) == price ? ladder : const [];
+  }
+
+  /// Takes the server's own price for each row this device holds.
+  ///
+  /// The server reprices a row to its ladder when the quantity changes
+  /// (measured: 1 to 50 moved a row to its 50+ price, and back again), so
+  /// after a quantity is pushed this reads the row back rather than assuming.
+  /// Nothing else about a line changes, and a row it cannot match is left as
+  /// it is.
+  void _adoptServerPrices(ServerCart cart) {
+    final byId = {for (final item in cart.items) item.id: item};
+    var changed = false;
+    for (var i = 0; i < _lines.length; i++) {
+      final line = _lines[i];
+      final row = byId[line.serverId];
+      if (row == null) continue;
+      final price =
+          asNum(row.productData['price']) ??
+          asNum(row.productData['display_price']);
+      if (price == null || price <= 0 || price == line.unitPrice) continue;
+      _lines[i] = line.copyWith(
+        basePrice: price,
+        tiers: _ladderAgreeing(line.tiers, price, line.quantity),
+      );
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
   /// Asks the server again and takes its answer.
   ///
   /// Used on a cold start and by pull-to-refresh: what is in the account is
@@ -831,17 +1156,25 @@ class CartStore extends ChangeNotifier {
     if (isGuestCart) return;
     _syncing = true;
     notifyListeners();
+    // The account this cart is asked for. One that answers after a switch is
+    // somebody else's cart, and is dropped.
+    final epoch = _epoch;
     try {
-      _adoptServerCart(await CartRepository.instance.list());
+      final cart = await CartRepository.instance.list();
+      if (epoch != _epoch) return;
+      _adoptServerCart(cart);
       _syncError = null;
+      _rejected = const {};
     } on ApiError catch (e) {
       // Keep whatever is cached. An empty cart shown because the network
       // failed reads as "we lost your things".
-      _syncError = e;
+      if (epoch == _epoch) _syncError = e;
     } finally {
-      _syncing = false;
-      notifyListeners();
-      unawaited(_persist());
+      if (epoch == _epoch) {
+        _syncing = false;
+        notifyListeners();
+        unawaited(_persist());
+      }
     }
   }
 
@@ -850,14 +1183,24 @@ class CartStore extends ChangeNotifier {
 
   /// Runs the pending sync now instead of waiting out the debounce.
   ///
-  /// For tests: waiting on a wall-clock timer makes them flaky the moment the
-  /// machine is busy, and a flaky test about money is worse than no test.
-  @visibleForTesting
-  Future<void> flushSyncForTest() async {
+  /// For anything that has to be able to say whether the account took a change
+  /// -- a variant swap reports its own success or failure where it happened,
+  /// and cannot do that while the write is six hundred milliseconds away.
+  ///
+  /// A guest has no account to write to and returns immediately, which is not
+  /// a failure: their cart is already where it lives.
+  Future<void> syncNow() async {
     _syncDebounce?.cancel();
     _syncDebounce = null;
     await _reconcile();
   }
+
+  /// The same thing, under the name the tests already call it by.
+  ///
+  /// Waiting on a wall-clock timer makes them flaky the moment the machine is
+  /// busy, and a flaky test about money is worse than no test.
+  @visibleForTesting
+  Future<void> flushSyncForTest() => syncNow();
 
   /// Schedules a reconcile, coalescing a burst of stepper taps into one.
   void _scheduleSync() {
@@ -880,11 +1223,14 @@ class CartStore extends ChangeNotifier {
   @visibleForTesting
   void resetForTest() {
     _lines.clear();
+    // Anything still in flight from the last test belongs to nobody now.
+    _epoch++;
     _scope = null;
     _loaded = false;
     _bound = false;
     _syncing = false;
     _syncError = null;
+    _rejected = const {};
     _syncDebounce?.cancel();
     _syncDebounce = null;
     // The quote belongs to a basket. Leaving it behind when the basket is

@@ -39,6 +39,7 @@ class AppStrings {
   const AppStrings({
     required this.categories,
     required this.home,
+    required this.newForYou,
     required this.saved,
     required this.signIn,
     required this.account,
@@ -57,6 +58,9 @@ class AppStrings {
 
   final String categories;
   final String home;
+
+  /// The personalised feed's tab and heading.
+  final String newForYou;
   final String saved;
   final String signIn;
   final String account;
@@ -109,6 +113,7 @@ class AppStrings {
   static final en = AppStrings(
     categories: 'Categories',
     home: 'Home',
+    newForYou: 'New for You',
     saved: 'Saved',
     signIn: 'Sign in',
     account: 'Account',
@@ -132,6 +137,7 @@ class AppStrings {
   static final ne = AppStrings(
     categories: 'श्रेणीहरू',
     home: 'गृहपृष्ठ',
+    newForYou: 'तपाईंका लागि नयाँ',
     saved: 'सुरक्षित',
     signIn: 'साइन इन',
     account: 'खाता',

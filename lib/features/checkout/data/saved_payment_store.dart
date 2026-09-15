@@ -210,12 +210,17 @@ class SavedPaymentStore extends ChangeNotifier {
   /// one -- which for payment details is the worst kind of wrong.
   Future<void> _switchTo(String? email) async {
     if (email == _scope) return;
+    _epoch++;
     _scope = email;
     _cards.clear();
     await _readInto(_cards, storageKeyFor(email));
     _loaded = true;
     notifyListeners();
   }
+
+  /// Bumped on every change of account. A card list asked for as one account
+  /// and answered after a switch is dropped, never shown as the next one's.
+  int _epoch = 0;
 
   @visibleForTesting
   Future<void> switchIdentity(String? email) => _switchTo(email);
@@ -231,7 +236,9 @@ class SavedPaymentStore extends ChangeNotifier {
   /// account to ask about.
   Future<void> syncFromServer() async {
     if (!AuthStore.instance.isSignedIn) return;
+    final epoch = _epoch;
     final rows = await SavedPaymentRepository.instance.list();
+    if (epoch != _epoch) return;
     _cards
       ..clear()
       ..addAll(rows);

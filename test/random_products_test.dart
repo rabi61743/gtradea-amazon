@@ -372,6 +372,17 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(_inFeed(find.text(_title)), findsNothing);
+
+      // Scrolled to rather than assumed on screen: the feed is a lazy list and
+      // the recommendations are the last thing on it, so on a page this long
+      // they are not built until they are reached.
+      await tester.scrollUntilVisible(
+        _inFeed(find.text('boom')),
+        600,
+        scrollable: _homeScroll(),
+        maxScrolls: 60,
+      );
+
       // Said once, by the recommendations, with the server's own words.
       expect(_inFeed(find.text('boom')), findsOneWidget);
     });

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gtradea_amazon/shared/widgets/page_width.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/core/theme/colors.dart';
 import 'package:gtradea_amazon/features/catalog/data/product.dart';
@@ -25,9 +26,15 @@ FlashSale _sale(DateTime endsAt) => FlashSale(
 
 Widget _wrap(Widget child, {double scale = 1.0}) => MaterialApp(
   theme: AppTheme.light,
-  home: MediaQuery(
-    data: MediaQueryData(textScaler: TextScaler.linear(scale)),
-    child: Scaffold(body: SingleChildScrollView(child: child)),
+  // Copied from the ambient query rather than built fresh: a bare
+  // MediaQueryData has a size of zero, and the card measures its page margin
+  // from the width of the screen.
+  home: Builder(
+    builder: (context) => MediaQuery(
+      data: MediaQuery.of(context)
+          .copyWith(textScaler: TextScaler.linear(scale)),
+      child: Scaffold(body: SingleChildScrollView(child: child)),
+    ),
   ),
 );
 
@@ -116,12 +123,136 @@ void main() {
             .first,
       );
 
-      // 76 is every inset between the screen edge and the clock: the card's
-      // own 16pt page margin, its 11pt padding, the countdown panel's 10 and
-      // that panel's 1pt border, each doubled. So the clock is given every
-      // point of the row that is not padding.
-      expect(box.width, closeTo(card.width - 76, 1), reason: '${width}dp');
+      // Every inset between the screen edge and the clock, doubled: the page
+      // margin the card now shares with the rest of the home page -- 1.5% of
+      // the screen rather than a flat 16 -- plus the card's own padding.
+      // The countdown's panel has no ground and no padding of its own now, so
+      // there is nothing else between the two.
+      //
+      // Read from the card rather than copied. This carried its own 11, and
+      // when the card's padding came down the clock correctly grew into the
+      // room while this went on computing the old, smaller allowance -- so the
+      // test failed for a card that was behaving exactly as asked.
+      final inset =
+          2 * (width * (1 - PageWidth.factor) / 2 + FlashSaleCard.pad);
+      final whole = card.width - inset;
+
+      // The clock keeps the row apart from the corner the artwork takes, which
+      // is a fifth of it. What it is never given is a third of a row, which is
+      // the defect this test was written for.
+      expect(box.width, lessThanOrEqualTo(whole + 1), reason: '${width}dp');
+      expect(box.width, greaterThan(whole * 0.6), reason: '${width}dp');
       expect(tester.takeException(), isNull, reason: '${width}dp');
+    }
+  });
+
+  /// The clock's panel.
+  Finder clockPanel() => find
+      .ancestor(
+        of: find.byType(SaleCountdown),
+        matching: find.byType(Container),
+      )
+      .first;
+
+  Future<void> pumpAt(WidgetTester tester, double width) async {
+    tester.view.physicalSize = Size(width * 3, 2400);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      _wrap(
+        FlashSaleCard(
+          sale: _sale(now.add(const Duration(hours: 2))),
+          now: () => now,
+        ),
+      ),
+    );
+    await tester.pump();
+  }
+
+  testWidgets('the banner is the card own ground, from the right', (
+    tester,
+  ) async {
+    // One card: the picture is the card's background and everything else --
+    // the mark, the heading, the button, the sentence and the clock -- is set
+    // on it. Not a second card, and not a block in the column.
+    for (final width in [360.0, 412.0, 840.0]) {
+      await pumpAt(tester, width);
+
+      final ground = tester
+          .widgetList<Ink>(find.byType(Ink))
+          .map((ink) => ink.decoration)
+          .whereType<BoxDecoration>()
+          .firstWhere((d) => d.image != null);
+
+      final picture = ground.image!;
+      expect(
+        (picture.image as AssetImage).assetName,
+        contains('gift_banner'),
+        reason: '${width}dp',
+      );
+      // Cover, so nothing is stretched; from the right, so what falls outside
+      // the card is the flat red at the artwork's left end and what is kept is
+      // the gift.
+      expect(picture.fit, BoxFit.cover);
+      expect(picture.alignment, Alignment.centerRight);
+      // And the card keeps its own gradient underneath, which is what it is if
+      // the file ever fails to load.
+      expect(ground.gradient, isNotNull);
+    }
+  });
+
+  testWidgets('and every word on the card is set over it', (tester) async {
+    await pumpAt(tester, 412);
+
+    // The heading, its mark, the sentence, the button and the clock -- all of
+    // them on the one card, over the one picture.
+    expect(find.text('Flash Sales'), findsOneWidget);
+    expect(find.byIcon(Icons.bolt), findsOneWidget);
+    expect(find.byType(SaleCountdown), findsOneWidget);
+    expect(find.text('Days'), findsOneWidget);
+
+    // With a wash between the picture and the words, so the type keeps its
+    // contrast on the busy half of the artwork.
+    expect(find.byType(DecoratedBox), findsWidgets);
+  });
+
+  testWidgets('and the clock carries no ground of its own', (tester) async {
+    await pumpAt(tester, 412);
+
+    final panel = tester.widget<Container>(clockPanel());
+    expect(panel.decoration, isNull, reason: 'no fill, no border, no shadow');
+
+    // The figures themselves are still boxed and still there.
+    expect(find.text('Days'), findsOneWidget);
+    expect(find.text('Secs'), findsOneWidget);
+  });
+
+  testWidgets('and the clock stops before the gift', (tester) async {
+    // The gift sits at the right end of the picture. The clock's row is held
+    // back from it so the two never run together.
+    for (final width in [360.0, 412.0]) {
+      await pumpAt(tester, width);
+
+      final card = tester.getRect(find.byType(FlashSaleCard));
+      final panel = tester.getRect(clockPanel());
+
+      expect(
+        card.right - panel.right,
+        greaterThan(60),
+        reason: 'room for the gift at ${width}dp',
+      );
+      expect(panel.left, greaterThan(card.left), reason: 'inside the card');
+    }
+  });
+
+  testWidgets('and the card is no taller for the picture', (tester) async {
+    // The picture is the ground, not a block in the column, so it costs the
+    // card no height at all.
+    for (final width in [360.0, 412.0]) {
+      await pumpAt(tester, width);
+      final card = tester.getSize(find.byType(FlashSaleCard));
+      expect(card.height, lessThan(150), reason: '${width}dp');
     }
   });
 
@@ -153,8 +284,9 @@ void main() {
       );
       await tester.pump();
 
+      // The artwork is in the corner, over the card rather than under it, so
+      // the card's own height is what it always was.
       final card = tester.getSize(find.byType(FlashSaleCard));
-
       expect(card.height, lessThan(150), reason: '${width}dp');
       // The old height, kept as the thing not to go back to.
       expect(card.height, lessThan(201 * 0.75), reason: '${width}dp');

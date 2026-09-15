@@ -236,17 +236,26 @@ void main() {
     });
 
     test('no quote means no delivery leg and the default rate', () {
-      // A quote of mode "off", or nothing at all, hides the block rather than
-      // showing a zero row.
+      // "off" is the shop saying it does not quote carriage at all, and the
+      // block is hidden rather than showing a zero row.
       expect(
         DeliveryQuote.fromJson(const {'mode': 'off', 'total': 500}),
         isNull,
       );
-      expect(DeliveryQuote.fromJson(const {'total': 0}), isNull);
 
       final summary = OrderSummary.compute(subtotal: 1000);
       expect(summary.logisticTotal, 0);
       expect(summary.vatPercent, 13);
+    });
+
+    test('and a quote of zero is free carriage, not the absence of one', () {
+      // These were folded together, which hid free delivery behind the same
+      // silence as no delivery quote. A total of zero is an answer.
+      final free = DeliveryQuote.fromJson(const {'total': 0});
+
+      expect(free, isNotNull);
+      expect(free!.total, 0);
+      expect(free.isFree, isTrue);
     });
   });
 

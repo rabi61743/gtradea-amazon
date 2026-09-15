@@ -196,7 +196,8 @@ void main() {
       await pump(tester);
 
       expect(find.text('Continue with Google'), findsNothing);
-      expect(find.text('or continue with'), findsNothing);
+      // Apple is always offered, so the divider stays for it.
+      expect(find.text('Continue with Apple'), findsOneWidget);
     });
 
     testWidgets('nor when the settings call fails', (tester) async {

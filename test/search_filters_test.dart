@@ -510,6 +510,36 @@ void main() {
       expect(ProductResultCard.columnsFor(200), 2);
     });
 
+    test('search sizes its cards for looking at, on every width', () {
+      // Phone: two columns, tight gaps, thin padding so the picture is big.
+      final phone = ResultGridSpec.search(364);
+      expect(phone.columns, 2);
+      expect(phone.gap, 8);
+      expect(phone.cardPadding, 6);
+      expect(phone.cardWidth(364), greaterThan(175));
+
+      // Tablet: more columns, but each card still wider than the standard.
+      final tablet = ResultGridSpec.search(776);
+      expect(tablet.columns, 3);
+      expect(
+        tablet.cardWidth(776),
+        greaterThan(ResultGridSpec.standard(776).cardWidth(776)),
+      );
+
+      // Desktop: bigger cards rather than more of them, and never a sprawl.
+      final desktop = ResultGridSpec.search(1358);
+      expect(desktop.columns, 5);
+      expect(desktop.cardWidth(1358), greaterThan(240));
+      expect(ResultGridSpec.search(3000).columns, 6);
+    });
+
+    test('the standard grid the other sections use is unchanged', () {
+      final spec = ResultGridSpec.standard(800);
+      expect(spec.columns, ProductResultCard.columnsFor(800));
+      expect(spec.gap, ProductResultCard.gridGap);
+      expect(spec.cardWidth(800), ProductResultCard.widthFor(800));
+    });
+
     testWidgets('lays out without overflowing on a narrow phone', (
       tester,
     ) async {

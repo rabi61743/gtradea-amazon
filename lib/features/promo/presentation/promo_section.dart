@@ -76,6 +76,13 @@ class _PromoSectionState extends State<PromoSection> {
 
         return Card(
           margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          // Flat, like the product lines above it. The theme lifts every Card
+          // by 1, and a column of floating slips down the cart reads as a pile
+          // rather than a page. The border and the corner stay: they are what
+          // separates this block from the summary under it now.
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(

@@ -64,11 +64,17 @@ class QuoteRequest {
     this.seller,
     this.createdAt,
     this.lastMessageAt,
+    this.sourceId,
   });
 
   final String id;
   final String title;
   final QuoteStatus status;
+
+  /// The catalogue id of the product this is about, as it was posted --
+  /// `product_source_id`. Null where the server does not return it. It is
+  /// what lets a request lead back to the product itself.
+  final String? sourceId;
 
   /// What the server called it, kept for a status this app does not know.
   final String statusRaw;
@@ -121,6 +127,54 @@ class QuoteRequest {
           asString(asMap(json['seller'])['name']),
       createdAt: asDate(json['created_at']),
       lastMessageAt: asDate(json['last_message_at']),
+      sourceId: switch (asString(json['product_source_id'])) {
+        final id? when id.trim().isNotEmpty => id.trim(),
+        _ => null,
+      },
+    );
+  }
+}
+
+/// One thing said on an inquiry, by the shopper or by the shop.
+///
+/// The row `/product-requests/{id}/messages` answers with. The storefront
+/// renders exactly these fields, and `sender_type` is how it decides which
+/// side of the thread a message sits on.
+class QuoteMessage {
+  const QuoteMessage({
+    required this.id,
+    required this.message,
+    required this.fromShopper,
+    this.attachments = const [],
+    this.sentAt,
+  });
+
+  final String id;
+  final String message;
+
+  /// True when this account wrote it, false when the shop did.
+  final bool fromShopper;
+
+  /// Storage keys, which is what the shop stores and what
+  /// [SupportAttachmentRepository] downloads by.
+  final List<String> attachments;
+
+  final DateTime? sentAt;
+
+  factory QuoteMessage.fromJson(Map<String, dynamic> json) {
+    final rows = json['attachments'];
+    return QuoteMessage(
+      id: asString(json['id']) ?? '',
+      message: asString(json['message']) ?? '',
+      fromShopper:
+          (asString(json['sender_type']) ?? '').toLowerCase() == 'user',
+      attachments: [
+        if (rows is List)
+          for (final row in rows)
+            if (asString(row) case final key?)
+              if (key.isNotEmpty) key,
+      ],
+      sentAt: asDate(json['created_at']),
     );
   }
 }
@@ -158,6 +212,27 @@ class QuoteRepository {
   Future<QuoteRequest> byId(String id) => guarded(() async {
     final res = await _dio.get('/product-requests/${Uri.encodeComponent(id)}');
     return QuoteRequest.fromJson(asMap(res.data));
+  });
+
+  /// The thread on one request, oldest first.
+  ///
+  /// The route the storefront reads for the same page. A request with nothing
+  /// said on it answers with an empty list rather than a 404.
+  Future<List<QuoteMessage>> messages(String id) => guarded(() async {
+    final res = await _dio.get(
+      '/product-requests/${Uri.encodeComponent(id)}/messages',
+    );
+    final rows = asRows(
+      res.data,
+      key: 'messages',
+    ).map(QuoteMessage.fromJson).toList();
+    rows.sort((a, b) {
+      final left = a.sentAt;
+      final right = b.sentAt;
+      if (left == null || right == null) return 0;
+      return left.compareTo(right);
+    });
+    return List.unmodifiable(rows);
   });
 
   /// Posts a message onto a request, with any files already uploaded.

@@ -27,7 +27,10 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: Scaffold(body: SearchHeader())),
     );
-    await tester.pump();
+    // Settled rather than pumped once: a signed-in header asks for the coin
+    // balance on its first frame, and a request still in flight when the test
+    // ends is a pending timer.
+    await tester.pumpAndSettle();
   }
 
   group('the greeting', () {
@@ -108,6 +111,40 @@ void main() {
       final greeting = tester.getRect(find.text('Hi,'));
       final pill = tester.getRect(find.byKey(SearchHeader.pillKey));
       expect(greeting.right, lessThanOrEqualTo(pill.left));
+    });
+
+    testWidgets('and the two share one row, low in the band', (tester) async {
+      // By request: greeting on the left, pill on the right, both on the same
+      // line through their middles, and the line itself down at the foot of the
+      // header rather than centred in it.
+      signInForTest(name: 'Pravakar Yadav');
+
+      await pump(tester);
+
+      final band = tester.getRect(find.byType(SearchHeader));
+      final greeting = tester.getRect(find.text('Hi,'));
+      final name = tester.getRect(find.text('Pravakar'));
+      final pill = tester.getRect(find.byKey(SearchHeader.pillKey));
+
+      // One row: the greeting block and the pill overlap vertically, and their
+      // centres agree.
+      final block = greeting.expandToInclude(name);
+      expect(block.center.dy, closeTo(pill.center.dy, 1.5));
+
+      // Low in it: what is left under them is a fraction of the band, not the
+      // half a centred row would leave.
+      for (final rect in [block, pill]) {
+        final under = band.bottom - rect.bottom;
+        expect(under, greaterThan(0), reason: 'still inside the header');
+        expect(
+          under,
+          lessThan(band.height * 0.15),
+          reason: 'and near the foot of it',
+        );
+      }
+
+      // Inside the header, not a section under it.
+      expect(pill.bottom, lessThan(band.bottom));
     });
 
     testWidgets('signed out, the pill has the full width', (tester) async {

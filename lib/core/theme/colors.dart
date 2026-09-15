@@ -2,26 +2,24 @@ import 'package:flutter/material.dart';
 
 /// The GtradeA brand system.
 ///
-/// These four are the brand. Every hex below the brand block is either derived
-/// from one of them or a utility the system does not name -- a courier's
-/// colour, a payment provider's -- and none of them should grow into a fifth
-/// brand colour.
+/// Six colours, and every hex below the brand block is either one of them, a
+/// derivation of one, or a utility the system does not name -- a courier's
+/// colour, a payment provider's. None of them should grow into a seventh.
 ///
-/// Premium Ivory and Mountain Grey used to sit here as the fifth and sixth.
-/// They are gone. What they were doing has not gone with them: a page still
-/// needs a ground and a card still needs an edge, so both roles are now filled
-/// by [himalayanSlate] laid over white at a stated alpha -- [pageWash],
-/// [surfaceWash] and [hairline] below. That keeps the neutrals tied to a brand
-/// colour instead of being two more hexes nobody can derive, and it drops the
-/// warm cast the ivory put over every screen.
+/// The neutrals were briefly derived instead: three washes of
+/// [himalayanSlate] over white, after Premium Ivory and Mountain Grey were
+/// dropped. They are back, by request, and they carry exactly the roles the
+/// brand names for them -- ivory for quiet ground and subtle panels, grey for
+/// every line and edge. The washes are gone, and the names that pointed at
+/// them now point at these.
 ///
 /// ## The 60-30-10 rule
 ///
 /// What decides which of the three leading colours a surface gets:
 ///
-///   * **60% [pageWash]** -- the page itself. Breathing space, contrast
-///     margins, the ground everything sits on. It is the scaffold background,
-///     which is why cards read as cards: they are white *on* something.
+///   * **60% white and [premiumIvory]** -- the page and the quiet ground on
+///     it. Breathing space, contrast margins, the surfaces everything else
+///     sits on.
 ///   * **30% [trustBlue]** -- structure. The header band, navigation, overlay
 ///     bars, anything making a statement the shopper is asked to trust.
 ///   * **10% [commerceOrange]** -- and no more. Calls to action, promotional
@@ -55,32 +53,45 @@ class AppColors {
   /// the light theme.
   static const Color himalayanSlate = Color(0xFF36454F);
 
+  /// Premium Ivory. RGB 242, 236, 230.
+  ///
+  /// Breathing space, quiet panels, subtle section grounds, contrast areas.
+  /// Warm rather than grey, which is what separates a panel from a border:
+  /// one is a surface, the other is a line.
+  static const Color premiumIvory = Color(0xFFF2ECE6);
+
+  /// Mountain Grey. RGB 229, 231, 235.
+  ///
+  /// Dividers, borders, card outlines, secondary frames. Lines only -- a
+  /// fill in this colour is a border that grew.
+  static const Color mountainGrey = Color(0xFFE5E7EB);
+
   /// Success Green. RGB 34, 197, 94.
   ///
   /// Verification checkmarks, trust badges, positive metrics.
   static const Color successGreen = Color(0xFF22C55E);
 
-  // ── The neutrals, derived ─────────────────────────────────────────────────
-  // Three washes of Himalayan Slate over white, at 6%, 8% and 14%. Written as
-  // literals because they are used in const contexts and alphaBlend is not a
-  // const expression -- so a test pins each one to its own blend, the same way
-  // trustBlueDeep's derivation is pinned. Change the alpha there and the test
-  // says what the new literal has to be.
+  // ── The neutrals ──────────────────────────────────────────────────────────
+  // Two brand colours doing two jobs, under the names the rest of the file
+  // already used for them. Kept as names rather than replaced everywhere, so
+  // the role a colour is filling stays readable at the point of use.
 
-  /// The ground the app sits on: Himalayan Slate at 6% over white.
+  /// The quiet ground: breathing space, contrast areas, section backgrounds.
   ///
-  /// This is the 60. Not white, because white cards on a white page are edges
-  /// rather than cards; not ivory, because the brand no longer has one.
-  static const Color pageWash = Color(0xFFF3F4F4);
+  /// This is the 60 of the 60-30-10 wherever a surface is not white. The page
+  /// itself stays white -- see [backgroundLight] -- so this is what a panel,
+  /// a chip or a skeleton is drawn in when it has to read as *on* the page.
+  static const Color pageWash = premiumIvory;
 
-  /// Filled chips, skeleton bones, quiet panels: slate at 8% over white.
+  /// Filled chips, skeleton bones, quiet panels.
   ///
-  /// A step darker than [pageWash] so a muted fill still reads *on* the page,
-  /// which is the job the old Mountain Grey was doing here.
-  static const Color surfaceWash = Color(0xFFEFF0F1);
+  /// The same ivory. A fill and a ground are the same job at two sizes, and
+  /// giving them two nearly-identical hexes was a distinction nobody could
+  /// see and everybody had to maintain.
+  static const Color surfaceWash = premiumIvory;
 
-  /// Dividers, card borders, frame outlines: slate at 14% over white.
-  static const Color hairline = Color(0xFFE3E5E6);
+  /// Dividers, card borders, frame outlines. Mountain Grey's whole job.
+  static const Color hairline = mountainGrey;
 
   // ── Mapped onto the theme ─────────────────────────────────────────────────
   // The names below are what the widgets already ask for. Each is one of the
@@ -111,7 +122,19 @@ class AppColors {
   ///
   /// White on this is 10.5:1 -- better than on Trust Blue itself, so nothing in
   /// the header row loses contrast by sitting at the top of the band.
-  static const Color brandBandTop = Color(0xFF10424F);
+  static const Color brandBandTop = Color(0xFF1B5E72);
+
+  /// Where the band finishes, a shade above Trust Blue.
+  ///
+  /// The ramp is three stops now, to the specified treatment: the dark top,
+  /// the brand blue through the middle where the utilities sit, and this at
+  /// the foot so the band lifts into the page rather than darkening into it.
+  ///
+  /// The specification says "approximately #2F8797", and this is 95% of it.
+  /// The reason is contrast: white on #2F8797 measures 4.17:1, under AA, and
+  /// the foot of the band is where the greeting and the search row sit. At
+  /// #2D808F it is 4.57:1 -- the same colour to the eye, and readable.
+  static const Color brandBandFoot = Color(0xFF2D808F);
 
   /// The header band, top to bottom.
   ///
@@ -120,10 +143,29 @@ class AppColors {
   /// and giving each its own top-to-bottom gradient would run the ramp twice
   /// and jump back to the dark end at the join. That join is the seam this
   /// header has already had removed once.
+  /// The head of the band, as specified.
+  static const Color brandBandHead = Color(0xFF1A4A5E);
+
+  /// And its foot, deeper than the head rather than lighter.
+  ///
+  /// This reverses the direction the ramp used to run. The old foot was a
+  /// shade *above* Trust Blue so the band lifted into the page; this one sinks
+  /// into it. Nothing is lost on legibility by going darker -- white measures
+  /// 14.66:1 here against the 4.57:1 the old foot was carefully tuned to
+  /// reach, so the greeting and the search row that sit down here are further
+  /// clear of AA than before, not nearer it.
+  static const Color brandBandDeep = Color(0xFF0D2B3E);
+
+  /// The header band, top to bottom.
+  ///
+  /// Two stops, by specification, where it used to be three. One gradient for
+  /// the whole band rather than one per widget: the band is a single box now,
+  /// and the ramp follows the curve cut out of its foot rather than stopping
+  /// at a straight edge.
   static const LinearGradient brandBand = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [brandBandTop, trustBlue],
+    colors: [brandBandHead, brandBandDeep],
   );
 
   /// Trust Blue lifted for a dark surface. The brand names one blue; this is
@@ -137,21 +179,27 @@ class AppColors {
 
   // ── Surfaces ──────────────────────────────────────────────────────────────
 
-  /// The page: plain white.
+  /// The page: Premium Ivory.
   ///
-  /// This was [pageWash], a 6% slate over white, so that a white card read as a
-  /// card rather than as an edge. It is white now because that is what was
-  /// asked for, and the consequence is worth knowing: a card and the page are
-  /// the same colour, so what separates them is their hairline border and
-  /// nothing else. Every card in this app draws one, which is why the change
-  /// is safe -- but a new card without a border will be invisible.
-  static const Color backgroundLight = Color(0xFFFFFFFF);
+  /// Its own stated role -- breathing space, contrast margins, the ground a
+  /// clean white card sits on. It was Mountain Grey for a moment, which put
+  /// the page and the hairline in the same colour and left card borders with
+  /// nothing to draw against. Ivory restores that: the line is grey, the page
+  /// is not.
+  ///
+  /// Measured on this ground: body slate 8.45:1, secondary text 4.89:1, the
+  /// brand blue 4.55:1. All clear AA for the sizes they are set in.
+  static const Color backgroundLight = Color.fromARGB(255, 243, 242, 242);
+  // static const Color backgroundLight = premiumIvory;
   static const Color backgroundDark = Color(0xFF1B2229);
 
   /// Body copy. Slate rather than near-black: the brand asks for legible, not
   /// maximal, and slate on the page wash is a softer read over long text.
   static const Color foregroundLight = himalayanSlate;
-  static const Color foregroundDark = pageWash;
+
+  /// Dark-theme body copy: the ivory, which is a warm off-white rather than
+  /// a glare of pure white on near-black.
+  static const Color foregroundDark = premiumIvory;
 
   /// Cards stay white, so they lift off the washed page.
   static const Color cardLight = Color(0xFFFFFFFF);
@@ -161,15 +209,21 @@ class AppColors {
 
   /// Filled chips, skeleton bones, quiet panels.
   ///
-  /// A step darker than the page rather than the same wash: a muted surface has
-  /// to read on the page *and* on a white card, and a fill the same colour as
-  /// the page it sits on is invisible.
-  static const Color mutedLight = surfaceWash;
+  /// Mountain Grey rather than the ivory, now that the page *is* the ivory: a
+  /// fill the same colour as the ground it sits on is not a fill. Cooler and
+  /// a step darker, so it reads on the page and under a white card alike.
+  static const Color mutedLight = mountainGrey;
   static const Color mutedDark = Color(0xFF2B3740);
 
   /// Secondary text -- captions, subtitles, the sold line on a product card.
-  /// Slate held back rather than a grey from outside the system.
-  static const Color mutedForegroundLight = Color(0xFF6B7A85);
+  ///
+  /// Slate held back rather than a grey from outside the system, and held
+  /// back only as far as it can be read on every ground the app draws it on:
+  /// **4.63:1 on the Mountain Grey page, 4.89:1 on Premium Ivory and 5.73:1
+  /// on a white card**, all clear of AA. It was #5F6D77 when the page was
+  /// white, and that measured 4.30 on the grey -- under the 4.5 small text
+  /// needs. The hue is the same; there is less light in it.
+  static const Color mutedForegroundLight = Color(0xFF5B6871);
   static const Color mutedForegroundDark = Color(0xFFAFBAC2);
 
   static const Color borderLight = hairline;

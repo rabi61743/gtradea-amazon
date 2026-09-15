@@ -138,27 +138,26 @@ void main() {
       expect(_svgOnDark, contains('viewBox="36.6 36.2 173.6 158.7"'));
     });
 
-    test('swaps the blue quarter for the near-white, and drops the blue', () {
+    test('swaps the blue quarter for the ivory, and drops the blue', () {
       // A file that kept both would still lose half the mark on the band.
       expect(_svgOnDark, contains('fill="#e94724"'));
-      expect(_svgOnDark, contains('fill="#f3f4f4"'));
+      expect(_svgOnDark, contains('fill="#f2ece6"'));
       // The fill specifically, not the string: the file's own comment names
       // the blue to explain why this variant exists, and that is worth keeping.
       expect(_svgOnDark, isNot(contains('fill="#267488"')));
     });
 
-    test('the light quarter is the palette near-white, not a hex of its own', () {
-      // It was Premium Ivory, and this test used to say so. That colour has
-      // been dropped, and this file is our own derivation of the supplied mark
-      // rather than the mark itself -- the geometry is untouched and only the
-      // fill the file exists to change has changed. So it follows the palette:
-      // otherwise deleting a brand colour would leave it painted on the header
-      // of every screen, which is where it was still showing.
-      expect(_svgOnDark, contains('fill="#f3f4f4"'));
-      expect(_svgOnDark, isNot(contains('f2ece6')));
+    test('the light quarter is Premium Ivory, not a hex of its own', () {
+      // It follows the palette, which is the point of the test rather than any
+      // particular hex: this file is our own derivation of the supplied mark,
+      // so when the brand neutral moved -- out of the system and, now, back
+      // into it -- the quarter moved with it. A logo painted in a colour the
+      // palette no longer holds is a colour nobody can find to change.
+      expect(_svgOnDark, contains('fill="#f2ece6"'));
 
-      final wash = AppColors.pageWash.toARGB32() & 0xFFFFFF;
-      expect(wash.toRadixString(16).padLeft(6, '0'), 'f3f4f4');
+      final ivory = AppColors.premiumIvory.toARGB32() & 0xFFFFFF;
+      expect(ivory.toRadixString(16).padLeft(6, '0'), 'f2ece6');
+      expect(AppColors.pageWash, AppColors.premiumIvory);
     });
   });
 

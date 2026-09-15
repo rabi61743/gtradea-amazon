@@ -3,18 +3,24 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
-import '../../../shared/widgets/artwork_panel.dart';
 import '../../cart/data/cart_store.dart';
 import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../data/order_store.dart';
 import '../data/orders_repository.dart';
 import '../widgets/order_request_sheets.dart';
-import '../widgets/order_status_chip.dart';
-import '../../../core/time_format.dart';
+import '../widgets/order_detail_cards.dart';
+import '../widgets/order_document_button.dart';
+import '../widgets/order_shipment_summary.dart';
 import '../widgets/order_timeline.dart';
+import '../../support/presentation/support_tickets_screen.dart';
+import 'track_order_screen.dart';
+import 'reorder_sheet.dart';
+import '../../cart/presentation/cart_screen.dart';
+import '../../checkout/presentation/checkout_screen.dart';
+
+import 'package:share_plus/share_plus.dart';
 
 /// One order: where it has got to, what is in it, and what was paid.
 ///
@@ -31,6 +37,9 @@ class OrderDetailScreen extends StatefulWidget {
 }
 
 class _OrderDetailScreenState extends State<OrderDetailScreen> {
+  /// Whether the items card is showing everything it has.
+  bool _allItems = false;
+
   /// Captured once, as on the list.
   ///
   /// There used to be a `Timer.periodic(1s)` here calling `setState` on the
@@ -122,6 +131,91 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
   }
 
+  /// The order number, on the clipboard.
+  ///
+  /// The one thing support asks for first, and the one thing that is hard
+  /// to read off a screen and type into a chat correctly.
+  void _copyReference(Order order) {
+    Clipboard.setData(ClipboardData(text: order.displayReference));
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Order number copied')));
+  }
+
+  /// Hands the order number to whatever the shopper shares with.
+  ///
+  /// The number and nothing else: an address, a phone number and a list of
+  /// what somebody bought are not things to put on a clipboard bound for a
+  /// group chat.
+  Future<void> _shareOrder(Order order) async {
+    await SharePlus.instance.share(
+      ShareParams(
+        text: 'My gtradea.com order ${order.displayReference}',
+        subject: 'gtradea.com order ${order.displayReference}',
+      ),
+    );
+  }
+
+  /// The tracking screen, which is where the carrier's own words live.
+  void _openTracking() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const TrackOrderScreen()));
+  }
+
+  /// Support, through the app's own tickets rather than a mail link.
+  void _openSupport() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const SupportTicketsScreen()));
+  }
+
+  /// Puts this order back in the cart, once the catalogue has been asked.
+  ///
+  /// An order is the record of a purchase, not evidence about what is for sale
+  /// today. This used to add the order's own lines straight to the cart, which
+  /// meant a withdrawn product, a sold-out colourway or a price that had moved
+  /// was discovered at checkout -- with the old figure already on screen and
+  /// the goods apparently bought. Every line is checked first now, and what
+  /// the catalogue said is shown before anything is added. See [ReorderSheet].
+  Future<void> _reorder(Order order) => _openReorder(order.lines);
+
+  /// The same, for one line of it: the shopper who wants the shoe cleaner
+  /// again and none of the rest.
+  Future<void> _buyAgain(CartLine line) =>
+      _openReorder([line], title: 'Buy again');
+
+  Future<void> _openReorder(
+    List<CartLine> lines, {
+    String title = 'Reorder',
+  }) async {
+    if (lines.isEmpty) return;
+
+    final outcome = await ReorderSheet.show(
+      context,
+      lines: lines,
+      title: title,
+    );
+    // Dismissed, or the screen went away while the sheet was open. Nothing was
+    // added in either case: the sheet writes to the cart only on confirmation.
+    if (outcome == null || !mounted) return;
+
+    // Both ways out are the screens the rest of the app uses. Nothing here is
+    // a checkout of this feature's own -- the cart, its totals, its coupon and
+    // the server's recalculation are all the existing ones.
+    if (outcome.checkout) {
+      final store = CartStore.instance;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              CheckoutScreen(lines: store.lines, totals: store.totals),
+        ),
+      );
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const CartScreen()),
+    );
+  }
+
   /// One place for both answers, so a failure always says the server's own
   /// words rather than a guess at what went wrong.
   void _report(bool done, {required String good, required String bad}) {
@@ -177,92 +271,216 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           );
         }
 
+        final requests = OrderStore.instance.requestsFor(order.id);
+        final action = _action(order);
+        final updates = order.tracking?.updates ?? const <TrackingUpdate>[];
+        final shipments = order.tracking?.shipments ?? const [];
+
         return Scaffold(
-          appBar: AppBar(title: Text(order.displayReference)),
-          body: ListView(
-            padding: const EdgeInsets.only(bottom: 32),
-            children: [
-              _StatusHeader(order: order, now: _now),
-              _Section(
-                title: 'Progress',
-                child: OrderTimeline(order: order, now: _now),
-              ),
-              _TrackingSection(order: order, now: _now),
-              _UpdatesSection(order: order),
-              _Section(
-                title: 'Items',
-                child: Column(
-                  children: [
-                    for (final line in order.lines) _ItemRow(line: line),
-                  ],
+          appBar: AppBar(
+            titleSpacing: 0,
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Order Details'),
+                // The number the shopper quotes to support, with the one
+                // control that makes quoting it easy.
+                InkWell(
+                  onTap: () => _copyReference(order),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            order.displayReference,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  fontSize: 12,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Icon(
+                          Icons.copy_rounded,
+                          size: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.headset_mic_outlined),
+                tooltip: 'Contact support',
+                onPressed: _openSupport,
               ),
-              _Section(
-                title: 'Payment',
-                child: _PaymentBlock(order: order),
+              PopupMenuButton<String>(
+                tooltip: 'More',
+                onSelected: (value) {
+                  switch (value) {
+                    case 'share':
+                      _shareOrder(order);
+                    case 'track':
+                      _openTracking();
+                    case 'copy':
+                      _copyReference(order);
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'share', child: Text('Share order')),
+                  PopupMenuItem(value: 'track', child: Text('Track order')),
+                  PopupMenuItem(
+                    value: 'copy',
+                    child: Text('Copy order number'),
+                  ),
+                ],
               ),
-              _Section(
-                title: 'Delivery address',
+            ],
+          ),
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
+            children: [
+              OrderStatusHero(order: order, now: _now),
+              OrderStageRail(order: order, now: _now),
+              OrderQuickActions(
+                actions: [
+                  OrderAction(
+                    icon: Icons.location_on_outlined,
+                    label: 'Track order',
+                    onTap: _openTracking,
+                  ),
+                  OrderAction(
+                    icon: Icons.ios_share,
+                    label: 'Share order',
+                    onTap: () => _shareOrder(order),
+                  ),
+                  OrderAction(
+                    icon: Icons.headset_mic_outlined,
+                    label: 'Contact support',
+                    onTap: _openSupport,
+                  ),
+                ],
+              ),
+              OrderTrackingCard(order: order, now: _now),
+              // The rail above is the six stages the reference draws. This is
+              // the carrier's own step list, in the carrier's own words --
+              // which grow, and which no six-word ladder can hold. A step like
+              // "At customs" belongs to exactly one of these two, and it is
+              // not the ladder.
+              if (order.tracking?.timeline.isNotEmpty ?? false)
+                OrderCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const CardHeading(title: 'Journey'),
+                      const SizedBox(height: 10),
+                      OrderTimeline(order: order, now: _now),
+                    ],
+                  ),
+                ),
+              OrderUpdatesCard(updates: updates, onViewAll: _openTracking),
+              OrderItemsCard(
+                lines: order.lines,
+                expanded: _allItems,
+                onToggle: () => setState(() => _allItems = !_allItems),
+                onBuyAgain: (line) => unawaited(_buyAgain(line)),
+              ),
+              // How many pieces are where, then the parcels themselves.
+              OrderCountsGrid(order: order, now: _now),
+              OrderShipmentsCard(shipments: shipments),
+              // Side by side where there is room for two columns, stacked
+              // where there is not: both carry a name and an address, and
+              // squeezing those into half a phone wraps every line.
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final payment = OrderPaymentCard(order: order);
+                  final address = OrderAddressCard(order: order);
+                  if (constraints.maxWidth < 520) {
+                    return Column(
+                      children: [
+                        OrderCard(child: payment),
+                        OrderCard(child: address),
+                      ],
+                    );
+                  }
+                  return IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: OrderCard(child: payment)),
+                        Expanded(child: OrderCard(child: address)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              OrderCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      order.recipient,
-                      style: Theme.of(context).textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: CardHeading(title: 'Order summary'),
+                        ),
+                        Text(
+                          'All amounts in NPR',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                fontSize: 11.5,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      order.address,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+                    const SizedBox(height: 10),
+                    CartSummary(totals: order.totals),
+                    if (order.discount > 0) ...[
+                      const SizedBox(height: 12),
+                      _SavedBanner(saved: order.discount),
+                    ],
                   ],
                 ),
               ),
-              _Section(
-                title: 'Order summary',
-                child: CartSummary(totals: order.totals),
-              ),
               // What has already been raised against this order, with the
               // shop's own status on it.
-              for (final request in OrderStore.instance.requestsFor(order.id))
+              for (final request in requests)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
                   child: OrderRequestCard(
                     request: request,
                     busy: _submitting,
-                    // Only a pending cancellation can be taken back, which is
-                    // the shop's own rule.
+                    // Only a pending cancellation can be taken back, which
+                    // is the shop's own rule.
                     onWithdraw: !request.isReturn && request.status == 'pending'
                         ? () => _withdraw(request)
                         : null,
                   ),
                 ),
-              if (_action(order) case final action?)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: OutlinedButton(
-                    // Off while a request is in flight: two taps must not
-                    // become two requests.
-                    onPressed: _submitting ? null : action.onPressed,
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                      foregroundColor: action.destructive
-                          ? Theme.of(context).colorScheme.error
-                          : null,
-                    ),
-                    child: _submitting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2.2),
-                          )
-                        : Text(action.label),
-                  ),
-                ),
+              // The paperwork: an invoice once the server says the order is
+              // delivered, a receipt until then. Last on the page, so nothing
+              // that was already here moves to make room for it.
+              if (OrderDocumentButton.availableFor(order))
+                OrderCard(child: OrderDocumentButton(order: order)),
             ],
+          ),
+          bottomNavigationBar: _OrderActionBar(
+            busy: _submitting,
+            action: action,
+            onReorder: () => unawaited(_reorder(order)),
           ),
         );
       },
@@ -270,367 +488,127 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   }
 }
 
-/// The one line a shopper opened this screen to read.
-class _StatusHeader extends StatelessWidget {
-  const _StatusHeader({required this.order, required this.now});
-
-  final Order order;
-  final DateTime now;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final settled = order.isSettled(now);
-    final outcome = order.outcome;
-
-    final String detail;
-    if (outcome == OrderOutcome.cancelled) {
-      detail =
-          'Cancelled ${formatWhen(order.outcomeAt ?? order.placedAt)}. '
-          'Nothing will be delivered.';
-    } else if (outcome == OrderOutcome.returned) {
-      detail =
-          'Return requested ${formatWhen(order.outcomeAt ?? order.placedAt)}. '
-          'A courier will collect it.';
-    } else if (outcome == OrderOutcome.failed) {
-      detail = 'The payment did not go through, so this order was not placed.';
-    } else {
-      // The carrier's window, or an honest silence. A date invented here is
-      // one the shop has not promised and cannot be held to.
-      final eta = order.estimatedDelivery;
-      if (settled) {
-        detail = eta == null ? 'Delivered.' : 'Delivered ${formatWhen(eta)}.';
-      } else if (eta == null) {
-        detail = 'A delivery date will appear here once the courier has one.';
-      } else if (order.isBehindSchedule) {
-        detail = 'Running late. Now expected ${formatDay(eta)}.';
-      } else {
-        detail = order.deliveryIsEstimate
-            ? 'Estimated to arrive ${formatDay(eta)}.'
-            : 'Arriving ${formatDay(eta)}.';
-      }
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-          color: theme.colorScheme.primary.withValues(alpha: 0.07),
-          border: Border.all(
-            color: theme.colorScheme.primary.withValues(alpha: 0.25),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            OrderStatusChip(order: order, now: now),
-            const SizedBox(height: 10),
-            Text(
-              detail,
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The carrier's running log of what has happened to this order.
+/// The two buttons the reference pins to the bottom of the page.
 ///
-/// `updates[]` has been decoded off the wire since tracking was added and was
-/// never drawn -- the one part of the payload written as prose, thrown away
-/// while the screen rendered six labels this app made up instead.
-///
-/// Newest first, verbatim. `type` chooses an icon and nothing else: an
-/// unfamiliar type gets a neutral dot rather than being dropped, because the
-/// carrier's vocabulary is the carrier's to grow.
-class _UpdatesSection extends StatelessWidget {
-  const _UpdatesSection({required this.order});
+/// The left one is whatever this order is actually up for -- cancel, or a
+/// return once it has arrived -- and is simply absent when it is up for
+/// neither. The right one is always available: anything that was bought
+/// once can be bought again.
+class _OrderActionBar extends StatelessWidget {
+  const _OrderActionBar({
+    required this.busy,
+    required this.action,
+    required this.onReorder,
+  });
 
-  final Order order;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final updates = order.tracking?.updates ?? const <TrackingUpdate>[];
-    final shown = updates.where((u) => u.title.isNotEmpty).toList()
-      ..sort((a, b) {
-        final left = a.at;
-        final right = b.at;
-        if (left == null || right == null) return 0;
-        return right.compareTo(left);
-      });
-
-    if (shown.isEmpty) return const SizedBox.shrink();
-
-    return _Section(
-      title: 'Updates',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final update in shown)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    _icon(update.type),
-                    size: 16,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(update.title, style: theme.textTheme.bodyMedium),
-                        // Only where the carrier timed it.
-                        if (update.at != null) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            formatRelative(update.at!),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  static IconData _icon(String type) => switch (type.toLowerCase()) {
-    'delivered' => Icons.check_circle_outline,
-    'shipped' || 'transit' || 'dispatch' => Icons.local_shipping_outlined,
-    'delay' || 'delayed' || 'exception' => Icons.error_outline,
-    'cancelled' || 'cancel' => Icons.cancel_outlined,
-    _ => Icons.circle_outlined,
-  };
-}
-
-/// Courier and consignment number, once there is a parcel to track.
-class _TrackingSection extends StatelessWidget {
-  const _TrackingSection({required this.order, required this.now});
-
-  final Order order;
-  final DateTime now;
+  final bool busy;
+  final ({String label, bool destructive, VoidCallback onPressed})? action;
+  final VoidCallback onReorder;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tracking = order.trackingNumber(now);
 
-    // Nothing has been handed to a courier yet, so there is nothing to track.
-    // An empty "Tracking" heading would read as information that failed to
-    // load rather than information that does not exist yet.
-    if (tracking == null) return const SizedBox.shrink();
-
-    return _Section(
-      title: 'Tracking',
+    return SafeArea(
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
+          color: theme.colorScheme.surface,
+          border: Border(top: BorderSide(color: theme.dividerColor)),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
           child: Row(
             children: [
-              Icon(
-                Icons.local_shipping_outlined,
-                size: 20,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      // Named by the carrier, or described plainly. Inventing a
-                      // courier name would be a claim about who has the parcel.
-                      order.courier ?? 'On its way',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+              if (action case final action?) ...[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: busy ? null : action.onPressed,
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      foregroundColor: action.destructive
+                          ? theme.colorScheme.error
+                          : null,
+                      side: BorderSide(
+                        color: action.destructive
+                            ? theme.colorScheme.error.withValues(alpha: 0.5)
+                            : theme.colorScheme.outlineVariant,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      tracking,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        letterSpacing: 0.5,
-                      ),
+                    icon: busy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2.2),
+                          )
+                        : Icon(
+                            action.destructive
+                                ? Icons.delete_outline
+                                : Icons.assignment_return_outlined,
+                            size: 18,
+                          ),
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(action.label, maxLines: 1),
                     ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.copy_outlined, size: 18),
-                tooltip: 'Copy tracking number',
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: tracking));
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      const SnackBar(content: Text('Tracking number copied')),
-                    );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PaymentBlock extends StatelessWidget {
-  const _PaymentBlock({required this.order});
-
-  final Order order;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final state = order.paymentState;
-    final colour = switch (state) {
-      PaymentState.paid => AppColors.successInk,
-      PaymentState.failed => theme.colorScheme.error,
-      PaymentState.pending => AppColors.warning,
-      PaymentState.cashOnDelivery => theme.colorScheme.onSurfaceVariant,
-    };
-
-    return Row(
-      children: [
-        Icon(Icons.payments_outlined, size: 20, color: colour),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                state.label,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: colour,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                state.detail,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Text(
-          formatRupees(order.totals.total),
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.line});
-
-  final CartLine line;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 56,
-            height: 56,
-            child: ArtworkPanel(
-              icon: Icons.checkroom,
-              tint: theme.colorScheme.primary,
-              imageUrl: line.imageUrl,
-              iconScale: 0.4,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  line.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(height: 1.3),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  [
-                    if (line.variantLabel != null) line.variantLabel!,
-                    'Qty ${line.quantity}',
-                  ].join(' · '),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(width: 12),
               ],
-            ),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: busy ? null : onReorder,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Reorder', maxLines: 1),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Text(
-            formatRupees(line.lineTotal),
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
+/// What a coupon took off this order.
+///
+/// Drawn only when there is something to celebrate: "You saved Rs. 0" is a
+/// banner about nothing.
+class _SavedBanner extends StatelessWidget {
+  const _SavedBanner({required this.saved});
 
-  final String title;
-  final Widget child;
+  final num saved;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.commerceOrange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            title,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
+          const Icon(Icons.star, size: 15, color: AppColors.commerceOrange),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Text(
+              'You saved ${formatRupees(saved)} on this order',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          const SizedBox(height: 10),
-          child,
         ],
       ),
     );

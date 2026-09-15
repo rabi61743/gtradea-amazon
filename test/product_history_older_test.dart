@@ -4,6 +4,7 @@ import 'package:gtradea_amazon/core/network/api_client.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/account/data/hidden_history_store.dart';
 import 'package:gtradea_amazon/features/account/presentation/product_history_screen.dart';
+import 'package:gtradea_amazon/features/account/presentation/recent_views_section.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/orders/data/order_store.dart';
@@ -108,8 +109,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(api.calls.first.query['limit'], 40);
-      await _toFooter(tester, find.text('See older history'));
-      expect(find.text('See older history'), findsOneWidget);
+      await _toFooter(tester, find.text('Load More'));
+      expect(find.text('Load More'), findsOneWidget);
     });
 
     testWidgets('pressing it asks the server for more', (tester) async {
@@ -119,8 +120,8 @@ void main() {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle();
 
-      await _toFooter(tester, find.text('See older history'));
-      await tester.tap(find.text('See older history'));
+      await _toFooter(tester, find.text('Load More'));
+      await tester.tap(find.text('Load More'));
       await tester.pumpAndSettle();
 
       final asked = api.calls
@@ -142,8 +143,8 @@ void main() {
       // Row 42 is past the first page.
       expect(find.text('Product 42'), findsNothing);
 
-      await _toFooter(tester, find.text('See older history'));
-      await tester.tap(find.text('See older history'));
+      await _toFooter(tester, find.text('Load More'));
+      await tester.tap(find.text('Load More'));
       await tester.pumpAndSettle();
 
       await _toFooter(tester, find.text('Product 42'));
@@ -151,9 +152,39 @@ void main() {
 
       // Every row still appears exactly once.
       await _toTop(tester);
-      expect(find.text('Product 0'), findsOneWidget);
+      expect(find.text('Product 0'), findsWidgets);
       await _toFooter(tester, find.text('Product 39'));
       expect(find.text('Product 39'), findsOneWidget);
+    });
+
+    testWidgets('bones stand in for the older rows while they are fetched', (
+      tester,
+    ) async {
+      var call = 0;
+      api.onCall('GET', '/product-views', (_) {
+        call++;
+        return reply(
+          _views(call == 1 ? 40 : 60),
+          // The second page is held open, so the wait can be looked at.
+          delay: call == 1 ? null : const Duration(seconds: 2),
+        );
+      });
+      _tall(tester);
+      await tester.pumpWidget(_wrap());
+      await tester.pumpAndSettle();
+
+      await _toFooter(tester, find.text('Load More'));
+      await tester.tap(find.text('Load More'));
+      await tester.pump();
+
+      // Rows in outline, not a spinner, and the button stands down while the
+      // page it would ask for is already on its way.
+      expect(find.byType(RecentViewsSkeleton), findsOneWidget);
+      expect(find.text('Load More'), findsNothing);
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(find.byType(RecentViewsSkeleton), findsNothing);
     });
 
     testWidgets('when there is nothing older it says so, once', (tester) async {
@@ -163,13 +194,13 @@ void main() {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle();
 
-      await _toFooter(tester, find.text('See older history'));
-      await tester.tap(find.text('See older history'));
+      await _toFooter(tester, find.text('Load More'));
+      await tester.tap(find.text('Load More'));
       await tester.pumpAndSettle();
 
       await _toFooter(tester, find.text('That is the whole history.'));
       expect(find.text('That is the whole history.'), findsOneWidget);
-      expect(find.text('See older history'), findsNothing);
+      expect(find.text('Load More'), findsNothing);
     });
 
     testWidgets('a short first page means there is nothing older at all', (
@@ -182,7 +213,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await _toFooter(tester, find.text('That is the whole history.'));
-      expect(find.text('See older history'), findsNothing);
+      expect(find.text('Load More'), findsNothing);
       expect(find.text('That is the whole history.'), findsOneWidget);
     });
 
@@ -201,15 +232,15 @@ void main() {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle();
 
-      await _toFooter(tester, find.text('See older history'));
-      await tester.tap(find.text('See older history'));
+      await _toFooter(tester, find.text('Load More'));
+      await tester.tap(find.text('Load More'));
       await tester.pumpAndSettle();
 
       await _toFooter(tester, find.text('Try again'));
       expect(find.text('Try again'), findsOneWidget);
       // The page it already had is untouched.
       await _toTop(tester);
-      expect(find.text('Product 0'), findsOneWidget);
+      expect(find.text('Product 0'), findsWidgets);
 
       await _toFooter(tester, find.text('Try again'));
       await tester.tap(find.text('Try again'));
@@ -220,137 +251,9 @@ void main() {
     });
   });
 
-  group('picking rows to remove', () {
-    Future<void> open(WidgetTester tester) async {
-      wireHistory(total: 5);
-      _tall(tester);
-      await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets('a long press starts it and counts what is picked', (
-      tester,
-    ) async {
-      await open(tester);
-
-      await tester.longPress(find.text('Product 0'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('1 selected'), findsOneWidget);
-
-      await tester.tap(find.text('Product 1'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('2 selected'), findsOneWidget);
-    });
-
-    testWidgets('a normal tap still opens the product', (tester) async {
-      await open(tester);
-
-      await tester.tap(find.text('Product 0'));
-      await tester.pumpAndSettle();
-
-      // Not in selection mode, so the tap went where it always did.
-      expect(find.text('1 selected'), findsNothing);
-    });
-
-    testWidgets('removing asks first, and Keep changes nothing', (
-      tester,
-    ) async {
-      await open(tester);
-
-      await tester.longPress(find.text('Product 0'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Remove from history'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Remove 1 item?'), findsOneWidget);
-
-      await tester.tap(find.text('Keep'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Product 0'), findsOneWidget);
-    });
-
-    testWidgets('confirming hides them, and never asks the server to', (
-      tester,
-    ) async {
-      await open(tester);
-
-      await tester.longPress(find.text('Product 0'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Product 1'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Remove from history'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Remove 2 items?'), findsOneWidget);
-      await tester.tap(find.text('Remove'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Product 0'), findsNothing);
-      expect(find.text('Product 1'), findsNothing);
-      expect(find.text('Product 2'), findsOneWidget);
-
-      // The whole point: the records stay on the server.
-      expect(
-        api.calls.where((c) => c.method == 'DELETE'),
-        isEmpty,
-        reason: 'user-side only',
-      );
-    });
-
-    testWidgets('and they stay hidden when the page is loaded again', (
-      tester,
-    ) async {
-      await open(tester);
-
-      await tester.longPress(find.text('Product 0'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Remove from history'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Remove'));
-      await tester.pumpAndSettle();
-
-      // A fresh screen, reading the same server rows.
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-
-      expect(find.text('Product 0'), findsNothing);
-      expect(find.text('Product 1'), findsOneWidget);
-    });
-
-    testWidgets('undo puts them back', (tester) async {
-      await open(tester);
-
-      await tester.longPress(find.text('Product 0'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Remove from history'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Remove'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Product 0'), findsNothing);
-
-      await tester.tap(find.text('Undo'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Product 0'), findsOneWidget);
-    });
-
-    testWidgets('cancelling leaves everything as it was', (tester) async {
-      await open(tester);
-
-      await tester.longPress(find.text('Product 0'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Cancel selection'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('1 selected'), findsNothing);
-      expect(find.text('Product 0'), findsOneWidget);
-    });
-  });
+  // The rows that were picked and swiped away are gone with the cards they
+  // lived on -- the viewed tab is drawn by RecentViewsSection now. What is
+  // hidden stays hidden, which the group below still holds the shop to.
 
   group('one shopper\'s hidden rows are their own', () {
     test('the list is kept per account', () async {

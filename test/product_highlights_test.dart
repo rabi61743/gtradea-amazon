@@ -50,18 +50,18 @@ void main() {
   }
 
   group('the facts in Highlights are legible at a glance', () {
-    testWidgets('the value is 16pt and bold', (tester) async {
+    testWidgets('the value is 14pt and semibold', (tester) async {
       // Brand and model are what somebody is scanning this block for, so
-      // they are the largest thing in it rather than 14pt at half weight.
+      // they lead the pair they sit in.
       await pump(tester);
       await reveal(tester, find.text('Other/other'));
 
       final value = tester.widget<Text>(find.text('Other/other'));
-      expect(value.style?.fontSize, 16);
-      expect(value.style?.fontWeight, FontWeight.w700);
+      expect(value.style?.fontSize, 14);
+      expect(value.style?.fontWeight, FontWeight.w600);
     });
 
-    testWidgets('the caption above it is 12pt and stays muted', (tester) async {
+    testWidgets('the caption above it is 11pt and stays muted', (tester) async {
       // It names the fact rather than being the fact, so it grows a step but
       // keeps its weight and colour -- otherwise the pair reads as two
       // headings and neither leads.
@@ -69,7 +69,7 @@ void main() {
       await reveal(tester, find.text('Brand'));
 
       final label = tester.widget<Text>(find.text('Brand'));
-      expect(label.style?.fontSize, 12);
+      expect(label.style?.fontSize, 11);
       expect(label.style?.fontWeight, isNot(FontWeight.w700));
     });
 

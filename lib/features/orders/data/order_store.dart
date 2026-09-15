@@ -96,6 +96,23 @@ class Order {
 
   final String recipient;
   final String address;
+
+  /// The number the courier rings, as it went out with the order.
+  ///
+  /// Read off the shipping address the server holds rather than kept as a
+  /// field of its own: this is the number this order was placed with, which
+  /// is not necessarily the number on the account today.
+  String? get contactPhone {
+    final phone = asString(server?.shippingAddress['phone']);
+    return phone == null || phone.trim().isEmpty ? null : phone.trim();
+  }
+
+  /// The country the order is going to, when the server named one.
+  String? get country {
+    final value = asString(server?.shippingAddress['country']);
+    return value == null || value.trim().isEmpty ? null : value.trim();
+  }
+
   final PaymentState paymentState;
 
   /// Set only when the order left the happy path.
@@ -155,6 +172,15 @@ class Order {
   ///
   /// The carrier's vocabulary is its own and can grow; an unrecognised code
   /// contributes nothing rather than resetting the progress to the start.
+  /// Which of the six stages a carrier step belongs to, or null when it
+  /// belongs to none of them.
+  ///
+  /// Public because the timeline colours each step by the stage it maps
+  /// to, and a second copy of this matching in the widget layer is how a
+  /// step ends up one colour on one screen and another elsewhere.
+  static OrderStage? stageForStep({String code = '', String label = ''}) =>
+      _stageFromCode(code) ?? _stageFromText(label);
+
   static OrderStage? _stageFromCode(String code) =>
       _stageFromText(code.toLowerCase().replaceAll('_', ' '));
 
@@ -572,25 +598,33 @@ class OrderStore extends ChangeNotifier {
     _refreshing = true;
     notifyListeners();
 
+    // The account these orders are asked for. An answer that lands after a
+    // switch is another person's order history and is dropped.
+    final epoch = _epoch;
     try {
       final rows = await OrdersRepository.instance.list();
+      if (epoch != _epoch) return;
+      // Both lists, in the same pass: a screen that knew the orders but not
+      // the requests would offer Cancel on an order already awaiting one.
+      final requests = await OrdersRepository.instance.requests();
+      if (epoch != _epoch) return;
       final cached = {for (final order in _orders) order.id: order};
       _orders
         ..clear()
         ..addAll(rows.map((row) => Order.fromServer(row, cached[row.id])));
       _sort();
-      // Both lists, in the same pass: a screen that knew the orders but not
-      // the requests would offer Cancel on an order already awaiting one.
-      _requests = await OrdersRepository.instance.requests();
+      _requests = requests;
       _error = null;
     } on ApiError catch (e) {
       // Whatever was cached stays. An empty order history shown because the
       // network failed is the single most alarming thing this screen can say.
-      _error = e;
+      if (epoch == _epoch) _error = e;
     } finally {
-      _refreshing = false;
-      notifyListeners();
-      unawaited(_persist());
+      if (epoch == _epoch) {
+        _refreshing = false;
+        notifyListeners();
+        unawaited(_persist());
+      }
     }
   }
 
@@ -773,8 +807,17 @@ class OrderStore extends ChangeNotifier {
     unawaited(_switchTo(AuthStore.instance.account?.email));
   }
 
+  /// Bumped on every change of account, so an answer to a request made for
+  /// the last account is dropped rather than shown under this one.
+  int _epoch = 0;
+
   Future<void> _switchTo(String? email) async {
     if (email == _scope) return;
+    _epoch++;
+    // A refresh still running for the last account must not stop this one's.
+    _refreshing = false;
+    _error = null;
+    _requests = const [];
 
     final wasGuest = _scope == null || _scope!.isEmpty;
     final carried = wasGuest ? List<Order>.from(_orders) : const <Order>[];
@@ -904,6 +947,12 @@ class OrderStore extends ChangeNotifier {
     _loaded = false;
     _bound = false;
     _loading = null;
+    // The rest of the store's state, which this used to leave behind: a test
+    // that provoked a failure left the error set for every test after it in
+    // the same file, and the next one would render a failure it never caused.
+    _error = null;
+    _requests = const [];
+    _refreshing = false;
   }
 
   /// Newest first. Orders are appended on load and inserted on placement, and

@@ -133,6 +133,7 @@ class SessionStore {
 
   Stream<void> get onInvalidated => _invalidated.stream;
 
+  /// The active account's session: the one every request is sent with.
   Future<AuthSession?> read() async {
     if (_loaded) return _cached;
     try {
@@ -146,9 +147,26 @@ class SessionStore {
       _cached = null;
     }
     _loaded = true;
+
+    // A session stored before accounts were kept side by side: the one
+    // account this device had joins the saved list rather than being lost to
+    // the first switch.
+    final id = _cached?.userId;
+    if (id != null) {
+      await _loadVault();
+      if (!_vault.containsKey(id)) {
+        _vault[id] = _cached!;
+        await _saveVault();
+      }
+    }
     return _cached;
   }
 
+  /// Makes [session] the active one, and keeps it among the saved accounts.
+  ///
+  /// Every token refresh comes through here too, so the saved copy of an
+  /// account is always its newest tokens -- a stale refresh token kept for a
+  /// switch later would be one GoTrue has already rotated away.
   Future<void> write(AuthSession session) async {
     _cached = session;
     _loaded = true;
@@ -158,15 +176,30 @@ class SessionStore {
       // The session still works for this run; it just will not survive a
       // restart. Failing the sign-in over that would be worse.
     }
+    final id = session.userId;
+    if (id != null) {
+      await _loadVault();
+      // Re-inserted, so the list runs least to most recently used.
+      _vault.remove(id);
+      _vault[id] = session;
+      await _saveVault();
+    }
   }
 
+  /// Signs the active account out of this device: its session goes, and so
+  /// does its place among the saved accounts. The others are untouched.
   Future<void> clear({bool notify = false}) async {
+    final id = _cached?.userId;
     _cached = null;
     _loaded = true;
     try {
       await _storage.delete(key: _key);
     } catch (_) {
       // Nothing useful to do -- the cache is already cleared.
+    }
+    if (id != null) {
+      await _loadVault();
+      if (_vault.remove(id) != null) await _saveVault();
     }
     if (notify) _invalidated.add(null);
   }
@@ -176,9 +209,84 @@ class SessionStore {
   /// already awaited a read, not for deciding whether someone is signed in.
   AuthSession? get current => _cached;
 
+  // ── Accounts kept on this device ─────────────────────────────────────────
+  //
+  // Each account signed in here keeps its own session, in the same keystore
+  // as the active one and never anywhere else. Switching makes a saved one
+  // active; nothing about the others changes, so switching back costs no
+  // password. Passwords are never stored: a session is a token pair.
+
+  static const _vaultKey = 'gtradea-go-auth-accounts';
+
+  final Map<String, AuthSession> _vault = {};
+  bool _vaultLoaded = false;
+  Future<void>? _vaultLoading;
+
+  /// Every account signed in on this device, least recently used first.
+  Future<List<AuthSession>> savedSessions() async {
+    await read();
+    await _loadVault();
+    return List.unmodifiable(_vault.values);
+  }
+
+  /// Forgets a saved account that is not the active one. The active one is
+  /// signed out through [clear], which also forgets it.
+  Future<void> forget(String userId) async {
+    await _loadVault();
+    if (_vault.remove(userId) == null) return;
+    await _saveVault();
+  }
+
+  Future<void> _loadVault() {
+    if (_vaultLoaded) return Future<void>.value();
+    return _vaultLoading ??= _readVault();
+  }
+
+  Future<void> _readVault() async {
+    try {
+      final raw = await _storage.read(key: _vaultKey);
+      if (raw != null) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          for (final entry in decoded.whereType<Map>()) {
+            try {
+              final session = AuthSession.fromJson(
+                entry.cast<String, dynamic>(),
+              );
+              final id = session.userId;
+              if (id != null) _vault.putIfAbsent(id, () => session);
+            } catch (_) {
+              // One unreadable entry costs that account, not the others.
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // An unreadable list is an empty one; each account signs in again.
+    }
+    _vaultLoaded = true;
+    _vaultLoading = null;
+  }
+
+  Future<void> _saveVault() async {
+    try {
+      await _storage.write(
+        key: _vaultKey,
+        value: jsonEncode([
+          for (final session in _vault.values) session.toJson(),
+        ]),
+      );
+    } catch (_) {
+      // The list still stands for this run.
+    }
+  }
+
   @visibleForTesting
   void resetForTest() {
     _cached = null;
     _loaded = false;
+    _vault.clear();
+    _vaultLoaded = false;
+    _vaultLoading = null;
   }
 }

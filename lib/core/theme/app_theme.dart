@@ -17,6 +17,15 @@ class AppTheme {
   static const double radiusCard = 12;
   static const double radiusControl = 8;
 
+  /// The corner every full-width section card on a page takes.
+  ///
+  /// Named because these cards are drawn by five widgets that cannot see each
+  /// other: the product card, the delivery options, the guarantees, Highlights
+  /// and Description, and the two collapsing panels. They were separate literal
+  /// 16s that agreed only by luck -- editing any one of them would have set
+  /// that card a corner apart from the rest of the stack.
+  static const double radiusSection = 16;
+
   /// Status bar styling for a screen whose top band is the brand teal.
   ///
   /// Nothing set this before, so the platform default applied: dark icons on a
@@ -51,6 +60,27 @@ class AppTheme {
         ? AppColors.destructiveLight
         : AppColors.destructiveDark;
     final card = isLight ? AppColors.cardLight : AppColors.cardDark;
+
+    // Inputs. The field is drawn in the card colour, not the page's: filled
+    // with the page ground it had nothing to separate it from the page, and
+    // inside a white card it read as a grey hole. Its edge is the body ink
+    // held back rather than the hairline -- Mountain Grey on white is 1.2:1,
+    // a border nobody can find -- and focus adds a breath of the brand blue
+    // to the fill as well as to the edge, so the field being typed into is
+    // obvious at a glance without shouting.
+    final inputEdge = foreground.withValues(alpha: 0.34);
+    final inputFocusFill = Color.alphaBlend(
+      primary.withValues(alpha: 0.05),
+      card,
+    );
+    Color inputAccent(Set<WidgetState> states) {
+      if (states.contains(WidgetState.disabled)) {
+        return mutedFg.withValues(alpha: 0.6);
+      }
+      if (states.contains(WidgetState.error)) return destructive;
+      if (states.contains(WidgetState.focused)) return primary;
+      return mutedFg;
+    }
 
     final colorScheme = ColorScheme(
       brightness: brightness,
@@ -123,24 +153,59 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: background,
+        fillColor: WidgetStateColor.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) return muted;
+          if (states.contains(WidgetState.focused)) return inputFocusFill;
+          return card;
+        }),
+        hoverColor: primary.withValues(alpha: 0.03),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
           vertical: 12,
         ),
-        hintStyle: TextStyle(color: mutedFg),
+        // Readable in its own right -- 5.7:1 on the white field -- but a clear
+        // step under the typed text, which is the body slate at about 10:1.
+        hintStyle: TextStyle(color: mutedFg, fontWeight: FontWeight.w400),
+        labelStyle: TextStyle(color: mutedFg),
+        floatingLabelStyle: WidgetStateTextStyle.resolveWith(
+          (states) => TextStyle(
+            color: inputAccent(states),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        prefixIconColor: WidgetStateColor.resolveWith(inputAccent),
+        suffixIconColor: WidgetStateColor.resolveWith(inputAccent),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusControl),
-          borderSide: BorderSide(color: border),
+          borderSide: BorderSide(color: inputEdge),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusControl),
-          borderSide: BorderSide(color: border),
+          borderSide: BorderSide(color: inputEdge),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusControl),
-          borderSide: BorderSide(color: primary, width: 1.5),
+          borderSide: BorderSide(color: primary, width: 2),
         ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusControl),
+          borderSide: BorderSide(color: destructive),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusControl),
+          borderSide: BorderSide(color: destructive, width: 2),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusControl),
+          borderSide: BorderSide(color: border),
+        ),
+      ),
+      // The caret and the selection in the brand blue, so what is being edited
+      // reads as the same colour as the edge around it.
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: primary,
+        selectionColor: primary.withValues(alpha: 0.25),
+        selectionHandleColor: primary,
       ),
       chipTheme: base.chipTheme.copyWith(
         backgroundColor: muted,

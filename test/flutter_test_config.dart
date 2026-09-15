@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:gtradea_amazon/core/images/app_images.dart';
+import 'package:gtradea_amazon/features/home/widgets/hero_banner.dart';
+import 'package:gtradea_amazon/features/tour/data/tour_store.dart';
 
 /// Runs once per test file, before anything in it.
 ///
@@ -19,6 +21,26 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // A plain NetworkImage keeps the URL readable, which is what the image tests
   // assert on, and behaves the way the suite already expects.
   AppImages.providerOverride = NetworkImage.new;
+
+  // The hero's autoplay clock is also what fills its progress bar, so it keeps
+  // a frame scheduled for as long as the carousel is on screen -- and every
+  //  on a page with a hero would wait on it forever.
+  //
+  // Off by default here, and switched back on by the tests that are about the
+  // carousel. Nothing is mocked by this: those tests get the real clock at the
+  // real interval, and the app is untouched.
+  HeroBanner.autoplayEnabled = false;
+
+  // The guided tour opens on a first launch, and every widget test seeds an
+  // empty preference store -- which *is* a first launch. Left on, it would
+  // open over every suite that pumps the home screen and cover the very
+  // widgets they measure, so a header test would fail because of a feature
+  // that has nothing to do with it.
+  //
+  // Off here rather than in each file, for the reason given above about the
+  // image provider: forgetting would not fail loudly, it would silently
+  // measure an overlay. The tour's own tests switch it back on.
+  TourStore.enabled = false;
 
   await testMain();
 }

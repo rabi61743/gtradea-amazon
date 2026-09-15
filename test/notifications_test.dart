@@ -548,5 +548,69 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets('the whole card toggles, and the choice is saved', (
+      tester,
+    ) async {
+      _useTallWindow(tester);
+      await tester.pumpWidget(_wrap(const NotificationSettingsScreen()));
+      await tester.pumpAndSettle();
+
+      // Its words, not its switch.
+      await tester.tap(find.text(NotificationGroup.orders.label));
+      await tester.pumpAndSettle();
+      expect(
+        NotificationSettings.instance.isEnabled(NotificationGroup.orders),
+        isFalse,
+      );
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getStringList('gtradea_notification_settings'),
+        contains(NotificationGroup.orders.name),
+      );
+
+      // And back on.
+      await tester.tap(find.text(NotificationGroup.orders.label));
+      await tester.pumpAndSettle();
+      expect(
+        NotificationSettings.instance.isEnabled(NotificationGroup.orders),
+        isTrue,
+      );
+    });
+
+    testWidgets('says On or Off, and nothing moves when it changes', (
+      tester,
+    ) async {
+      _useTallWindow(tester);
+      await tester.pumpWidget(_wrap(const NotificationSettingsScreen()));
+      await tester.pumpAndSettle();
+
+      final label = find.text(NotificationGroup.orders.label);
+      final card = find
+          .ancestor(of: label, matching: find.byType(AnimatedContainer))
+          .first;
+      final toggle = find.byType(Switch).first;
+      final before = (tester.getRect(card), tester.getRect(toggle));
+      expect(find.text('On'), findsNWidgets(NotificationGroup.values.length));
+
+      await tester.tap(toggle);
+      await tester.pump(const Duration(milliseconds: 90));
+      // Midway through the fade and after it: same place, same size.
+      expect(tester.getRect(card), before.$1);
+      expect(tester.getRect(toggle), before.$2);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(card), before.$1);
+      expect(tester.getRect(toggle), before.$2);
+      expect(find.text('Off'), findsOneWidget);
+    });
+
+    testWidgets('fits a narrow phone', (tester) async {
+      tester.view.physicalSize = const Size(640, 2400);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_wrap(const NotificationSettingsScreen()));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
   });
 }

@@ -381,24 +381,23 @@ class ProductDetail {
     return (((list - price) / list) * 100).round();
   }
 
-  /// VAT already inside the shown price, back-solved at 13% the way both
+  /// VAT already inside a shown price, back-solved at 13% the way both
   /// GtradeA storefronts do it. Null when it rounds away to nothing.
-  int? get vatIncluded {
+  ///
+  /// Takes the price rather than reading [price], because a laddered listing
+  /// shows the rung the quantity reaches, not the price of one, and the tax
+  /// line has to be the tax inside the figure actually on the page.
+  static int? vatInside(num price) {
     if (price <= 0) return null;
     final derived = (price * 13 / 113).round();
     return derived > 0 ? derived : null;
   }
 
+  /// VAT already inside this record's own price.
+  int? get vatIncluded => vatInside(price);
+
   /// The unit price at a given quantity, stepping down the bulk ladder.
-  num priceAt(int quantity) {
-    var best = price;
-    for (final tier in tiers) {
-      if (quantity >= tier.minQuantity && tier.price != null) {
-        best = tier.price!;
-      }
-    }
-    return best;
-  }
+  num priceAt(int quantity) => tierPriceAt(tiers, price, quantity);
 
   ProductDetail copyWith({List<ProductItem>? similar}) => ProductDetail(
     numIid: numIid,
@@ -737,6 +736,53 @@ class QuantityTier {
   final int minQuantity;
   final num? price;
 }
+
+/// What one piece costs at [quantity] on [tiers], or [base] below them.
+///
+/// The one place the ladder is read. The product page, the cart line and
+/// everything built from the cart go through it, so the rung shown is the rung
+/// charged -- and it matches the server, which reprices a cart row to the same
+/// rung when its quantity changes (measured: a row raised from 1 to 50 moved
+/// to the 50+ price on the server, and back when it was lowered).
+num tierPriceAt(List<QuantityTier> tiers, num base, int quantity) {
+  var best = base;
+  for (final tier in tiers) {
+    if (quantity >= tier.minQuantity && tier.price != null) {
+      best = tier.price!;
+    }
+  }
+  return best;
+}
+
+/// The ladder out of stored JSON, in the product record's own shape --
+/// `min_quantity` and `displayPrice` -- so a cart line and the record it came
+/// from are read by the same rules.
+List<QuantityTier> quantityTiersFrom(Object? raw) {
+  if (raw is! List) return const [];
+  final tiers =
+      raw
+          .whereType<Map>()
+          .map(
+            (t) => QuantityTier(
+              minQuantity: asInt(t['min_quantity']) ?? 0,
+              price: asNum(t['displayPrice']),
+            ),
+          )
+          .where((t) => t.minQuantity > 0 && t.price != null && t.price! > 0)
+          .toList()
+        ..sort((a, b) {
+          final byQty = a.minQuantity.compareTo(b.minQuantity);
+          return byQty != 0 ? byQty : a.price!.compareTo(b.price!);
+        });
+  final seen = <int>{};
+  return tiers.where((t) => seen.add(t.minQuantity)).toList(growable: false);
+}
+
+/// The ladder in the same shape, for storing beside a cart line.
+List<Map<String, dynamic>> quantityTiersJson(List<QuantityTier> tiers) => [
+  for (final tier in tiers)
+    {'min_quantity': tier.minQuantity, 'displayPrice': tier.price},
+];
 
 /// The sales unit in English.
 ///

@@ -22,6 +22,7 @@ class ArtworkPanel extends StatelessWidget {
     this.aspectRatio,
     this.iconScale = 0.42,
     this.knownWidth,
+    this.fit = BoxFit.cover,
   });
 
   final IconData icon;
@@ -38,6 +39,14 @@ class ArtworkPanel extends StatelessWidget {
 
   /// Icon size as a fraction of the panel's shorter side.
   final double iconScale;
+
+  /// How the photograph fills its box.
+  ///
+  /// Cover by default, which is right for a tile whose shape is the design's
+  /// own -- a grid cell, a banner. Pass [BoxFit.contain] where the pictures
+  /// are the sellers' and their shapes differ: every one then sits whole and
+  /// centred in the same box, rather than each being cropped differently.
+  final BoxFit fit;
 
   /// The panel's width, when the caller already knows it.
   ///
@@ -109,6 +118,7 @@ class ArtworkPanel extends StatelessWidget {
         width: width,
         devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
         fallback: _fallback,
+        fit: fit,
       );
 
   Widget _fallback() {
@@ -146,7 +156,10 @@ class _ArtworkImage extends StatefulWidget {
     required this.width,
     required this.devicePixelRatio,
     required this.fallback,
+    required this.fit,
   });
+
+  final BoxFit fit;
 
   final String url;
 
@@ -187,7 +200,7 @@ class _ArtworkImageState extends State<_ArtworkImage> {
 
     return Image(
       image: provider,
-      fit: BoxFit.cover,
+      fit: widget.fit,
       // Fade in so a late-arriving image does not snap into place.
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
         if (wasSynchronouslyLoaded) return child;

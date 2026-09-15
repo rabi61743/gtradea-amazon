@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/widgets/state_toggle.dart';
 import '../data/notification_store.dart';
 
 /// What the shopper wants to be told about.
@@ -86,63 +87,101 @@ class _GroupSwitch extends StatelessWidget {
         .where((category) => category.group == group)
         .toList();
 
+    final scheme = theme.colorScheme;
+    final radius = BorderRadius.circular(AppTheme.radiusCard);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 6, 8, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+      // One control, not a card with a control in its corner: the whole card
+      // answers a tap, and a screen reader hears one toggle with its label.
+      child: MergeSemantics(
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: radius,
+          child: InkWell(
+            borderRadius: radius,
+            onTap: () => onChanged(!enabled),
+            // The state is said by the card as well as by the switch -- a
+            // breath of the brand colour on, the plain card off -- and it
+            // fades between the two rather than cutting.
+            child: AnimatedContainer(
+              duration: _fade,
+              curve: Curves.easeOut,
+              decoration: BoxDecoration(
+                borderRadius: radius,
+                color: enabled
+                    ? Color.alphaBlend(
+                        scheme.primary.withValues(alpha: 0.05),
+                        scheme.surface,
+                      )
+                    : scheme.surface,
+                border: Border.all(
+                  color: enabled
+                      ? scheme.primary.withValues(alpha: 0.35)
+                      : scheme.outlineVariant,
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              group.label,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              group.detail,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      StateToggle(enabled: enabled, onChanged: onChanged),
+                    ],
+                  ),
+                  if (covered.length > 1) ...[
+                    const SizedBox(height: 10),
+                    // The categories this switch actually governs, so the
+                    // grouping is something the shopper can see rather than
+                    // infer. Always laid out, on or off, so the card never
+                    // grows or shrinks under the thumb that just tapped it.
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
                       children: [
-                        Text(
-                          group.label,
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          group.detail,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
+                        for (final category in covered)
+                          _CategoryChip(category: category, enabled: enabled),
                       ],
                     ),
-                  ),
-                  Switch(value: enabled, onChanged: onChanged),
+                  ],
                 ],
               ),
-              if (covered.length > 1) ...[
-                const SizedBox(height: 10),
-                // The categories this switch actually governs, so the grouping
-                // is something the shopper can see rather than infer.
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final category in covered)
-                      _CategoryChip(category: category, enabled: enabled),
-                  ],
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 }
+
+/// The card's own fade between its on and off grounds.
+///
+/// The switch beside it fades on the same timing -- see [StateToggle.fade],
+/// which is where this control's styling now lives, shared with the sound row
+/// on the account page.
+const _fade = StateToggle.fade;
 
 class _CategoryChip extends StatelessWidget {
   const _CategoryChip({required this.category, required this.enabled});
@@ -157,7 +196,8 @@ class _CategoryChip extends StatelessWidget {
         ? theme.colorScheme.primary
         : theme.colorScheme.onSurfaceVariant;
 
-    return Container(
+    return AnimatedContainer(
+      duration: _fade,
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
         color: base.withValues(alpha: 0.10),

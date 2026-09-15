@@ -57,6 +57,20 @@ Map<String, dynamic> _request({
   'refunded_at': refundedAt,
 };
 
+/// Scrolls the order page until [finder] is built.
+///
+/// The page is a lazy list: a card below the fold is not merely off-screen,
+/// it does not exist yet.
+Future<void> reveal(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    300,
+    scrollable: find.byType(Scrollable).first,
+    maxScrolls: 40,
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -213,6 +227,7 @@ void main() {
         cancellations: [_request()],
       );
 
+      await reveal(tester, find.text('Cancellation request'));
       expect(find.text('Cancellation request'), findsOneWidget);
       expect(find.text('Under review'), findsOneWidget);
       expect(find.textContaining('CAN-9001'), findsOneWidget);
@@ -244,6 +259,7 @@ void main() {
         cancellations: [_request()],
       );
 
+      await reveal(tester, find.text('Withdraw request'));
       await tester.tap(find.text('Withdraw request'));
       await tester.pumpAndSettle();
 
@@ -343,6 +359,7 @@ void main() {
         returns: [_request(id: 'ret-1', status: 'approved', isReturn: true)],
       );
 
+      await reveal(tester, find.text('Return request'));
       expect(find.text('Return request'), findsOneWidget);
       expect(find.text('Approved'), findsOneWidget);
       expect(find.text('Request a return'), findsNothing);
@@ -360,6 +377,7 @@ void main() {
         returns: [_request(id: 'ret-1', status: 'received', isReturn: true)],
       );
 
+      await reveal(tester, find.textContaining('Refund is being processed'));
       expect(find.text('Refunded'), findsNothing);
       expect(find.textContaining('Refund is being processed'), findsOneWidget);
     });
@@ -380,7 +398,9 @@ void main() {
         ],
       );
 
+      await reveal(tester, find.text('Refunded'));
       expect(find.text('Refunded'), findsOneWidget);
+      await reveal(tester, find.textContaining('Rs. 2260'));
       expect(find.textContaining('Rs. 2260'), findsOneWidget);
     });
 

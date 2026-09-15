@@ -46,7 +46,20 @@ class DepartmentGrid extends StatelessWidget {
     this.onSeeAll,
     this.actionLabel = 'See All',
     this.columns = defaultColumns,
+    this.margin,
+    this.dense = false,
   });
+
+  /// Tightens the room around the heading. See [SubcategoryGrid.dense], which
+  /// is the same decision for the same page.
+  final bool dense;
+
+  /// The inset the heading and the tiles share.
+  ///
+  /// Null keeps [SectionHeader.edge]. The home feed passes the page's own 97%
+  /// measure, so this block lines up with the sections around it -- see the
+  /// note on [SubcategoryGrid.margin], which is the same decision.
+  final double? margin;
 
   final String title;
 
@@ -69,6 +82,10 @@ class DepartmentGrid extends StatelessWidget {
 
   static const defaultColumns = 3;
   static const gap = 12.0;
+
+  /// The tighter measure for the home feed. See [SubcategoryGrid.denseGap],
+  /// which is the same decision for the same page.
+  static const denseGap = 8.0;
   static const _labelGap = 6.0;
   static const _labelLines = 2;
 
@@ -115,12 +132,21 @@ class DepartmentGrid extends StatelessWidget {
           leadingIcon: leadingIcon,
           onSeeAll: onSeeAll,
           actionLabel: actionLabel,
+          margin: margin,
+          topGap: dense ? SectionHeader.denseGapAbove : null,
+          bottomGap: dense ? SectionHeader.denseGapBelow : null,
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: SectionHeader.edge),
+          // The same inset the heading took, so the words and the tiles start
+          // on one line down the page.
+          padding: EdgeInsets.symmetric(
+            horizontal: margin ?? SectionHeader.edge,
+          ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final width = tileWidth(constraints.maxWidth, columns: columns);
+              final spacing = dense ? denseGap : gap;
+              final width =
+                  (constraints.maxWidth - spacing * (columns - 1)) / columns;
 
               return GridView.builder(
                 shrinkWrap: true,
@@ -128,8 +154,8 @@ class DepartmentGrid extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
-                  mainAxisSpacing: gap,
-                  crossAxisSpacing: gap,
+                  mainAxisSpacing: spacing,
+                  crossAxisSpacing: spacing,
                   // The tile's own answer, not a second calculation of it.
                   mainAxisExtent: heightFor(context, width),
                 ),

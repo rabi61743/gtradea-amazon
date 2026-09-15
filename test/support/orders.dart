@@ -30,11 +30,15 @@ Map<String, dynamic> orderJson({
   'created_at': (placedAt ?? DateTime.now()).toUtc().toIso8601String(),
   // A string, as Postgres numeric reaches JSON.
   'total_amount': '2260',
+  // The shape checkout actually sends, phone and country included -- both
+  // are on the order page.
   'shipping_address': const {
     'full_name': 'Rabi',
+    'phone': '+9779812345678',
     'address_line1': 'Jhamsikhel',
     'city': 'Lalitpur',
     'state': 'Bagmati',
+    'country': 'Nepal',
   },
   'items': [
     for (var i = 0; i < lines.length; i++)

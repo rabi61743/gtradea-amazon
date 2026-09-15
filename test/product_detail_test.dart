@@ -46,7 +46,60 @@ const _base = ProductDetail(
   description: 'A short description.',
 );
 
+/// A listing whose price is the seller's bulk ladder and nothing else: the
+/// variants carry no price of their own, so [ProductDetail.priceAt] is what
+/// decides the figure and the ladder is safe to draw.
+const _laddered = ProductDetail(
+  numIid: 'test-product',
+  title: 'Test product',
+  price: 404,
+  rating: 4,
+  reviewCount: 10,
+  images: ['https://example.invalid/a.jpg'],
+  unitLabel: 'pairs',
+  variants: [],
+  tiers: [
+    QuantityTier(minQuantity: 1, price: 404),
+    QuantityTier(minQuantity: 100, price: 398),
+    QuantityTier(minQuantity: 10000, price: 386),
+  ],
+  specs: [ProductSpec('Material', 'Cotton')],
+  description: 'A short description.',
+);
+
 void main() {
+  group('the bulk ladder', () {
+    test('the price steps down as the quantity crosses each rung', () {
+      // The same function the cart line and the buy bar call, so this is the
+      // figure that is actually charged rather than one drawn beside it.
+      expect(_laddered.priceAt(1), 404);
+      expect(_laddered.priceAt(99), 404);
+      expect(_laddered.priceAt(100), 398);
+      expect(_laddered.priceAt(9999), 398);
+      expect(_laddered.priceAt(10000), 386);
+    });
+
+    testWidgets('every rung the seller published is drawn, in its own unit', (
+      tester,
+    ) async {
+      await _pumpDetail(tester, product: _laddered);
+
+      // Bands, not thresholds: the top of each is the next rung less one, and
+      // the last has no top.
+      expect(find.text('1 - 99 pairs'), findsOneWidget);
+      expect(find.text('100 - 9,999 pairs'), findsOneWidget);
+      expect(find.text('10,000+ pairs'), findsOneWidget);
+    });
+
+    testWidgets('nothing is drawn for a listing the seller sent no ladder for', (
+      tester,
+    ) async {
+      await _pumpDetail(tester, product: _base);
+
+      expect(find.textContaining(' - '), findsNothing);
+    });
+  });
+
   group('ProductDetail', () {
     test('claims a discount only when the list price is genuinely higher', () {
       expect(_base.discountPercent, isNull);
@@ -105,7 +158,7 @@ void main() {
   testWidgets('shows the price and the tax already inside it', (tester) async {
     await _pumpDetail(tester);
 
-    expect(find.text('Rs. 388'), findsWidgets);
+    expect(find.text('Rs. 388', findRichText: true), findsWidgets);
     // 13 percent backed out of the price, not added to it.
     expect(find.text('Includes Rs. 45 VAT'), findsOneWidget);
   });
@@ -132,12 +185,13 @@ void main() {
     await _pumpDetail(tester, product: _base);
 
     expect(find.text('Sold out'), findsOneWidget);
-    expect(find.text('Red'), findsOneWidget);
+    // Twice over: the swatch, and the summary of what is being bought.
+    expect(find.text('Red'), findsNWidgets(2));
 
     // Tapping the sold-out swatch must not change the selection.
     await tester.tap(find.text('Sold out'), warnIfMissed: false);
     await tester.pump();
-    expect(find.text('Red'), findsOneWidget);
+    expect(find.text('Red'), findsNWidgets(2));
   });
 
   testWidgets('a listing with no price asks for one instead of saying Rs. 0', (

@@ -14,9 +14,20 @@ import 'address_picker_sheet.dart';
 /// Tapping opens the same picker the checkout uses, so there is one address
 /// book and choosing here changes what checkout will use too.
 class DeliveryLocationButton extends StatelessWidget {
-  const DeliveryLocationButton({super.key, this.color = AppColors.onPrimary});
+  const DeliveryLocationButton({
+    super.key,
+    this.color = AppColors.onPrimary,
+    this.compact = false,
+  });
 
   final Color color;
+
+  /// Names the city rather than the whole line.
+  ///
+  /// For the header row when it is also carrying a coin balance: there is not
+  /// room for "Jawalakhel, Lalitpur, Bagmati" beside one, and a line
+  /// ellipsised to "Jawalakhel, La..." says less than the city alone does.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -68,13 +79,26 @@ class DeliveryLocationButton extends StatelessWidget {
                             Text(
                               'Deliver to',
                               maxLines: 1,
+                              // Squeezed as this line gets on a phone, the
+                              // label has to be able to give way like the
+                              // place name under it does.
+                              overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.labelSmall?.copyWith(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w400,
                                 color: color.withValues(alpha: 0.75),
                                 height: 1.1,
                               ),
                             ),
                           Text(
-                            label,
+                            // The fullest form that fits. On a phone the
+                            // header row also carries a coin balance and three
+                            // labelled actions, and "Jawalakhel, Lalitpur,
+                            // Bagmati" ellipsised to "Jawalakhel, La..." says
+                            // less than the city on its own does. Measured
+                            // rather than guessed at, so a wide screen still
+                            // gets the whole line.
+                            compact && known ? address.city : label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.labelLarge?.copyWith(
@@ -88,17 +112,23 @@ class DeliveryLocationButton extends StatelessWidget {
                               // location" or "Lalitpur, Nepal", and two sizes
                               // would make it look like it changes shape when
                               // an address is saved.
-                              fontSize: 13,
+                              fontSize: 14,
                               color: color,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                               height: 1.15,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 2),
-                    Icon(Icons.keyboard_arrow_down, size: 14, color: color),
+                    // The arrow goes when the line is down to a city: at that
+                    // width those twelve points are worth more to the name of
+                    // the place, and the whole control is still the button it
+                    // always was.
+                    if (!compact) ...[
+                      const SizedBox(width: 2),
+                      Icon(Icons.keyboard_arrow_down, size: 12, color: color),
+                    ],
                   ],
                 ),
               ),

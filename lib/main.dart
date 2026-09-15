@@ -5,12 +5,18 @@ import 'core/audio/sound_settings.dart';
 import 'core/dev/frame_probe.dart';
 import 'core/l10n/app_strings.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_settings.dart';
 import 'features/home/home_screen.dart';
 
-void main() {
+Future<void> main() async {
   // Needed before the image cache can be touched, and cheap: runApp would call
   // it a moment later anyway.
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Awaited, unlike the others: the first frame is painted in whatever theme
+  // is known by then, and a saved Dark that arrived a frame late would open
+  // on a white flash. It is one small read from local storage.
+  await ThemeSettings.instance.load();
 
   // A stated budget rather than the framework's unexamined default of 1000
   // objects and 100 MB.
@@ -45,16 +51,25 @@ class GtradeaAmazonApp extends StatelessWidget {
     return ListenableBuilder(
       // Rebuilt from the root when the language changes, so a screen already
       // open picks up the new wording rather than only the next one pushed.
-      listenable: LanguageStore.instance,
+      // The theme choice too, so it repaints every open screen.
+      listenable: Listenable.merge([
+        LanguageStore.instance,
+        ThemeSettings.instance,
+      ]),
       builder: (context, _) => MaterialApp(
         title: 'GtradeA Amazon',
         debugShowCheckedModeBanner: false,
-        // The GtradeA palette, white version: light is pinned rather than left
-        // on ThemeMode.system so the app does not follow a phone set to dark.
-        // The dark ThemeData is still built and ready if that ever changes.
+        // Light, Dark or System, as chosen under Account settings → Theme.
+        // System follows the device and switches when it does.
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
-        themeMode: ThemeMode.light,
+        themeMode: ThemeSettings.instance.mode,
+        // The framework interpolates the whole ThemeData -- backgrounds,
+        // cards, text, borders, buttons, icons, inputs, the app bar -- so a
+        // switch is a short fade rather than a flash. Short enough that the
+        // tap still feels answered.
+        themeAnimationDuration: const Duration(milliseconds: 250),
+        themeAnimationCurve: Curves.easeInOut,
         // Declared so the framework's own widgets follow the choice, not only
         // the strings this app writes. The delegates are not optional once a
         // non-English locale is set: without them Material widgets have no

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/widgets/page_width.dart';
+
 import '../../../core/ui/action_status.dart';
 import '../../../../core/network/api_error.dart';
 import '../../../shared/widgets/section_header.dart';
@@ -155,7 +157,7 @@ class _DepartmentFeedState extends State<DepartmentFeed> {
           ),
         if (_emptyChild != null) _EmptyChildNotice(name: _emptyChild!),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+          padding: PageWidth.insets(context, top: 8, bottom: 6),
           child: Text(
             child == null
                 ? 'Trending in ${widget.department.name}'
@@ -179,7 +181,7 @@ class _DepartmentFeedState extends State<DepartmentFeed> {
             onAddToCart: widget.onAddToCart,
           ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+          padding: PageWidth.insets(context, top: 12),
           child: OutlinedButton.icon(
             // Points at whatever is being shown. Offering "everything in Women"
             // while the page is listing Women's Sweaters would be a button that
@@ -274,7 +276,7 @@ class _ChildProducts extends StatelessWidget {
     if (failed != null) {
       final theme = Theme.of(context);
       return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        padding: PageWidth.insets(context, top: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -310,7 +312,7 @@ class _EmptyChildNotice extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: PageWidth.insets(context, top: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -401,8 +403,11 @@ class _Grid extends StatelessWidget {
             final width = ProductResultCard.widthFor(constraints.maxWidth);
 
             return Wrap(
+              // Columns keep the full gap; rows take the tighter one. They were
+              // the same number, which is why the vertical could not be cut
+              // without narrowing the pictures as well.
               spacing: ProductResultCard.gridGap,
-              runSpacing: ProductResultCard.gridGap,
+              runSpacing: ProductResultCard.rowGap,
               children: [
                 for (final product in products)
                   SizedBox(
@@ -462,7 +467,7 @@ class _Nothing extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: PageWidth.insets(context, top: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

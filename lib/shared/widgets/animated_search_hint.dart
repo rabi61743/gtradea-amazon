@@ -7,10 +7,43 @@ import 'package:flutter/material.dart';
 ///
 /// Short, concrete and from different corners of the catalogue, so the three
 /// together read as "this shop sells all sorts" rather than as one department.
+// const List<String> kSearchHintPhrases = <String>[
+//   'Lamp',
+//   'Kid Fashion',
+//   'Shoes',
+// ];
+
 const List<String> kSearchHintPhrases = <String>[
   'Lamp',
   'Kid Fashion',
   'Shoes',
+  'Watches',
+  'Backpacks',
+  'Dresses',
+  'T-Shirts',
+  'Jeans',
+  'Sunglasses',
+  'Handbags',
+  'Sneakers',
+  'Home Decor',
+  'Furniture',
+  'Kitchen Essentials',
+  'Beauty Products',
+  'Skincare',
+  'Jewelry',
+  'Toys',
+  'Sportswear',
+  'Electronics',
+  'Headphones',
+  'Mobile Accessories',
+  'Books',
+  'Gifts',
+  'Baby Products',
+  'Men Fashion',
+  'Women Fashion',
+  'Pet Supplies',
+  'Fitness Equipment',
+  'Office Supplies',
 ];
 
 /// A placeholder that types itself out, holds, erases, and moves on.
