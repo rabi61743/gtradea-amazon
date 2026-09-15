@@ -485,9 +485,13 @@ class _Block extends StatelessWidget {
       // pair rather than one dark card beside a lighter wash.
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.22),
-        borderRadius: BorderRadius.circular(14),
+        // The Flash Sales card's radius, shared with the Delivery + Points
+        // card through the same constant.
+        borderRadius: BorderRadius.circular(DeliveryPointsCard.radius),
         border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
       ),
+      // The tiles' ripples are cut to the rounded corners.
+      clipBehavior: Clip.antiAlias,
       child: child,
     );
   }

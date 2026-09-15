@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 15:55 — Flash Sales card radius on the header sections
+- **What:** The Delivery + Points card and the Orders / Messages / Notifications section use the Flash Sales card's radius, reused as the constant `AppTheme.radiusCard` (12; was 14). Both surfaces clip content and ripples with `Clip.antiAlias`. The halves' ripple radii follow `DeliveryPointsCard.radius`.
+- **Why:** User request: the exact Carousel/Flash Sales radius. The two differ (Flash Sales 12, carousel 16); the user chose Flash Sales (12).
+- **Affected:** `delivery_points_card.dart` (`radius = AppTheme.radiusCard`, clip), `search_header.dart` (`_Block` radius + clip), `test/home_category_strip_test.dart` (expects `AppTheme.radiusCard`).
+- **Impact & risk:** Corners only. Colours, border, heights, padding, margins, icons, text and taps are unchanged.
+- **Verification:** analyze clean; header, tour, home and flash sale suites 168/168. On the Redmi the corners match the Flash Sales card.
+- **Commit:** see `git log` — `style(home): header sections take the flash sale card radius`, pushed to origin `main`.
+
 ## 2026-09-15 15:45 — Equal heights for the header sections; right inset in the Points half
 - **What:**
   - The Orders / Messages / Notifications section takes the Delivery + Points card's height from one shared `DeliveryPointsCard.rowHeight`: 44 on phones, 56 on tablet/desktop. Before, a phone had card 42 / icons 44 and a tablet had 56 / 44.

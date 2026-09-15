@@ -148,8 +148,9 @@ void main() {
         .map((d) => d.borderRadius)
         .whereType<BorderRadius>();
 
-    // The delivery block and the actions block, both still 14.
-    expect(blocks, contains(BorderRadius.circular(14)));
+    // The Delivery + Points card and the actions block take the Flash Sales
+    // card's radius (AppTheme.radiusCard), by request.
+    expect(blocks, contains(BorderRadius.circular(AppTheme.radiusCard)));
     expect(blocks.contains(BorderRadius.circular(16)), isFalse);
   });
 

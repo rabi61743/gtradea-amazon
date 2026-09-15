@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../address/data/address_store.dart';
 import '../../address/presentation/address_picker_sheet.dart';
@@ -28,7 +29,10 @@ class DeliveryPointsCard extends StatelessWidget {
 
   static const _coinGold = Color(0xFFF5B301);
 
-  static const radius = 14.0;
+  /// The Flash Sales card's own corner -- the theme's card radius, reused
+  /// rather than approximated -- so these header surfaces round exactly as
+  /// that card does.
+  static const radius = AppTheme.radiusCard;
 
   /// Screen width under which the dense metrics are used.
   static const denseBelow = 600.0;
@@ -57,11 +61,12 @@ class DeliveryPointsCard extends StatelessWidget {
               constraints: BoxConstraints(minHeight: m.minHeight),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.22),
-                // 14, the header blocks' own radius. 16 is the band's corner,
-                // and a card inside the band does not borrow it.
+                // The Flash Sales card's radius (AppTheme.radiusCard).
                 borderRadius: BorderRadius.circular(radius),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
               ),
+              // Content and tap ripples are cut to the same corners.
+              clipBehavior: Clip.antiAlias,
               child: Material(
                 type: MaterialType.transparency,
                 child: Row(
