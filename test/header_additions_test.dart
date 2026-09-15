@@ -8,6 +8,7 @@ import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
 import 'package:gtradea_amazon/features/auth/presentation/auth_screen.dart';
 import 'package:gtradea_amazon/core/theme/colors.dart';
 import 'package:gtradea_amazon/features/home/widgets/department_tabs.dart';
+import 'package:gtradea_amazon/features/home/widgets/delivery_points_card.dart';
 import 'package:gtradea_amazon/features/home/widgets/search_header.dart';
 import 'package:gtradea_amazon/features/notifications/presentation/notifications_screen.dart';
 import 'package:gtradea_amazon/features/orders/presentation/order_tracker_button.dart';
@@ -345,32 +346,32 @@ void main() {
       expect(glyph.size, bell.size);
     });
 
-    testWidgets('and the location control shrank with them', (tester) async {
-      // Asked for in the same breath as the three above, so it moves with them
-      // rather than being left a size larger and looking like the odd one out.
+    testWidgets('and the location is the reference card, chevron included', (
+      tester,
+    ) async {
+      // This used to pin a small outlined pin and no chevron: the compact
+      // address chip shared its row with the coins and could not afford them.
+      // The Delivery + Points card now follows its
+      // reference -- a solid pin, still under Material's 24, and the
+      // chevron-down that says the address can be changed. Recorded rather
+      // than deleted, because the old rule was deliberate.
       _phone(tester);
       await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
       await tester.pump();
 
-      final pin = tester.widget<Icon>(find.byIcon(Icons.location_on_outlined));
-      final bell = tester.widget<NotificationBell>(
-        find.byType(NotificationBell),
+      final pin = tester.widget<Icon>(
+        find.descendant(
+          of: find.byType(DeliveryPointsCard),
+          matching: find.byIcon(Icons.location_on),
+        ),
       );
-
-      // Smaller than the header icons: it sits inside a labelled control
-      // rather than standing alone, so it reads at a smaller size than they do.
-      expect(pin.size, lessThan(bell.size));
-
-      // The chevron used to be asserted here too, a step smaller than the pin.
-      // It is not drawn any more: the coin chip now always shares this row, so
-      // the location control is permanently in its compact form, and compact
-      // drops the chevron to buy the address its words back. Pinned as an
-      // absence rather than dropped, so the day the chip goes away again this
-      // says what changed.
+      expect(pin.size, lessThan(24));
       expect(
-        find.byIcon(Icons.keyboard_arrow_down),
-        findsNothing,
-        reason: 'compact location control, because the coin chip is beside it',
+        find.descendant(
+          of: find.byType(DeliveryPointsCard),
+          matching: find.byIcon(Icons.keyboard_arrow_down),
+        ),
+        findsOneWidget,
       );
     });
 
@@ -429,9 +430,10 @@ void main() {
       final actions = block(SupportButton);
       expect(actions.height, lessThanOrEqualTo(44));
       expect(
-        actions.height - block(DeliveryLocationButton).height,
+        (actions.height - tester.getSize(find.byType(DeliveryPointsCard)).height)
+            .abs(),
         lessThanOrEqualTo(2),
-        reason: 'level with the field beside it, not overhanging it',
+        reason: 'level with the Delivery + Points card beside it',
       );
     });
   });

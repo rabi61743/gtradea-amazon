@@ -10,15 +10,13 @@ import '../../../shared/widgets/brand_lockup.dart';
 import '../../auth/data/auth_store.dart';
 import '../../notifications/presentation/notifications_screen.dart';
 import '../../profile/data/profile_store.dart';
-import '../../address/presentation/delivery_location_button.dart';
 import '../../orders/presentation/order_tracker_button.dart';
 // The anchor registry, so the tour can ring the real Orders icon below rather
 // than a copy of it drawn for the overlay.
 import '../../tour/data/tour_step.dart';
 import '../../search/widgets/voice_search_sheet.dart';
 import '../../support/presentation/support_button.dart';
-import '../../wallet/data/coin_balance_store.dart';
-import '../../wallet/presentation/coin_balance_button.dart';
+import 'delivery_points_card.dart';
 
 /// The brand band at the top of home: the lockup, the chrome, and search.
 ///
@@ -309,96 +307,29 @@ class SearchHeader extends StatelessWidget {
                         child: Transform.translate(
                           offset: Offset(0, -14 * t),
                           child: Row(
-                            // Not stretch: this row sits in a Column that is
-                            // as tall as its children, so a stretched cross
-                            // axis would be asked to fill an infinite height.
-                            // The two blocks match because each carries the
-                            // same minimum height, not because the row forces
-                            // one on them.
+                            // Centred, not stretched: the row sits in a Column
+                            // as tall as its children, and the two groups are
+                            // brought to one height by their own minimums.
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              // What is being sent, and where: the address and
-                              // the coins that can pay towards it, in one block.
-                              // They share a container because they are both
-                              // answers about this shopper's account rather than
-                              // places to go.
-                              Expanded(
-                                child: _Block(
-                                  child: ListenableBuilder(
-                                    listenable: CoinBalanceStore.instance,
-                                    builder: (context, _) => Row(
-                                      children: [
-                                        Expanded(
-                                          // The city alone once a balance is
-                                          // sharing the block: the two do not
-                                          // both fit on a phone, and a
-                                          // half-ellipsised address is worth
-                                          // less than a whole city.
-                                          child: DeliveryLocationButton(
-                                            compact: CoinBalanceStore
-                                                .instance
-                                                .hasBalance,
-                                          ),
-                                        ),
-                                        // Only once there is a balance to
-                                        // show. Built unconditionally it still
-                                        // took its share of the row while
-                                        // drawing nothing, and the address
-                                        // beside it read "Deliv / Ja...".
-                                        if (CoinBalanceStore
-                                            .instance
-                                            .hasBalance)
-                                          // Its natural width, not a share of
-                                          // the row. It used to take flex 3
-                                          // against the address's 1, which was
-                                          // harmless while the chip only
-                                          // appeared for an account that had a
-                                          // balance -- and squeezed the
-                                          // address down to a bare pin the
-                                          // moment the chip became permanent.
-                                          // The chip caps itself at 88; the
-                                          // address keeps everything else.
-                                          Flexible(
-                                            flex: 0,
-                                            child: CoinBalanceButton(
-                                              // The real chip is what the tour
-                                              // rings, and it carries the
-                                              // account's own balance from
-                                              // GET /wallet -- there is no
-                                              // second copy of the figure.
-                                              key: TourAnchors.instance.keyOf(
-                                                TourAnchor.coins,
-                                              ),
-                                              withLeadingDivider: true,
-                                              // Figure and coin only: this row
-                                              // has an address to fit beside
-                                              // it.
-                                              compact: true,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              // Where to go, in the second block: three
-                              // destinations, each named under its glyph. The
-                              // words are the point -- three bare icons on a
-                              // teal band were a guessing game, and the truck in
-                              // particular read as delivery rather than orders.
+                              // Where it goes and what can pay towards it: the
+                              // delivery address and the points balance, in the
+                              // reference card, on the left of the icons.
+                              const Expanded(child: DeliveryPointsCard()),
+                              // A tight gap, by request: the icon group sits
+                              // close to the card rather than floating off it.
+                              const SizedBox(width: 6),
+                              // Where to go: three destinations, each named
+                              // under its glyph. The words are the point --
+                              // three bare icons on a teal band were a guessing
+                              // game, and the truck in particular read as
+                              // delivery rather than orders.
                               _Block(
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     OrderTrackerButton(
                                       // The real icon is what the tour rings.
-                                      // Keyed here rather than on the block
-                                      // around it, which holds all three
-                                      // actions -- a key there would light
-                                      // notifications and support along with
-                                      // it. The block gives up its `const` for
-                                      // this and nothing else changes.
                                       key: TourAnchors.instance.keyOf(
                                         TourAnchor.orders,
                                       ),
@@ -543,7 +474,9 @@ class _Block extends StatelessWidget {
       // size on a default text setting and both grow -- rather than one
       // clipping -- on a large one.
       constraints: const BoxConstraints(minHeight: 42),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      // Tight by request: the three tiles already carry their own tap-target
+      // padding, so the field around them only needs a sliver.
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(14),

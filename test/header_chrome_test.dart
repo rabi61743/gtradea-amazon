@@ -3,18 +3,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/network/api_client.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/address/data/address_store.dart';
-import 'package:gtradea_amazon/features/address/presentation/delivery_location_button.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
 import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/support/presentation/support_button.dart';
 import 'package:gtradea_amazon/features/support/presentation/support_tickets_screen.dart';
 import 'package:gtradea_amazon/features/home/widgets/product_rail.dart'
     show formatGrouped;
+import 'package:gtradea_amazon/features/home/widgets/delivery_points_card.dart';
 import 'package:gtradea_amazon/features/home/widgets/search_header.dart';
 import 'package:gtradea_amazon/features/notifications/presentation/notifications_screen.dart';
 import 'package:gtradea_amazon/features/orders/presentation/order_tracker_button.dart';
 import 'package:gtradea_amazon/features/wallet/data/coin_balance_store.dart';
-import 'package:gtradea_amazon/features/wallet/presentation/coin_balance_button.dart';
 import 'package:gtradea_amazon/features/wallet/presentation/wallet_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -60,16 +59,20 @@ void main() {
     testWidgets('groups where the parcel goes apart from where to go', (
       tester,
     ) async {
-      // Two blocks: what this account is (address, coins) on the left, and
-      // three destinations on the right. The reference draws them as separate
-      // rounded fields, and the split is the point -- one side answers a
-      // question, the other side takes you somewhere.
+      // Two groups on one row: what this account is (the delivery and points
+      // card) on the left, and three destinations on the right. The split is
+      // the point -- one answers a question, the other takes you somewhere.
       await _pumpHeader(tester);
 
-      final address = tester.getRect(find.byType(DeliveryLocationButton));
+      final card = tester.getRect(find.byType(DeliveryPointsCard));
       final orders = tester.getRect(find.byType(OrderTrackerButton));
 
-      expect(address.right, lessThanOrEqualTo(orders.left));
+      expect(card.right, lessThanOrEqualTo(orders.left));
+      expect(
+        (card.center.dy - orders.center.dy).abs(),
+        lessThan(4),
+        reason: 'one row, centred against each other',
+      );
     });
 
     testWidgets('the third action is messages, not the cart', (tester) async {
@@ -109,7 +112,7 @@ void main() {
     });
   });
 
-  group('the coin chip', () {
+  group('the points half of the card', () {
     testWidgets('shows the account balance the server reports', (tester) async {
       signInForTest();
       api.on('GET', '/wallet', body: const {'balance': 2450});
@@ -121,7 +124,7 @@ void main() {
       // and the prefix cost the address the room it needs to name a place.
       // The wallet screen this opens still prints the full rupee formatting.
       expect(find.text('2,450'), findsOneWidget);
-      expect(find.byType(CoinBalanceButton), findsOneWidget);
+      expect(find.text('Points'), findsOneWidget);
     });
 
     testWidgets('opens the same wallet the balance came from', (tester) async {
@@ -130,7 +133,7 @@ void main() {
       api.on('GET', '/wallet/transactions', body: const {'transactions': []});
 
       await _pumpHeader(tester);
-      await tester.tap(find.byType(CoinBalanceButton));
+      await tester.tap(find.text('Points'));
       await tester.pumpAndSettle();
 
       expect(find.byType(WalletScreen), findsOneWidget);
@@ -145,7 +148,7 @@ void main() {
       // deleted, because it was a deliberate choice and this reverses it.
       await _pumpHeader(tester);
 
-      expect(find.byType(CoinBalanceButton), findsOneWidget);
+      expect(find.text('Points'), findsOneWidget);
       expect(
         find.text(formatGrouped(CoinBalanceStore.fallbackBalance)),
         findsOneWidget,
@@ -184,7 +187,7 @@ void main() {
         isEmpty,
         reason: 'a guest has no wallet to ask about',
       );
-      expect(find.byType(CoinBalanceButton), findsOneWidget);
+      expect(find.text('Points'), findsOneWidget);
     });
 
     testWidgets('a failed read still shows the stand-in', (tester) async {
@@ -203,7 +206,7 @@ void main() {
       await _pumpHeader(tester);
 
       expect(tester.takeException(), isNull);
-      expect(find.byType(CoinBalanceButton), findsOneWidget);
+      expect(find.text('Points'), findsOneWidget);
       expect(
         CoinBalanceStore.instance.fetchedBalance,
         isNull,
@@ -231,13 +234,12 @@ void main() {
 
       await _pumpHeader(tester);
 
-      final chip = tester.getRect(find.byType(CoinBalanceButton));
-
-      // The chip is capped, so what is left of the block belongs to the
-      // address -- and the address names the city rather than a line cut off
-      // mid-word.
-      expect(chip.width, lessThanOrEqualTo(112));
-      expect(find.text('Lalitpur'), findsOneWidget);
+      // The address names the neighbourhood and the city, as the reference
+      // does -- not the full line with the province.
+      final points = tester.getRect(find.text('Points'));
+      final card = tester.getRect(find.byType(DeliveryPointsCard));
+      expect(points.right, lessThanOrEqualTo(card.right));
+      expect(find.text('Jawalakhel, Lalitpur'), findsOneWidget);
       expect(find.text('Jawalakhel, Lalitpur, Bagmati'), findsNothing);
     });
 

@@ -6,7 +6,7 @@ import 'package:gtradea_amazon/features/catalog/data/catalog_store.dart';
 import 'package:gtradea_amazon/features/home/home_feed.dart';
 import 'package:gtradea_amazon/features/home/home_screen.dart';
 import 'package:gtradea_amazon/features/home/widgets/department_tabs.dart';
-import 'package:gtradea_amazon/features/address/presentation/delivery_location_button.dart';
+import 'package:gtradea_amazon/features/home/widgets/delivery_points_card.dart';
 import 'package:gtradea_amazon/features/home/widgets/search_header.dart';
 import 'package:gtradea_amazon/features/notifications/presentation/notifications_screen.dart';
 import 'package:gtradea_amazon/features/orders/presentation/order_tracker_button.dart';
@@ -269,7 +269,7 @@ void main() {
       .widget<Opacity>(
         find
             .ancestor(
-              of: find.byType(DeliveryLocationButton),
+              of: find.byType(DeliveryPointsCard),
               matching: find.byType(Opacity),
             )
             .first,
@@ -281,9 +281,9 @@ void main() {
   ) async {
     await pump(tester);
 
-    // At the top: the brand, the delivery line and the three actions.
+    // At the top: the brand, the delivery and points card, and the three actions.
     expect(find.byType(BrandWordmark), findsOneWidget);
-    expect(find.byType(DeliveryLocationButton), findsOneWidget);
+    expect(find.byType(DeliveryPointsCard), findsOneWidget);
     expect(find.byType(NotificationBell), findsOneWidget);
     expect(find.byType(OrderTrackerButton), findsOneWidget);
     expect(find.byType(SupportButton), findsOneWidget);
@@ -337,7 +337,7 @@ void main() {
     final slide = tester.widget<Transform>(
       find
           .ancestor(
-            of: find.byType(DeliveryLocationButton),
+            of: find.byType(DeliveryPointsCard),
             matching: find.byType(Transform),
           )
           .first,

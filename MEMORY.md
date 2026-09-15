@@ -18,6 +18,25 @@ Entry format:
 
 ---
 
+## 2026-09-15 15:05 — Home header: Delivery + Points card; compact icon section
+- **What:**
+  - New `DeliveryPointsCard` from the reference: pin, "Deliver to" and the place, chevron-down | gold "P" coin, the balance, "Points", chevron-right.
+  - It sits on the **same row, left of** the Orders / Messages / Notifications section. That section's padding is reduced (4/2 to 2/1) and the gap between them is 6 dp.
+  - Below a 360 dp card width it uses dense metrics (42 tall, level with the icon section). Tablet and desktop use the reference size.
+  - The place is built from the area line and skips the province, postcodes and the city, so a detected "Bagmati Province 44600, Ekantakuna" reads "Ekantakuna, Lalitpur".
+- **Why:** User requests: add the Delivery + Points design from the reference, then keep it left of the icon section with a more compact icon section. "Points" and the "P" coin are in this card only; the wallet still says Coins.
+- **Affected:**
+  - New `lib/features/home/widgets/delivery_points_card.dart`
+  - `search_header.dart`: the row now holds the card; the icon section padding changed
+  - Tests: new `test/delivery_points_card_test.dart`; `header_chrome_test`, `header_additions_test` and `header_collapse_test` retargeted from the old `DeliveryLocationButton`/`CoinBalanceButton` to the card, with reasons in comments
+  - Data is unchanged: `AddressStore.defaultAddress` and `GET /wallet` via `CoinBalanceStore`. The taps open the address picker and `WalletScreen`. The coins tour anchor moved onto the card.
+- **Impact & risk:** Header layout only.
+  - Found on the phone and fixed: overflow at 1.5x/2x text; "Bagmati Provin..." from a detected address.
+  - Header rules kept: icons under 24, 14 dp corners inside the band.
+  - Accepted trade-off: on a 406 dp phone the address truncates ("Ekant...") because the icon section keeps its labelled tiles.
+- **Verification:** analyze clean. Header, tour and home suites 145/145, with no overflow at 320-406 dp and 2x text. The previous full run (before the row change) was 2335 pass, 3 known `brand_system_test` failures. On the Redmi: one row, level, address picker and points tap wired.
+- **Commit:** see `git log` — `feat(home): delivery and points card beside a compact icon section`, pushed to origin `main`.
+
 ## 2026-09-15 13:15 — Remove "(Optional)" from the Location label
 - **What:** The Location row label in Profile Settings reads "Location"
   instead of "Location (Optional)". Removed the now-unused `optional`
