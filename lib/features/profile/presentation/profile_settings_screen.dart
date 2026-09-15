@@ -256,13 +256,15 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           onRefresh: () => _store.load(force: true),
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+            padding: _PageFrame.padding(context),
             children: [
-              // A page-width cap, so this is a form on a tablet or a desktop
-              // window rather than one line of rows stretched across it.
+              // The page's width, by screen size -- see [_PageFrame]: about
+              // 97% on a phone, a centred column on a tablet or desktop.
               Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 620),
+                  constraints: BoxConstraints(
+                    maxWidth: _PageFrame.maxWidth(context),
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -1045,11 +1047,12 @@ class _FieldRow extends StatelessWidget {
   }
 }
 
-/// The reference's pill for changing a detail: pencil, "Edit", chevron.
+/// The reference's pill for changing a detail: pencil, "Change", chevron.
 ///
 /// Tapping it does what the row always did -- the phone and email rows open
 /// their own change-and-verify pages, the name opens its sheet, and Location
-/// opens the address book. Only the word matches the reference now.
+/// opens the address book. "Change" rather than "Edit": a contact method is
+/// replaced and proved, not edited in place.
 class _EditPill extends StatelessWidget {
   const _EditPill({required this.onTap});
 
@@ -1074,7 +1077,10 @@ class _EditPill extends StatelessWidget {
             children: [
               Icon(Icons.edit_outlined, size: 15, color: tint),
               const SizedBox(width: 6),
-              Text('Edit', style: _Type.control(theme)?.copyWith(color: tint)),
+              Text(
+                'Change',
+                style: _Type.control(theme)?.copyWith(color: tint),
+              ),
               const SizedBox(width: 2),
               Icon(Icons.chevron_right, size: 16, color: tint),
             ],
@@ -1723,5 +1729,38 @@ class _ButtonSpinner extends StatelessWidget {
         color: Theme.of(context).colorScheme.onPrimary,
       ),
     );
+  }
+}
+
+/// How wide the page is, by the width of the screen it is on.
+///
+/// Measured against what used to render: a fixed 16-point margin and a 620 cap
+/// left the column at 374 of 406 points on a phone (92%) -- a strip of unused
+/// margin down both sides -- while a desktop window got a narrow 620 column.
+///
+///   * **Phone (< 600):** 1.5% margin each side, no cap -- about 97% width.
+///   * **Tablet (600-1024):** 24-point margins, capped at 680 and centred.
+///   * **Desktop (1024+):** 24-point margins, capped at 720 and centred --
+///     balanced whitespace, never near full-screen.
+abstract final class _PageFrame {
+  static const tabletFrom = 600.0;
+  static const desktopFrom = 1024.0;
+
+  static double _width(BuildContext context) => MediaQuery.sizeOf(context).width;
+
+  static double side(BuildContext context) {
+    final width = _width(context);
+    return width < tabletFrom ? width * 0.015 : 24;
+  }
+
+  static double maxWidth(BuildContext context) {
+    final width = _width(context);
+    if (width < tabletFrom) return double.infinity;
+    return width < desktopFrom ? 680 : 720;
+  }
+
+  static EdgeInsets padding(BuildContext context) {
+    final margin = side(context);
+    return EdgeInsets.fromLTRB(margin, 4, margin, 32);
   }
 }

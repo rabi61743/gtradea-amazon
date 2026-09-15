@@ -18,6 +18,36 @@ Entry format:
 
 ---
 
+## 2026-09-15 12:50 — Profile Settings responsive width; "Change" label
+- **What:** The page width now depends on screen size, set in the new
+  `_PageFrame` helper:
+  - phone (< 600 dp): 1.5% margin each side, about **97%** width
+  - tablet (600–1024 dp): 24 dp margins, centred column capped at **680**
+  - desktop (1024+ dp): 24 dp margins, centred column capped at **720**
+
+  Row pills changed from "Edit" to **"Change"**.
+- **Why:** User request. The rendered column was a fixed 16 dp margin plus a
+  620 cap: 374 of 406 dp on the phone (92%), and a narrow 620 column on
+  desktop.
+- **Affected:**
+  - `lib/features/profile/presentation/profile_settings_screen.dart`: the
+    ListView padding and ConstrainedBox cap (the real width constraints),
+    `_EditPill` label, new `_PageFrame`
+  - `test/profile_settings_test.dart`: the pill test now expects "Change";
+    new tests measure the rendered column at 406 / 800 / 1400 dp
+  - Untouched: typography, colours, icons, the phone/email change pages and
+    their navigation, routing, backend.
+- **Impact & risk:** Low. Only outer width and one word. The inner
+  breakpoints (`_sideBySideFrom` 420, `_chipBesideFrom` 460) still hold on
+  a 394 dp phone column.
+- **Verification:** analyze clean. Profile and phone verification suites
+  50/50. On the Redmi: about 6 dp margins, full name on one line, four
+  "Change" pills.
+- **Note:** The uncommitted 2FA work (waiting on the live phone test) was
+  kept out of this commit.
+- **Commit:** see `git log` — `style(profile): responsive page width and
+  "Change" label`, pushed to origin `main`.
+
 ## 2026-09-15 12:10 — Profile Settings matched to the reference design
 - **What:** Refined `ProfileSettingsScreen` to the supplied reference:
   - round gear in the header (menu: Theme, Language, Notifications)

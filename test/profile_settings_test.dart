@@ -600,15 +600,15 @@ void main() {
   });
 
   group('the page matches the reference', () {
-    testWidgets('every changeable row offers "Edit", not "Change"', (
+    testWidgets('every changeable row offers "Change"', (
       tester,
     ) async {
       signInForTest();
       await _pump(tester);
 
       // Full Name, Phone Number, Email Address, Location.
-      expect(find.text('Edit'), findsNWidgets(4));
-      expect(find.text('Change'), findsNothing);
+      expect(find.text('Change'), findsNWidgets(4));
+      expect(find.text('Edit'), findsNothing);
     });
 
     testWidgets('left out on request: Member since, Verified, Preferences', (
@@ -652,7 +652,7 @@ void main() {
       expect(find.textContaining('(Optional)'), findsOneWidget);
     });
 
-    testWidgets('says "Not set" when there is none, and Edit opens the book', (
+    testWidgets('says "Not set" when there is none, and Change opens the book', (
       tester,
     ) async {
       signInForTest();
@@ -683,6 +683,45 @@ void main() {
       await tester.pump();
       expect(find.textContaining('isn’t available yet'), findsOneWidget);
       expect(find.text('Not enabled'), findsOneWidget);
+    });
+  });
+
+  group('page width', () {
+    /// The section column every card stretches to -- the real width
+    /// constraint, measured as rendered rather than read from a constant.
+    Future<Rect> columnAt(WidgetTester tester, Size logical) async {
+      signInForTest();
+      tester.view.physicalSize = logical * 2;
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_wrap());
+      await tester.pumpAndSettle();
+      return tester.getRect(
+        find
+            .ancestor(
+              of: find.text('Personal Information'),
+              matching: find.byType(ConstrainedBox),
+            )
+            .first,
+      );
+    }
+
+    testWidgets('a phone uses about 97% of the width', (tester) async {
+      final rect = await columnAt(tester, const Size(406, 900));
+      expect(rect.width, closeTo(406 * 0.97, 2));
+      expect(rect.left, closeTo(406 * 0.015, 1));
+    });
+
+    testWidgets('a tablet gets a centred 680 column, not 97%', (tester) async {
+      final rect = await columnAt(tester, const Size(800, 1200));
+      expect(rect.width, 680);
+      expect(rect.left, closeTo((800 - 680) / 2, 1));
+    });
+
+    testWidgets('a desktop gets a centred 720 column', (tester) async {
+      final rect = await columnAt(tester, const Size(1400, 1000));
+      expect(rect.width, 720);
+      expect(rect.left, closeTo((1400 - 720) / 2, 1));
     });
   });
 
