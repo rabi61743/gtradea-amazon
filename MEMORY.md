@@ -18,6 +18,27 @@ Entry format:
 
 ---
 
+## 2026-09-15 23:10 — Product History cards: smaller red chip, image closer to edge, no duplicate spec
+- **What** (Recently Viewed cards, `_ViewRow` in `recent_views_section.dart`):
+  - **Red-orange department chip** (`commerceOrange`): font 10.5 → 9.5, padding h8/v2 → h6/v1, one line with ellipsis. It stays on the price row instead of wrapping to two lines and making the card taller.
+  - **Image:** the card's inner padding went from `all(8)` to `fromLTRB(4, 8, 8, 8)`, so the photo sits closer to the left edge.
+  - **Duplicate description:**
+    - Root cause: `_blurb` falls back to the first spec when the listing has no prose, and `_highlights` also took `specs.first`, so "Brand: Pulse treasure" printed twice.
+    - `_highlights` now skips the spec the blurb already shows and uses the next one, or none.
+- **Why:** User request: reduce the red text size and keep it inline, reduce the left padding around the image, fix the description showing the same info twice. UI only.
+- **Affected:**
+  - `lib/features/account/presentation/recent_views_section.dart`
+  - `test/recent_views_section_test.dart`:
+    - the old test expected the second spec never to show; it now expects each spec exactly once
+    - new tests: one spec prints once with no highlight line; the chip stays one line
+- **Impact & risk:**
+  - Visual only on these cards. Data (`/product-views` plus the product detail API), image, title, price, Buy Now, heart and taps are unchanged.
+  - Long department names now truncate with "…".
+- **Verification:**
+  - analyze clean; recent views and product history suites 35/35.
+  - On the Redmi the chips are one line ("Display ra…", "Electric c…"), the images are closer to the left edge, and no card repeats a line (e.g. "Brand: Pulse treasure" then "Model: 60v20ah…").
+- **Commit:** see git log (`style(history): compact department chip, tighter image inset, no repeated spec`) on main, pushed to origin
+
 ## 2026-09-15 22:05 — Popup reliably shows on every fresh launch (root cause fixed)
 - **What:**
   - The popup's once-per-launch decision now also waits for the saved sign-in to be restored (`AuthStore.isLoaded`), and `AuthStore` joined the popup triggers.

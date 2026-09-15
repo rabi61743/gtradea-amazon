@@ -162,10 +162,82 @@ void main() {
     await tester.pumpAndSettle();
 
     // The blurb under the name, and one highlight under that -- the card is
-    // as tall as this list makes it, so it carries one line of it.
-    expect(find.text('Sound: High Sound Quality'), findsWidgets);
-    expect(find.text('Feature: Noise Cancellation'), findsNothing);
+    // as tall as this list makes it, so it carries one line of it. With no
+    // prose in the listing the blurb is the first specification, so the
+    // highlight is the next one: each fact once, never the same line twice.
+    expect(find.text('Sound: High Sound Quality'), findsOneWidget);
+    expect(find.text('Feature: Noise Cancellation'), findsOneWidget);
     expect(find.text('Rs. 2,850'), findsOneWidget);
+  });
+
+  testWidgets('a product with one specification prints it only once', (
+    tester,
+  ) async {
+    stubApi().onCall('GET', '/api/1688/product', (call) {
+      return reply({
+        'item': {
+          'num_iid': '1',
+          'title': 'Lead-Acid Battery Charger',
+          'props': [
+            {'name': 'Brand', 'value': 'Pulse treasure'},
+          ],
+        },
+        'pricing': {'displayPrice': 995},
+      });
+    });
+
+    await _pump(tester, [
+      _view(id: '1', name: 'Lead-Acid Battery Charger', price: 995),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Brand: Pulse treasure'), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle_outline), findsNothing);
+  });
+
+  testWidgets('the department chip stays one line beside the price', (
+    tester,
+  ) async {
+    stubApi().onCall('GET', '/api/1688/product', (call) {
+      return reply({
+        'item': {
+          'num_iid': '1',
+          'title': 'Source Factory Display',
+          'category_name': 'Display rack and shelving for retail stores',
+        },
+        'pricing': {'displayPrice': 11544},
+      });
+    });
+    tester.view.physicalSize = const Size(406 * 3, 2000);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: ListView(
+            children: [
+              RecentViewsSection(
+                views: [
+                  _view(id: '1', name: 'Source Factory Display', price: 11544),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final chips = find.byWidgetPredicate(
+      (w) => w is Text && w.maxLines == 1 && w.style?.fontSize == 9.5,
+    );
+    expect(chips, findsOneWidget);
+    // Two lines of 9.5pt type, with the theme's line height, would be over 20.
+    final chip = tester.getRect(chips);
+    expect(chip.height, lessThan(20), reason: 'one line, not two');
+    expect(find.text('Rs. 11,544'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('and invents no rating, no was-price and no discount', (

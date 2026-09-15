@@ -288,9 +288,19 @@ class _ViewRow extends StatelessWidget {
   /// One line of it: the card is as tall as this list makes it, and a second
   /// highlight costs every card in the column the same height for a fact most
   /// shoppers read on the product page anyway.
+  ///
+  /// Never the specification [_blurb] is already printing. With no prose in
+  /// the listing the blurb falls back to the first specification, and this
+  /// used to take that same first one -- so "Brand: Pulse treasure" appeared
+  /// twice, one line above the other. It takes the next one instead, or none.
   List<ProductSpec> get _highlights {
     final specs = detail?.specs ?? const [];
-    return specs.isEmpty ? const [] : specs.sublist(0, 1);
+    final blurb = _blurb;
+    final unused = [
+      for (final spec in specs)
+        if ('${spec.label}: ${spec.value}' != blurb) spec,
+    ];
+    return unused.isEmpty ? const [] : unused.sublist(0, 1);
   }
 
   /// The department this belongs to, as the catalogue files it.
@@ -320,7 +330,9 @@ class _ViewRow extends StatelessWidget {
           ),
           clipBehavior: Clip.antiAlias,
           child: Padding(
-            padding: const EdgeInsets.all(8),
+            // Tighter on the left, so the photograph sits closer to the card's
+            // edge.
+            padding: const EdgeInsets.fromLTRB(4, 8, 8, 8),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -631,15 +643,20 @@ class _Chip extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
         color: ink.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(6),
       ),
+      // One line, on the price row. A long department used to wrap to two
+      // lines and stand taller than the price beside it.
       child: Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
         style: theme.textTheme.labelSmall?.copyWith(
-          fontSize: 10.5,
+          fontSize: 9.5,
           fontWeight: FontWeight.w700,
           color: ink,
         ),
