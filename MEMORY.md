@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-15 16:45 — Account settings rows without their own card
+- **What:** `_RowGroup` gained `card` (default true). Account settings passes `card: false`, so its rows draw no edge lines, shadow or surface of their own and sit directly on the account card. Rows, icons, text, dividers and spacing are unchanged. Help and information keeps its card.
+- **Why:** User request: remove the card from Account settings only, nothing else.
+- **Affected:** `lib/features/account/presentation/account_screen.dart`. `test/account_cards_test.dart`: lifted surfaces 4 -> 3 (outer card, Account, Help).
+- **Impact & risk:** Visual only, for Account settings. Routes and behaviour are unchanged.
+- **Verification:** analyze clean; account suites 101/101. On the Redmi the settings rows sit on the account card without edges.
+- **Commit:** see `git log` — `style(account): drop the account settings rows' own card`, pushed to origin `main`.
+
 ## 2026-09-15 16:40 — Whole Account section in one card, Sign out included
 - **What:** One `_AccountCard` now holds every Account-section item in its existing order: profile (greeting and email) or guest card, the Orders/Saved/Cart/Support shortcuts, Recently viewed (heading with Clear, and the rail, when there is history), Account settings, Help and information, and Sign out. The split around Recently viewed and the second card are gone. Each item is the same widget with the same spacing and behaviour; `settingsAndHelp` is still defined once.
 - **Why:** User request: combine all these items, Recently viewed in place and Sign out included, into one card, changing only the outer container.

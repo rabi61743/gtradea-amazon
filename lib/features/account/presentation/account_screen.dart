@@ -119,6 +119,7 @@ class _AccountScreenState extends State<AccountScreen> {
           const SizedBox(height: 22),
           const _GroupLabel('Account settings'),
           _RowGroup(
+            card: false,
             rows: [
               // Only for a signed-in shopper. Offering it to a guest would
               // open a page whose every field is about an account they do
@@ -843,9 +844,14 @@ class _RowSpec {
 
 /// Rows sharing one bordered card, hairline-separated.
 class _RowGroup extends StatelessWidget {
-  const _RowGroup({required this.rows});
+  const _RowGroup({required this.rows, this.card = true});
 
   final List<_RowSpec> rows;
+
+  /// Whether the rows sit on their own card. Account settings turns it off,
+  /// by request: its rows sit directly on the account card, with no edge or
+  /// lift of their own.
+  final bool card;
 
   @override
   Widget build(BuildContext context) {
@@ -854,16 +860,20 @@ class _RowGroup extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: DecoratedBox(
-        decoration: BoxDecoration(
-          // The card the rows share, lifted off the page and run to both
-          // edges of it.
-          color: theme.colorScheme.surface,
-          borderRadius: _cardShape,
-          border: Border.symmetric(
-            horizontal: BorderSide(color: theme.colorScheme.outlineVariant),
-          ),
-          boxShadow: _cardLift,
-        ),
+        decoration: card
+            ? BoxDecoration(
+                // The card the rows share, lifted off the page and run to both
+                // edges of it.
+                color: theme.colorScheme.surface,
+                borderRadius: _cardShape,
+                border: Border.symmetric(
+                  horizontal: BorderSide(
+                    color: theme.colorScheme.outlineVariant,
+                  ),
+                ),
+                boxShadow: _cardLift,
+              )
+            : const BoxDecoration(),
         child: Column(
           children: [
             for (var i = 0; i < rows.length; i++)
