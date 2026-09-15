@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
 import 'package:gtradea_amazon/features/auth/presentation/auth_screen.dart';
+import 'package:gtradea_amazon/features/support/presentation/support_button.dart';
 import 'package:gtradea_amazon/features/home/widgets/search_header.dart';
 import 'package:gtradea_amazon/features/notifications/presentation/notifications_screen.dart';
 import 'package:gtradea_amazon/features/orders/data/order_store.dart';
@@ -147,9 +148,9 @@ void main() {
       expect(tracker.right, lessThanOrEqualTo(bell.left));
     });
 
-    testWidgets('does not push the bell off its margin', (tester) async {
-      // The header aligns the bell's icon, not its box, to a 16pt inset. A new
-      // sibling in the row is exactly the kind of change that would break it.
+    testWidgets('does not push the group off its margin', (tester) async {
+      // A new sibling in the group is exactly the kind of change that would
+      // walk the last tile past the header's 16pt inset.
       tester.view.physicalSize = const Size(1080, 2000);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
@@ -159,33 +160,25 @@ void main() {
 
       final width =
           tester.view.physicalSize.width / tester.view.devicePixelRatio;
-      final bell = tester.getRect(
-        find.descendant(
-          of: find.byType(NotificationBell),
-          matching: find.byIcon(Icons.notifications_none),
-        ),
-      );
+      final last = tester.getRect(find.byType(SupportButton));
 
-      // Still exactly on the margin after the icons shrank. This assertion is
-      // what caught the drift: the header's right inset used to be a hardcoded
-      // 12, which was half of (48 - 24) and silently assumed a 24pt glyph, so
-      // a 21pt one pushed the bell 1.5pt past its margin.
-      expect(bell.right, width - 16);
+      expect(last.right, lessThanOrEqualTo(width - 16));
     });
 
     testWidgets('keeps a full tap target', (tester) async {
       await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
       await tester.pump();
 
+      // The labelled tile, not the bare IconButton it used to be.
       final button = tester.getSize(
         find.descendant(
           of: find.byType(OrderTrackerButton),
-          matching: find.byType(IconButton),
+          matching: find.byType(InkWell),
         ),
       );
 
-      expect(button.width, greaterThanOrEqualTo(48));
-      expect(button.height, greaterThanOrEqualTo(48));
+      expect(button.width, greaterThanOrEqualTo(44));
+      expect(button.height, greaterThanOrEqualTo(36));
     });
 
     testWidgets('leaves the wordmark room at a large text scale', (

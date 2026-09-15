@@ -18,21 +18,134 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="GtradeA: sourcing from 1688 to Nepal, with delivery and duties handled.">
+  <!-- Paints the browser chrome in the brand's blue rather than leaving it the platform default. -->
+  <meta name="theme-color" content="#267488">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="gtradea_amazon">
+  <meta name="apple-mobile-web-app-title" content="GtradeA">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>gtradea_amazon</title>
+  <title>GtradeA</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /*
+      The splash, which is the whole point of this block.
+
+      On the web there is no launch window: until the engine has downloaded and
+      booted, the page is whatever the document says it is, and an empty
+      document is a blank white screen. So the mark and the ring are plain HTML
+      and CSS, inline, with no request of their own to wait for. They are
+      painted by the first parse of this file.
+
+      It is drawn to match BrandLoader (lib/shared/widgets/brand_loader.dart):
+      a faint complete ring, one orange arc sweeping round it, and the mark held
+      still in the middle. The mark does not spin there and does not spin here.
+    */
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body { background: #F3F2F2; }
+
+    #gt-splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #F3F2F2;
+      /* Above the engine's canvas while it is still blank. */
+      z-index: 2147483647;
+      opacity: 1;
+      transition: opacity 250ms ease;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    #gt-splash.gt-splash--done { opacity: 0; pointer-events: none; }
+
+    .gt-ring { position: relative; width: 64px; height: 64px; }
+    .gt-ring svg { position: absolute; inset: 0; }
+    /* The sweeping arc. 1150ms is BrandLoader's own period. */
+    .gt-ring .gt-arc { transform-origin: 50% 50%; animation: gt-spin 1150ms linear infinite; }
+    @keyframes gt-spin { to { transform: rotate(360deg); } }
+
+    /* The mark, at BrandLoader's 0.52 of the ring, comfortably inside the stroke. */
+    .gt-mark {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 33px; height: 33px;
+    }
+
+    .gt-label {
+      margin-top: 18px;
+      font-size: 14px;
+      color: rgba(27, 34, 41, 0.6);
+    }
+
+    /*
+      Reduced motion gets the ring and the mark, held still, exactly as
+      BrandLoader does it. A parked arc still reads as "in progress" rather
+      than as a plain circle.
+    */
+    @media (prefers-reduced-motion: reduce) {
+      .gt-ring .gt-arc { animation: none; transform: rotate(43deg); }
+      #gt-splash { transition: none; }
+    }
+  </style>
 </head>
 <body>
+  <!--
+    role/aria-live so a screen reader announces the wait rather than silence,
+    matching the Semantics wrapper BrandLoader puts round the same thing.
+  -->
+  <div id="gt-splash" role="status" aria-live="polite" aria-label="Loading your storefront">
+    <div class="gt-ring">
+      <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+        <!-- The track: the complete ring, faint. -->
+        <circle cx="32" cy="32" r="30.2" fill="none" stroke="#DCD9D6" stroke-width="3.5"/>
+        <!--
+          The arc: 0.55pi of the circle, which is 27.5% of a circumference of
+          189.8, so 52.2 on and 137.6 off. Rotated to start at twelve o'clock.
+        -->
+        <circle class="gt-arc" cx="32" cy="32" r="30.2" fill="none" stroke="#E94724"
+                stroke-width="3.5" stroke-linecap="round"
+                stroke-dasharray="52.2 137.6" transform="rotate(-90 32 32)"/>
+      </svg>
+      <!--
+        The mark itself, inlined from assets/brand/logo.svg. Inlined rather
+        than linked because a linked image is a second request, and the splash
+        exists precisely to cover the time before requests have finished.
+      -->
+      <svg class="gt-mark" viewBox="36.6 36.2 173.6 158.7" aria-hidden="true" focusable="false">
+        <path fill="#e94724" d="M169.34,126.56v43.61c-13.86,14.04-33,22.72-54.15,22.72-17.96,0-34.47-6.27-47.53-16.76,2.02.17,4.08.26,6.15.26,32.3,0,59.9-20.67,70.89-49.83h24.64Z"/>
+        <polygon fill="#267488" points="208.22 93.95 208.22 192.69 169.34 192.69 169.34 126.56 104.52 126.56 128.57 94 128.6 93.95 208.22 93.95"/>
+        <path fill="#e94724" d="M169.48,38.16v.45l-10.32,13.98-10.57,14.3-20.02,27.11c-40.36,1.22-72.79,31.59-73.62,69.18-10.22-13.15-16.3-29.73-16.3-47.75,0-40.15,30.19-73.15,68.83-76.89,2.41-.25,4.87-.37,7.36-.37h54.65Z"/>
+      </svg>
+    </div>
+    <div class="gt-label">Loading your storefront</div>
+  </div>
+
+  <script>
+    // Flutter dispatches this on the window once it has painted, which is the
+    // only moment at which removing the splash cannot expose a blank canvas.
+    // Nothing here is on a timer: a fixed delay would either uncover an
+    // unfinished app or sit over a finished one.
+    window.addEventListener('flutter-first-frame', function () {
+      var splash = document.getElementById('gt-splash');
+      if (!splash) return;
+      splash.classList.add('gt-splash--done');
+      // After the fade, so it stops intercepting nothing at all.
+      window.setTimeout(function () {
+        if (splash.parentNode) splash.parentNode.removeChild(splash);
+      }, 300);
+    });
+  </script>
+
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

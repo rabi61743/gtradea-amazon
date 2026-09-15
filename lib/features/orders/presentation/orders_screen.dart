@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/artwork_panel.dart';
+import '../../../shared/widgets/loadable_view.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../data/order_store.dart';
+import '../widgets/order_document_button.dart';
 import '../widgets/order_status_chip.dart';
 import '../../../core/time_format.dart';
 import 'order_detail_screen.dart';
@@ -24,7 +26,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   void initState() {
     super.initState();
-    OrderStore.instance.load();
+    final store = OrderStore.instance;
+    // The first visit loads, and loading fetches. Every visit after that has
+    // to ask again: `load()` returns immediately once it has run, so an order
+    // placed on the website after this session started never appeared here
+    // until the app was restarted -- the list was not stale in the cache, it
+    // was simply never asked for a second time.
+    if (store.isLoaded) {
+      // After this frame, not during it. refreshFromServer notifies its
+      // listeners synchronously before its first await, and notifying while
+      // the widget that asked is still building is what the framework refuses
+      // -- load() only gets away with it because it reads the disk first.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(store.refreshFromServer());
+      });
+    } else {
+      store.load();
+    }
     // Without this the rows show a status read off the bare order and no
     // arrival date at all -- the card has always been able to draw both, and
     // never had the data to.
@@ -37,6 +55,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       listenable: OrderStore.instance,
       builder: (context, _) {
         final orders = OrderStore.instance.orders;
+        final error = OrderStore.instance.error;
 
         return Scaffold(
           appBar: AppBar(title: const Text('Your orders')),
@@ -48,7 +67,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
               await OrderStore.instance.loadTrackingForVisible();
             },
             child: orders.isEmpty
-                ? ListView(children: const [SizedBox(height: 120), _NoOrders()])
+                ? ListView(
+                    children: [
+                      const SizedBox(height: 120),
+                      // The store has always recorded why the fetch failed and
+                      // this screen has never read it: a refused or unreachable
+                      // account drew "No orders yet", which is not a loading
+                      // state but a claim about the account -- and the one
+                      // claim most likely to be wrong. Said plainly instead,
+                      // with the way to try again.
+                      if (error != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: LoadFailed(
+                            message: error.isNetwork
+                                ? 'No connection, so your orders could not be '
+                                      'loaded. They are safe on your account.'
+                                : 'Your orders could not be loaded: '
+                                      '${error.message}',
+                            onRetry: () => unawaited(
+                              OrderStore.instance.refreshFromServer(),
+                            ),
+                          ),
+                        )
+                      else
+                        const _NoOrders(),
+                    ],
+                  )
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     itemCount: orders.length,
@@ -191,6 +236,15 @@ class _OrderCard extends StatelessWidget {
                   ),
                 ],
               ),
+              // Straight from the list, without opening the order first.
+              if (OrderDocumentButton.availableFor(order))
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: OrderDocumentButton(order: order, compact: true),
+                  ),
+                ),
             ],
           ),
         ),

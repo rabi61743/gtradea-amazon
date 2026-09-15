@@ -193,22 +193,228 @@ class AuthRepository {
     return trimmed.contains(RegExp(r'\s')) ? null : trimmed;
   }
 
-  Future<void> signOut() async {
+  /// Signs the active account out: on the server, then on this device.
+  ///
+  /// Returns true when GoTrue confirmed the session ended. The local clear
+  /// happens either way -- failing it over a dropped connection would trap
+  /// someone signed in -- and a false answer is the caller's to report.
+  Future<bool> signOut() async {
     final session = await _sessions.read();
+    var revoked = true;
     if (session != null) {
-      try {
-        await _dio.post(
-          '/logout',
-          options: Options(
-            headers: {'Authorization': 'Bearer ${session.accessToken}'},
-          ),
-        );
-      } on DioException {
-        // Best effort. The local clear below is what actually signs them out;
-        // failing that over a dropped connection would trap them signed in.
-      }
+      revoked = await _logout(session, scope: null);
     }
     await _sessions.clear();
+    return revoked;
+  }
+
+  /// Ends a saved account's session on this device, on the server.
+  ///
+  /// `scope=local`: this device's session for that account, and only that.
+  /// The same person signed in on a laptop stays signed in there. True when
+  /// GoTrue confirmed it.
+  Future<bool> revokeSession(AuthSession session) =>
+      _logout(session, scope: 'local');
+
+  Future<bool> _logout(AuthSession session, {required String? scope}) async {
+    var live = session;
+    // An access token past its hour is refused by /logout, which would leave
+    // the refresh token -- the part that matters -- alive on the server.
+    if (live.isExpired) {
+      try {
+        live = await _renew(live);
+      } on ApiError {
+        // Already dead on the server: nothing left to end.
+        return true;
+      }
+    }
+    try {
+      await _dio.post(
+        '/logout',
+        queryParameters: {'scope': ?scope},
+        options: Options(
+          headers: {'Authorization': 'Bearer ${live.accessToken}'},
+        ),
+      );
+      return true;
+    } on DioException catch (e) {
+      // 401 means the server no longer knows the session: ended already.
+      return e.response?.statusCode == 401;
+    }
+  }
+
+  /// Checks that a saved account's session still works, renewing it when its
+  /// hour is up, and returns it with a fresh copy of the user.
+  ///
+  /// Stores nothing. The caller makes it the active session only once it is
+  /// known to be good, so a dead one never replaces a working one. Throws a
+  /// 401 [ApiError] when the server will not take it any more.
+  Future<AuthSession> checkSession(AuthSession saved) async {
+    var session = saved;
+    var renewed = false;
+    if (session.isExpired) {
+      session = await _renew(session);
+      renewed = true;
+    }
+    try {
+      return session.withUser(await _userFor(session.accessToken));
+    } on ApiError catch (e) {
+      // An access token revoked early, with a refresh token still good.
+      if (!e.isUnauthorized || renewed) rethrow;
+      session = await _renew(session);
+      return session.withUser(await _userFor(session.accessToken));
+    }
+  }
+
+  Future<Map<String, dynamic>> _userFor(String accessToken) async {
+    try {
+      final res = await _dio.get(
+        '/user',
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+      return (res.data as Map).cast<String, dynamic>();
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
+  }
+
+  /// A refresh that stores nothing, for sessions that are not the active one.
+  Future<AuthSession> _renew(AuthSession session) async {
+    if (session.refreshToken.isEmpty) {
+      throw const ApiError(
+        statusCode: 401,
+        message: 'Your session has expired. Sign in again.',
+      );
+    }
+    try {
+      final res = await _dio.post(
+        '/token',
+        queryParameters: {'grant_type': 'refresh_token'},
+        data: {'refresh_token': session.refreshToken},
+      );
+      final fresh = AuthSession.fromJson(
+        (res.data as Map).cast<String, dynamic>(),
+      );
+      return fresh.user == null && session.user != null
+          ? fresh.withUser(session.user!)
+          : fresh;
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status != null && status >= 400 && status < 500) {
+        throw const ApiError(
+          statusCode: 401,
+          message: 'Your session has expired. Sign in again.',
+        );
+      }
+      throw ApiError.fromDio(e);
+    }
+  }
+
+  /// Ends every session this account has except the one on this device.
+  ///
+  /// GoTrue's own `POST /logout?scope=others`: the server revokes the other
+  /// sessions' refresh tokens, so another phone or browser is signed out the
+  /// next time its access token runs out -- at most an hour, GoTrue's token
+  /// lifetime -- and can never renew it. This session is untouched.
+  ///
+  /// Unlike [signOut] this is not best effort. It is a security action, and
+  /// the caller must only say it worked when the server said so; any failure
+  /// is thrown.
+  Future<void> signOutOtherDevices() async {
+    var session = await _sessions.read();
+    if (session == null) {
+      throw const ApiError(
+        statusCode: 401,
+        message: 'Your session has expired. Sign in again.',
+      );
+    }
+    // This client has no refresh interceptor, and an access token past its
+    // hour would be refused -- which would read as the action failing.
+    if (session.isExpired) session = await _refresh(session);
+
+    try {
+      await _dio.post(
+        '/logout',
+        queryParameters: {'scope': 'others'},
+        options: Options(
+          headers: {'Authorization': 'Bearer ${session.accessToken}'},
+        ),
+      );
+    } on DioException catch (e) {
+      final error = ApiError.fromDio(e);
+      if (error.statusCode == 401) {
+        // This session itself has been revoked -- from another device, or by
+        // the server. Signed out is the truth; the store hears about it.
+        await _sessions.clear(notify: true);
+        throw const ApiError(
+          statusCode: 401,
+          message: 'Your session has expired. Sign in again.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  /// This account's GoTrue user object, read fresh from the server.
+  ///
+  /// The server answers only for the bearer of the token, so this cannot
+  /// return anybody else's record. Unlike [currentUser] a failure is thrown,
+  /// because the screen that asks has an error state to show.
+  Future<Map<String, dynamic>> me() async {
+    var session = await _sessions.read();
+    if (session == null) {
+      throw const ApiError(
+        statusCode: 401,
+        message: 'Your session has expired. Sign in again.',
+      );
+    }
+    if (session.isExpired) session = await _refresh(session);
+    try {
+      final res = await _dio.get(
+        '/user',
+        options: Options(
+          headers: {'Authorization': 'Bearer ${session.accessToken}'},
+        ),
+      );
+      return (res.data as Map).cast<String, dynamic>();
+    } on DioException catch (e) {
+      final error = ApiError.fromDio(e);
+      if (error.statusCode == 401) {
+        await _sessions.clear(notify: true);
+        throw const ApiError(
+          statusCode: 401,
+          message: 'Your session has expired. Sign in again.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  Future<AuthSession> _refresh(AuthSession session) async {
+    try {
+      final res = await _dio.post(
+        '/token',
+        queryParameters: {'grant_type': 'refresh_token'},
+        data: {'refresh_token': session.refreshToken},
+      );
+      final fresh = AuthSession.fromJson(
+        (res.data as Map).cast<String, dynamic>(),
+      );
+      await _sessions.write(fresh.user == null && session.user != null
+          ? fresh.withUser(session.user!)
+          : fresh);
+      return fresh;
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status != null && status >= 400 && status < 500) {
+        await _sessions.clear(notify: true);
+        throw const ApiError(
+          statusCode: 401,
+          message: 'Your session has expired. Sign in again.',
+        );
+      }
+      throw ApiError.fromDio(e);
+    }
   }
 
   /// Which providers the server actually has configured. Asked rather than
@@ -360,6 +566,149 @@ class AuthRepository {
       return (res.data as Map).cast<String, dynamic>();
     } on DioException {
       return null;
+    }
+  }
+
+  /// Sends a six-digit code to an address the account is moving to.
+  ///
+  /// `POST /otp`. Nothing about the code exists in this app: it is generated
+  /// and checked by the server, which is what makes this a verification rather
+  /// than a screen that agrees with itself.
+  ///
+  /// GoTrue can be configured to mail a *link* instead, which is what
+  /// [updateUser] with an email does and what `ProfileStore.changeEmail`
+  /// already uses. A project set up that way refuses this, and the refusal is
+  /// reported in its own words rather than guessed at.
+  Future<void> sendEmailOtp(String email) async {
+    try {
+      await _dio.post('/otp', data: {'email': email.trim()});
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
+  }
+
+  /// Checks a code sent to a new address.
+  ///
+  /// `type: email_change` is GoTrue's name for a code sent to the address an
+  /// account is moving to, as opposed to one signing in with a magic link.
+  Future<Map<String, dynamic>> verifyEmailOtp({
+    required String email,
+    required String token,
+  }) async {
+    try {
+      final res = await _dio.post(
+        '/verify',
+        data: {
+          'type': 'email_change',
+          'email': email.trim(),
+          'token': token.trim(),
+        },
+      );
+      final body = (res.data as Map).cast<String, dynamic>();
+      final access = body['access_token'];
+      if (access is String && access.isNotEmpty) {
+        await _sessions.write(AuthSession.fromJson(body));
+      }
+      return body['user'] is Map
+          ? (body['user'] as Map).cast<String, dynamic>()
+          : body;
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
+  }
+
+  /// The same read, for callers that hold no access token of their own.
+  ///
+  /// Null when nobody is signed in, which is a fact rather than a failure --
+  /// the phone screens ask for the account's numbers before they know whether
+  /// there is an account.
+  Future<Map<String, dynamic>?> currentUserOrNull() async {
+    final session = await _sessions.read();
+    if (session == null) return null;
+    return currentUser(session.accessToken);
+  }
+
+  /// Asks GoTrue to text a one-time code to [phone].
+  ///
+  /// `POST /otp`, which is where the code is generated and the SMS is sent.
+  /// **Nothing about the code exists in this app** -- it is not returned, not
+  /// stored and not checkable here, which is the property that makes this a
+  /// real verification rather than a screen that agrees with itself.
+  ///
+  /// GoTrue rate-limits this per number and per project and answers 429 with
+  /// how long to wait. That refusal is passed up untouched: the wait is the
+  /// server's to set, and a client that invented its own would either nag a
+  /// server that is still refusing or claim a number was sent one that was not.
+  ///
+  /// Sent with the session so the code is attached to *this* account rather
+  /// than starting a passwordless sign-in for whoever owns the number.
+  Future<void> sendPhoneOtp(String phone) async {
+    final session = await _sessions.read();
+    if (session == null) {
+      throw const ApiError(
+        statusCode: 401,
+        message: 'Sign in again to change your phone number.',
+      );
+    }
+
+    try {
+      await _dio.post(
+        '/otp',
+        data: {'phone': phone.trim()},
+        options: Options(
+          headers: {'Authorization': 'Bearer ${session.accessToken}'},
+        ),
+      );
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
+  }
+
+  /// Hands a typed code back to GoTrue, which decides.
+  ///
+  /// `POST /verify` with `type: sms`. A wrong code, an expired one and a code
+  /// for a different number are all refused here, by the server, and arrive as
+  /// an [ApiError] carrying its words.
+  ///
+  /// Returns the updated user. The session it answers with is written, because
+  /// GoTrue issues a fresh token pair on a successful verify and the stored
+  /// user object is what the rest of the app reads -- left alone, the account
+  /// would go on believing the number was unconfirmed while the screen said it
+  /// had been.
+  Future<Map<String, dynamic>> verifyPhoneOtp({
+    required String phone,
+    required String token,
+  }) async {
+    try {
+      final res = await _dio.post(
+        '/verify',
+        data: {
+          'type': 'sms',
+          'phone': phone.trim(),
+          'token': token.trim(),
+        },
+      );
+      final body = (res.data as Map).cast<String, dynamic>();
+
+      final user = body['user'] is Map
+          ? (body['user'] as Map).cast<String, dynamic>()
+          : body;
+
+      final access = body['access_token'];
+      if (access is String && access.isNotEmpty) {
+        await _sessions.write(AuthSession.fromJson(body));
+      } else {
+        // Verified without a new session: keep the one we have but refresh its
+        // copy of the user, so `phone_confirmed_at` is visible to everything
+        // that reads the session.
+        final current = await _sessions.read();
+        if (current != null) {
+          await _sessions.write(current.withUser(user));
+        }
+      }
+      return user;
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
     }
   }
 }

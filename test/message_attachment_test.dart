@@ -302,6 +302,79 @@ void main() {
       expect(find.text('invoice.pdf'), findsOneWidget);
     });
 
+    testWidgets('a picture scrolled back to paints at once, not as a spinner', (
+      tester,
+    ) async {
+      // The picture is at the top of a long thread, so opening at the newest
+      // message leaves it unbuilt. Scrolling up builds and fetches it,
+      // scrolling back down disposes it, and scrolling up again rebuilds it.
+      //
+      // Before the fix that rebuild spent its first frame as the loading box
+      // and then snapped to the picture's own height, so every bubble under it
+      // jerked -- on every picture, on every pass up the thread.
+      signIn();
+      api.on(
+        'GET',
+        '/support/tickets/t-1/messages',
+        body: [
+          _message(id: 'm-1', attachments: const ['u/1/shot.png']),
+          for (var i = 2; i < 40; i++)
+            _message(id: 'm-$i', message: 'Filler message $i'),
+        ],
+      );
+      api.on('GET', '/media/support-attachments/object', body: _png);
+      await pump(tester);
+
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      Finder spinnerInPicture() => find.descendant(
+        of: find.byType(MessageAttachment),
+        matching: find.byType(CircularProgressIndicator),
+      );
+
+      position.jumpTo(0);
+      await tester.pumpAndSettle();
+      expect(find.byType(MessageAttachment), findsOneWidget);
+
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(find.byType(MessageAttachment), findsNothing, reason: 'disposed');
+
+      position.jumpTo(0);
+      // One frame only: the frame the picture is rebuilt in.
+      await tester.pump();
+      expect(find.byType(MessageAttachment), findsOneWidget);
+      expect(spinnerInPicture(), findsNothing, reason: 'painted at once');
+    });
+
+    testWidgets('a picture is decoded at the size it is shown', (tester) async {
+      // Not at the camera's. A phone photograph decoded whole is ~48 MB for a
+      // 220pt preview, which overran the image cache and made every picture
+      // scrolled back to decode again.
+      signIn();
+      api.on(
+        'GET',
+        '/support/tickets/t-1/messages',
+        body: [
+          _message(attachments: const ['u/1/shot.png']),
+        ],
+      );
+      api.on('GET', '/media/support-attachments/object', body: _png);
+      await pump(tester);
+
+      final image = tester.widget<Image>(
+        find.descendant(
+          of: find.byType(MessageAttachment),
+          matching: find.byType(Image),
+        ),
+      );
+      // A phone-sized window (400pt wide), so the phone cap of 220pt, at the
+      // window's density of 3.
+      expect(image.image, isA<ResizeImage>());
+      expect((image.image as ResizeImage).width, 220 * 3);
+    });
+
     testWidgets('a message with no files shows none', (tester) async {
       signIn();
       api.on('GET', '/support/tickets/t-1/messages', body: [_message()]);

@@ -222,7 +222,10 @@ void main() {
         reason: 'decrementing at the floor does not remove the line',
       );
 
+      // A wholesale quantity is allowed now; only past the ceiling is cut.
       store.setQuantity(key, 500);
+      expect(store.lineFor('jacket', 'Red')?.quantity, 500);
+      store.setQuantity(key, CartStore.maxPerLine + 1000);
       expect(store.lineFor('jacket', 'Red')?.quantity, CartStore.maxPerLine);
     });
 
@@ -568,7 +571,10 @@ void main() {
       // Let the snack bar finish animating in; tapping mid-slide misses it.
       await tester.pump(const Duration(milliseconds: 750));
       await tester.tap(find.text('Undo'));
-      await tester.pump();
+      // Settled rather than a single frame: the restored line has a chosen
+      // option, so its tile asks the catalogue what the other options are, and
+      // that request is still in flight when the test would otherwise end.
+      await tester.pumpAndSettle();
       expect(CartStore.instance.contains('jacket', 'Red'), isTrue);
     });
 
@@ -889,11 +895,11 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 200));
 
-        await tester.tap(find.text('Add to cart'));
-        await tester.pump();
-
+        // Every option sold out: the page offers no way to buy it at all --
+        // the buy bar gives way to the request-to-stock bar, which says why.
+        expect(find.text('Add to cart'), findsNothing);
+        expect(find.textContaining('Currently unavailable'), findsOneWidget);
         expect(CartStore.instance.isEmpty, isTrue);
-        expect(find.textContaining('is sold out'), findsOneWidget);
       },
     );
 

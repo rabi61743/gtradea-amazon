@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../core/theme/colors.dart';
+import '../../../shared/widgets/header_action_tile.dart';
 import '../data/device_notifications.dart';
 import '../../../core/network/api_error.dart';
 import '../../quotes/data/quote_repository.dart';
@@ -219,20 +220,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete $count notification${count == 1 ? '' : 's'}?'),
-        content: const Text('This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      builder: (context) => _DeleteNotificationsDialog(count: count),
     );
     if (confirmed != true || !mounted) return;
 
@@ -702,7 +690,14 @@ class NotificationBell extends StatelessWidget {
     this.color,
     this.size = 24,
     this.onOpened,
+    this.label,
   });
+
+  /// The word to draw under the glyph, in the header's labelled group.
+  ///
+  /// Null keeps the bare [IconButton] every other caller gets. Same
+  /// destination, same badge, same store -- only the drawing differs.
+  final String? label;
 
   final Color? color;
 
@@ -718,6 +713,21 @@ class NotificationBell extends StatelessWidget {
       listenable: NotificationStore.instance,
       builder: (context, _) {
         final unread = NotificationStore.instance.unreadCount;
+        final tooltip = unread > 0
+            ? '$unread unread ${unread == 1 ? 'notification' : 'notifications'}'
+            : 'Notifications';
+
+        if (label case final word?) {
+          return HeaderActionTile(
+            icon: unread > 0 ? Icons.notifications : Icons.notifications_none,
+            label: word,
+            count: unread,
+            tooltip: tooltip,
+            color: color ?? AppColors.onPrimary,
+            iconSize: size,
+            onTap: () => _open(context),
+          );
+        }
 
         return IconButton(
           icon: Badge.count(
@@ -741,18 +751,18 @@ class NotificationBell extends StatelessWidget {
               color: color,
             ),
           ),
-          tooltip: unread > 0
-              ? '$unread unread ${unread == 1 ? 'notification' : 'notifications'}'
-              : 'Notifications',
-          onPressed: () {
-            onOpened?.call();
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-            );
-          },
+          tooltip: tooltip,
+          onPressed: () => _open(context),
         );
       },
     );
+  }
+
+  /// Where the bell goes, drawn either way.
+  void _open(BuildContext context) {
+    onOpened?.call();
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const NotificationsScreen()));
   }
 }
 
@@ -829,6 +839,167 @@ class _PermissionBanner extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The confirmation before notifications are deleted.
+///
+/// Drawn to the supplied reference: the mark in a tinted square at the left,
+/// the question and what it means beside it, and the two ways out as pills of
+/// equal weight along the foot.
+///
+/// It answers with a bool and nothing else, exactly as the dialog it replaces
+/// did -- the delete itself, the busy state and the report of what failed all
+/// still happen in [_NotificationsScreenState._deleteSelected], which has not
+/// moved.
+class _DeleteNotificationsDialog extends StatelessWidget {
+  const _DeleteNotificationsDialog({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // The app's own destructive colour rather than a value read off the
+    // reference: it is what every other dangerous control here is drawn in.
+    final danger = theme.colorScheme.error;
+    final plural = count == 1 ? '' : 's';
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: ConstrainedBox(
+        // A dialog that grows with a desktop window stops being a dialog.
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 54,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      color: danger.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Icon(
+                      Icons.delete_outline,
+                      size: 26,
+                      color: danger,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          // A step down the app's own scale, not a hand-set
+                          // size. At titleLarge the question was the largest
+                          // type on any card in the product, and it wrapped
+                          // to two lines on a phone for the sake of it.
+                          'Delete $count notification$plural?',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.25,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'This action cannot be undone. These notifications '
+                          'will be permanently removed from your list.',
+                          // One step below the title, and kept quiet: this is
+                          // what the question means, not a second question.
+                          // The line height goes up as the size comes down --
+                          // small type set tight is what reads as cramped.
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: _DialogPill(
+                      label: 'Cancel',
+                      background: theme.colorScheme.surfaceContainerHighest,
+                      foreground: theme.colorScheme.onSurface,
+                      onPressed: () => Navigator.of(context).pop(false),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _DialogPill(
+                      label: 'Delete ($count)',
+                      background: danger,
+                      foreground: theme.colorScheme.onError,
+                      onPressed: () => Navigator.of(context).pop(true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One of the two ways out, as the reference draws them: a full-height pill,
+/// the label centred and bold, the two the same size as each other.
+class _DialogPill extends StatelessWidget {
+  const _DialogPill({
+    required this.label,
+    required this.background,
+    required this.foreground,
+    required this.onPressed,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return FilledButton(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: background,
+        foregroundColor: foreground,
+        elevation: 0,
+        minimumSize: const Size.fromHeight(52),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        shape: const StadiumBorder(),
+      ),
+      // Half a dialog each is not much room at a large text size, and a
+      // clipped "Cancel" on a destructive prompt is the wrong thing to clip.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          label,
+          maxLines: 1,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: foreground,
           ),
         ),
       ),

@@ -239,7 +239,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(QuoteRequestDetailScreen), findsOneWidget);
-      expect(find.text('Ice Silk Gloves'), findsOneWidget);
+      // In the header, and again under 'Product Name'.
+      expect(find.text('Ice Silk Gloves'), findsWidgets);
     });
 
     testWidgets('a quote notification with no id still opens the quotes', (
@@ -272,7 +273,7 @@ void main() {
       await tester.tap(find.text('New reply on your quote request'));
       await tester.pumpAndSettle();
 
-      expect(find.text('My Quote Requests'), findsOneWidget);
+      expect(find.text('Product Inquiry'), findsOneWidget);
     });
 
     testWidgets('shows a support reply', (tester) async {

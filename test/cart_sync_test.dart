@@ -198,6 +198,49 @@ void main() {
       await CartStore.instance.switchIdentity('rabi@example.com');
     });
 
+    test('one refused line does not stop the rest of the cart saving', () async {
+      // The account takes the polo and refuses the kettle, which is what a
+      // `category_restricted` on one product looks like from here.
+      api.onCall('POST', '/cart', (call) {
+        if (call.json['source_product_id'] == _kettle.productId) {
+          return reply({'error': 'category_restricted'}, status: 400);
+        }
+        return reply({...call.json, 'id': 'srv-polo'});
+      });
+
+      CartStore.instance.add(_polo);
+      CartStore.instance.add(_kettle);
+      await settleSync();
+
+      final store = CartStore.instance;
+
+      // The polo reached the account. Before this fix the refusal above threw
+      // out of the loop and nothing after it was even attempted.
+      final polo = store.lines.firstWhere((line) => line.key == _polo.key);
+      expect(polo.serverId, 'srv-polo');
+
+      // And only the kettle is reported, by name and with the server's reason.
+      expect(store.rejected.keys, [_kettle.key]);
+      expect(store.rejected[_kettle.key]!.message, 'category_restricted');
+      expect(store.syncError!.message, 'category_restricted');
+    });
+
+    test('a refused session is not reported as a refused product', () async {
+      api.onCall(
+        'POST',
+        '/cart',
+        (call) => reply({'error': 'unauthorized'}, status: 401),
+      );
+
+      CartStore.instance.add(_polo);
+      await settleSync();
+
+      final store = CartStore.instance;
+      // Nothing is blamed on the line: the caller was refused, not the goods.
+      expect(store.rejected, isEmpty);
+      expect(store.syncError!.statusCode, 401);
+    });
+
     test('a quantity change reaches the server', () async {
       CartStore.instance.add(_polo);
       await settleSync();

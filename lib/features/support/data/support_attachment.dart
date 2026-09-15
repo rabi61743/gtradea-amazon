@@ -155,11 +155,24 @@ class SupportAttachmentRepository {
         queryParameters: {'key': key},
         options: Options(responseType: ResponseType.bytes),
       );
-      return Uint8List.fromList(res.data ?? const []);
+      final bytes = Uint8List.fromList(res.data ?? const []);
+      _downloaded[key] = bytes;
+      return bytes;
     });
   }
 
   final _downloads = <String, Future<Uint8List>>{};
+
+  /// The bytes of a download that has already finished, or null.
+  ///
+  /// Read synchronously. A future that has completed still cannot be read on
+  /// the frame a new listener attaches to it, so a picture scrolled back into
+  /// the thread spent one frame as its loading box and then snapped to its own
+  /// height -- every bubble below it jerked, on every picture, on every pass.
+  /// With this it paints at its real size on the first frame.
+  Uint8List? downloaded(String key) => _downloaded[key];
+
+  final _downloaded = <String, Uint8List>{};
 
   /// What to call a stored file on screen.
   ///
@@ -177,7 +190,10 @@ class SupportAttachmentRepository {
   }
 
   @visibleForTesting
-  void clearDownloadsForTest() => _downloads.clear();
+  void clearDownloadsForTest() {
+    _downloads.clear();
+    _downloaded.clear();
+  }
 
   @visibleForTesting
   static Future<List<PickedAttachment>> Function()? pickerOverride;

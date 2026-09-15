@@ -37,16 +37,21 @@ abstract final class ActionStatus {
     String? variant,
   }) {
     final theme = Theme.of(context);
-    // The snack bar's own foreground, whatever the platform paints behind it.
-    final onBar =
-        theme.snackBarTheme.contentTextStyle?.color ??
-        theme.colorScheme.onInverseSurface;
+    // On the brand's Trust Blue rather than the platform's grey bar, so the
+    // card is the shop's own and stands clear of whatever page it floats
+    // over, in either theme. White on it clears 5:1.
+    const onBar = Colors.white;
 
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.trustBlue,
+          closeIconColor: onBar,
+          // Tighter than the default 16/14: the card is three short lines,
+          // and the padding was most of its height.
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
           // Longer than the default: there are three things to read here
           // rather than one.
           duration: const Duration(seconds: 4),
@@ -54,15 +59,15 @@ abstract final class ActionStatus {
           showCloseIcon: true,
           content: Row(
             children: [
-              _AddedMark(ink: onBar),
-              const SizedBox(width: 12),
+              const _AddedMark(ink: onBar),
+              const SizedBox(width: 10),
               // The rule the reference draws between the mark and the words.
               SizedBox(
                 width: 1,
-                height: 44,
-                child: ColoredBox(color: onBar.withValues(alpha: 0.18)),
+                height: 34,
+                child: ColoredBox(color: onBar.withValues(alpha: 0.25)),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,38 +79,44 @@ abstract final class ActionStatus {
                     Text.rich(
                       TextSpan(
                         children: [
-                          TextSpan(
+                          // White, not an accent: Commerce Orange on Trust
+                          // Blue is barely 1.3:1. The weight carries it.
+                          const TextSpan(
                             text: addedToCartLabel,
                             style: TextStyle(
-                              color: AppColors.success,
-                              fontWeight: FontWeight.w700,
+                              color: onBar,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                           if (variant != null && variant.isNotEmpty)
                             TextSpan(
                               text: ' · $variant',
                               style: TextStyle(
-                                color: onBar.withValues(alpha: 0.70),
+                                color: onBar.withValues(alpha: 0.80),
                               ),
                             ),
                         ],
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelLarge,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontSize: 12.5,
+                        height: 1.2,
+                      ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
                       title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: onBar,
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     // The reference sets the action beside the words. That is
                     // a wide card; on a 406dp phone it left the chip 93dp to
                     // live in and it overflowed by 86. Under the words, on the
@@ -116,8 +127,8 @@ abstract final class ActionStatus {
                     // the snack bar's margin, padding and close icon leave the
                     // content about 216dp to work in.
                     Wrap(
-                      spacing: 10,
-                      runSpacing: 8,
+                      spacing: 8,
+                      runSpacing: 6,
                       alignment: WrapAlignment.spaceBetween,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
@@ -171,31 +182,34 @@ class _AddedMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 44,
-      height: 44,
+      width: 36,
+      height: 36,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.success.withValues(alpha: 0.18),
+              color: ink.withValues(alpha: 0.16),
             ),
-            child: Icon(Icons.shopping_cart_outlined, size: 20, color: ink),
+            child: Icon(Icons.shopping_cart_outlined, size: 17, color: ink),
           ),
+          // The tick in Commerce Orange, the brand's accent, ringed in the
+          // card's own blue so it sits cleanly on the circle behind it.
           Positioned(
             right: 0,
             top: 0,
             child: Container(
-              width: 18,
-              height: 18,
-              decoration: const BoxDecoration(
+              width: 15,
+              height: 15,
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.success,
+                color: AppColors.commerceOrange,
+                border: Border.all(color: AppColors.trustBlue, width: 1.5),
               ),
-              child: const Icon(Icons.check, size: 12, color: Colors.white),
+              child: const Icon(Icons.check, size: 9, color: Colors.white),
             ),
           ),
         ],
@@ -216,24 +230,21 @@ class _InCartChip extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 4, 10, 4),
+      padding: const EdgeInsets.fromLTRB(7, 3, 9, 3),
       decoration: BoxDecoration(
-        color: ink.withValues(alpha: 0.12),
+        color: ink.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.shopping_cart_outlined,
-            size: 14,
-            color: AppColors.success,
-          ),
-          const SizedBox(width: 6),
+          Icon(Icons.shopping_cart_outlined, size: 13, color: ink),
+          const SizedBox(width: 5),
           Text(
             '$count in cart',
             style: theme.textTheme.labelMedium?.copyWith(
-              color: ink.withValues(alpha: 0.85),
+              color: ink,
+              fontSize: 11.5,
             ),
           ),
         ],
@@ -252,8 +263,10 @@ class _ViewCartButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // The call to action in Commerce Orange: the brand's accent is what its
+    // buttons wear, and it stands off the blue card at a glance.
     return Material(
-      color: AppColors.success.withValues(alpha: 0.90),
+      color: AppColors.commerceOrange,
       borderRadius: BorderRadius.circular(10),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -264,7 +277,7 @@ class _ViewCartButton extends StatelessWidget {
           onPressed();
         },
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          padding: const EdgeInsets.fromLTRB(11, 6, 6, 6),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -272,10 +285,11 @@ class _ViewCartButton extends StatelessWidget {
                 'View cart',
                 style: theme.textTheme.labelLarge?.copyWith(
                   color: Colors.white,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 18, color: Colors.white),
+              const Icon(Icons.chevron_right, size: 16, color: Colors.white),
             ],
           ),
         ),

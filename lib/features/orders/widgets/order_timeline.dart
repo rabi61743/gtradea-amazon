@@ -4,6 +4,7 @@ import '../../../core/theme/colors.dart';
 import '../../../core/time_format.dart';
 import '../data/order_store.dart';
 import '../data/orders_repository.dart';
+import 'order_status_colors.dart';
 
 /// The parcel's progress, as the carrier reports it.
 ///
@@ -78,6 +79,7 @@ class OrderTimeline extends StatelessWidget {
             // outcome row is about to continue it.
             isLastBlock: i == shipments.length - 1 && outcome == null,
             stopped: outcome != null,
+            orderStage: order.stage(now),
           ),
         ?outcomeRow,
       ],
@@ -93,11 +95,16 @@ class _ShipmentBlock extends StatelessWidget {
     required this.showHeading,
     required this.isLastBlock,
     required this.stopped,
+    required this.orderStage,
   });
 
   final TrackingShipment shipment;
   final bool showHeading;
   final bool isLastBlock;
+
+  /// Where the order is overall, for colouring a carrier step whose own
+  /// words map to none of the six stages.
+  final OrderStage orderStage;
 
   /// The order was cancelled, returned or failed.
   final bool stopped;
@@ -175,6 +182,14 @@ class _ShipmentBlock extends StatelessWidget {
             isCurrent: !stopped && steps[i].state == TrackingStepState.current,
             isFirst: i == 0,
             isLast: i == steps.length - 1 && isLastBlock,
+            // The step's own stage colour where the carrier's word maps
+            // to one of the six, and the order's current stage colour
+            // where it does not -- a step like "At customs" is real
+            // progress that the ladder has no name for.
+            tone: OrderStatusPalette.markFor(
+              Order.stageForStep(code: steps[i].stage, label: steps[i].label) ??
+                  orderStage,
+            ),
           ),
       ],
     );
@@ -229,6 +244,8 @@ class _Fallback extends StatelessWidget {
             // A stage the order never reached, on an order that stopped: the
             // rail below it is dead, not pending.
             dimmed: hasOutcome && stages[i].index > reached.index,
+            // Each rung in its own status colour.
+            tone: OrderStatusPalette.markFor(stages[i]),
           ),
       ],
     );
@@ -260,7 +277,8 @@ class _TimelineRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final active = tone ?? theme.colorScheme.primary;
-    final idle = theme.colorScheme.outlineVariant;
+    // Mountain Grey: what a step that has not happened looks like.
+    const idle = OrderStatusPalette.upcoming;
     // The step in progress is coloured but not ticked. A carrier's "current"
     // means it is happening, and a tick against it would claim it had finished.
     final markerColour = (done || isCurrent) && !dimmed ? active : idle;

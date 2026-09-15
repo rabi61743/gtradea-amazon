@@ -13,6 +13,7 @@ import '../../address/presentation/address_picker_sheet.dart';
 import '../../auth/data/auth_store.dart';
 import '../../auth/presentation/auth_screen.dart';
 import '../../cart/data/cart_store.dart';
+import '../../logistics/data/shipping_mode_store.dart';
 import '../../profile/data/profile_store.dart';
 import '../../cart/widgets/cart_summary.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
@@ -22,6 +23,8 @@ import '../../promo/data/coupon_store.dart';
 import '../../../shared/widgets/loadable_view.dart';
 import '../../legal/presentation/terms_sheet.dart';
 import 'bill_to_section.dart';
+import 'how_to_pay.dart';
+import 'payment_guide_sheet.dart';
 import '../data/checkout_models.dart';
 import '../data/card_details.dart';
 import '../data/checkout_repository.dart';
@@ -105,20 +108,138 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Address? _address;
 
+  /// The number the courier will ring.
+  ///
+  /// Held on the screen rather than read off the address at the last
+  /// moment, so a number typed here survives opening the address picker,
+  /// the terms sheet or a gateway's WebView and coming back.
+  final _phone = TextEditingController();
+
+  /// True once the shopper has typed in the field, which stops a later
+  /// seed -- switching address, the profile arriving -- from overwriting
+  /// what they entered.
+  bool _phoneEdited = false;
+
+  /// The field goes red only after an attempt to place the order. A form
+  /// that scolds before it has been filled in is a form nobody trusts.
+  bool _phoneAttempted = false;
+
+  String? get _phoneProblem => CheckoutAddress.phoneProblem(_phone.text);
+
+  /// Somewhere to send it, and a number to ring about it.
+  ///
+  /// These are the page's own rules, the ones `_pay` enforces -- not a
+  /// second list kept beside them. The step strip and the Required marks
+  /// both read from here, so a mark can never disagree with what the
+  /// button will do.
+  bool get _deliveryReady => _address != null && _phoneProblem == null;
+
+  /// A way to pay that this app can actually carry through.
+  bool get _methodReady => _selected != null;
+
+  /// Where the shopper has got to.
+  ///
+  /// The first thing still outstanding is the step they are on. Nothing
+  /// here moves the page or gates it -- the page is one page and stays one
+  /// page; this only says where in it the work is.
+  CheckoutStep get _currentStep {
+    if (!_deliveryReady) return CheckoutStep.details;
+    if (!_methodReady) return CheckoutStep.payment;
+    if (!_billingReady || !_termsAccepted) return CheckoutStep.review;
+    return CheckoutStep.confirm;
+  }
+
+  /// What the guide shows, built from the page rather than beside it.
+  ///
+  /// Every value here is one the checkout already holds and already acts
+  /// on: the account's own name and email, the address chosen, the number
+  /// typed into the field above, the methods the server named, and the
+  /// total the summary is showing. Nothing is invented for the guide, and
+  /// nothing sensitive goes into it -- no card, no token, no secret.
+  PaymentGuideData get _guideData {
+    final account = AuthStore.instance.account;
+    final address = _address;
+    final phone = _phone.text.trim();
+
+    // The seller's floor, where a line has one. Shown because a wholesale
+    // order that is short of it is refused, and being told that at the
+    // payment step is late.
+    final floors = [
+      for (final line in widget.lines)
+        if (line.minOrder > 1) line,
+    ];
+
+    return PaymentGuideData(
+      current: _currentStep,
+      done: _stepsDone,
+      requirements: [
+        GuideRequirement(
+          label: 'Full name',
+          value: address?.fullName,
+          satisfied: (address?.fullName.trim().isNotEmpty) ?? false,
+        ),
+        GuideRequirement(
+          label: 'Phone number',
+          value: phone.isEmpty ? null : phone,
+          satisfied: _phoneProblem == null,
+        ),
+        GuideRequirement(
+          label: 'Email address',
+          value: account?.email,
+          satisfied: (account?.email.isNotEmpty) ?? false,
+        ),
+        GuideRequirement(
+          label: 'Delivery address',
+          value: address?.full,
+          satisfied: address != null,
+        ),
+      ],
+      methods: [for (final method in _methods) method.label],
+      selectedMethod: _selected?.label,
+      total: widget.totals.total,
+      minOrder: floors.isEmpty
+          ? null
+          : floors.length == 1
+          ? '${floors.single.minOrder} pcs of ${floors.single.title}'
+          : '${floors.length} items have a seller minimum',
+    );
+  }
+
+  Set<CheckoutStep> get _stepsDone => {
+    if (_deliveryReady) CheckoutStep.details,
+    if (_deliveryReady && _methodReady) CheckoutStep.payment,
+    if (_deliveryReady && _methodReady && _billingReady && _termsAccepted)
+      CheckoutStep.review,
+  };
+
   @override
   void initState() {
     super.initState();
     AddressStore.instance.load().then((_) {
       if (mounted) {
-        setState(() => _address ??= AddressStore.instance.defaultAddress);
+        setState(() {
+          _address ??= AddressStore.instance.defaultAddress;
+          _seedPhone();
+        });
       }
     });
     SavedPaymentStore.instance.load();
     // For the phone the order needs. A shopper who came straight here from the
     // cart may never have opened Account, so the profile is not loaded yet;
     // this is a no-op when it already is.
-    unawaited(ProfileStore.instance.load());
+    unawaited(
+      ProfileStore.instance.load().then((_) {
+        // The account's own number, for an address saved without one.
+        if (mounted) setState(_seedPhone);
+      }),
+    );
     unawaited(_loadMethods());
+  }
+
+  @override
+  void dispose() {
+    _phone.dispose();
+    super.dispose();
   }
 
   /// Asks the shop which methods it takes.
@@ -159,7 +280,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       context,
       selectedId: _address?.id,
     );
-    if (chosen != null && mounted) setState(() => _address = chosen);
+    if (chosen != null && mounted) {
+      setState(() {
+        _address = chosen;
+        // The new address's own number, unless the shopper has typed one.
+        _seedPhone();
+      });
+    }
+  }
+
+  /// Fills the field from what is already known: the address's number
+  /// first, then the account's.
+  ///
+  /// Never over what was typed. This runs again every time the address
+  /// changes or the profile arrives, and a seed that overwrote the
+  /// shopper would lose a number they entered seconds ago.
+  void _seedPhone() {
+    if (_phoneEdited) return;
+    final known = _address?.phone.trim() ?? '';
+    final fallback = ProfileStore.instance.profile?.phone?.trim() ?? '';
+    final seed = known.isNotEmpty ? known : fallback;
+    if (seed.isNotEmpty && seed != _phone.text) _phone.text = seed;
   }
 
   PaymentStrings get _strings => LanguageStore.instance.strings.payment;
@@ -182,6 +323,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (_address == null) {
       await _chooseAddress();
       if (!mounted || _address == null) return;
+    }
+
+    // The server refuses an order with no phone on it, and a courier
+    // cannot deliver against one it cannot ring. Caught here rather than
+    // in the gateway, where the answer is a failed payment.
+    final phoneProblem = _phoneProblem;
+    if (phoneProblem != null) {
+      setState(() => _phoneAttempted = true);
+      _say(phoneProblem);
+      return;
     }
 
     // The server holds the cart the order is built from, and it only holds one
@@ -264,11 +415,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  /// The number the order will carry: the address's own, or the account's.
+  /// The number the order will carry: what was typed on this screen, then
+  /// the address's own, then the account's.
   String _contactPhone() {
+    final typed = _phone.text.trim();
+    if (typed.isNotEmpty) return typed;
     final onAddress = _address?.phone.trim() ?? '';
     if (onAddress.isNotEmpty) return onAddress;
     return ProfileStore.instance.profile?.phone?.trim() ?? '';
+  }
+
+  /// Keeps the number for next time, once the order has been accepted.
+  ///
+  /// Two places, both of which already existed: the address it was entered
+  /// against, and -- only when the account has none at all -- the profile,
+  /// through the same PATCH the account screen uses. An account that
+  /// already has a number keeps it: a one-off number for one delivery is
+  /// not a request to change the number on the account.
+  Future<void> _rememberPhone() async {
+    final typed = _phone.text.trim();
+    if (typed.isEmpty || _phoneProblem != null) return;
+
+    final address = _address;
+    if (address != null && address.phone.trim() != typed) {
+      AddressStore.instance.update(address.copyWith(phone: typed));
+    }
+
+    final profile = ProfileStore.instance.profile;
+    final known = profile?.phone?.trim() ?? '';
+    if (profile != null && known.isEmpty && AuthStore.instance.isSignedIn) {
+      try {
+        await ProfileStore.instance.savePhone(typed);
+      } on ApiError {
+        // The order is placed and the number went with it. Failing to
+        // file it on the profile is not worth telling the shopper about
+        // at the moment their order succeeds.
+      }
+    }
   }
 
   Future<void> _submit(
@@ -278,7 +461,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   ) async {
     final input = CheckoutOrderInput(
       shippingAddress: CheckoutAddress.fromAddress(
-        _address!,
+        // The number as entered on this screen, which is the one the
+        // shopper was looking at when they pressed the button.
+        _address!.copyWith(phone: _contactPhone()),
         // The account's number, for an address saved without one. See the
         // factory: the server refuses an order that carries no phone.
         fallbackPhone: ProfileStore.instance.profile?.phone,
@@ -290,6 +475,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           if (line.serverId != null) line.serverId!,
       ],
       promoCode: widget.totals.couponCode,
+      // What the shopper chose on the product page, where the shop's own
+      // shipping options are offered. Falls back to what this app has always
+      // sent when the shop publishes no options at all.
+      shippingMode: ShippingModeStore.instance.checkoutMode,
       // The shopper's actual answer. The button cannot be pressed without it.
       termsAccepted: _termsAccepted,
       // Likewise: what they chose, not a default nobody was asked about.
@@ -471,6 +660,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final code = widget.totals.couponCode;
     if (code != null) CouponStore.instance.redeem(code);
 
+    // Kept only now the shop has accepted the order: a number typed against
+    // an attempt that failed is not one to file anywhere.
+    await _rememberPhone();
+
     // The server consumed the ordered rows, so this device's copy is stale.
     // Only the ordered lines are dropped: anything added from another screen
     // after checkout opened is not part of this order and must survive it.
@@ -561,6 +754,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           _Section(
             title: 'Deliver to',
             icon: Icons.location_on_outlined,
+            trailing: RequiredTag(satisfied: _deliveryReady),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -629,6 +823,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       ),
                     ),
                   ),
+                // The courier's number, in the section it belongs to. Drawn
+                // whether or not an address has been chosen: the shop refuses
+                // an order without one, so it is not an optional extra.
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _phone,
+                  enabled: !_placing,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (_) => setState(() {
+                    _phoneEdited = true;
+                    // The error clears itself as soon as the number becomes a
+                    // usable one, rather than waiting for another attempt.
+                    if (_phoneAttempted && _phoneProblem == null) {
+                      _phoneAttempted = false;
+                    }
+                  }),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: 'Phone number',
+                    prefixIcon: const Icon(Icons.phone_outlined),
+                    helperText: 'The courier rings this about the delivery.',
+                    errorText: _phoneAttempted ? _phoneProblem : null,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
                 if (account == null) ...[
                   const SizedBox(height: 6),
                   // Guests can order -- cash on delivery does not need an
@@ -773,48 +993,65 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             title: _strings.title,
             icon: Icons.account_balance_wallet_outlined,
             subtitle: 'Choose a secure payment option',
-            child: _loadingMethods
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Center(
-                      child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.2),
+            // Says what the page will refuse to proceed without, and
+            // shows it met the moment it is.
+            trailing: RequiredTag(satisfied: _methodReady),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Where the shopper is, and what each step wants. Compact
+                // by default so the methods themselves stay in reach.
+                HowToPay(
+                  current: _currentStep,
+                  done: _stepsDone,
+                  onOpenGuide: () =>
+                      PaymentGuideSheet.show(context, _guideData),
+                ),
+                const SizedBox(height: 12),
+                _loadingMethods
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2.2),
+                          ),
+                        ),
+                      )
+                    : _methodsError != null
+                    ? LoadFailed(
+                        compact: true,
+                        message: _methodsError!.isNetwork
+                            ? 'No connection, so we could not check which '
+                                  'payment methods are available.'
+                            : _methodsError!.message,
+                        onRetry: _loadMethods,
+                      )
+                    : ListenableBuilder(
+                        listenable: SavedPaymentStore.instance,
+                        builder: (context, _) => PaymentMethodsSection(
+                          strings: _strings,
+                          methods: _methods,
+                          selected: _selected,
+                          enabled: !_placing,
+                          onSelected: (method) => setState(() {
+                            _selected = method;
+                            // A card chosen for one method means nothing for
+                            // another.
+                            _selectedCardId = null;
+                          }),
+                          savedCards: SavedPaymentStore.instance.cards,
+                          selectedCardId: _selectedCardId,
+                          onCardSelected: (card) =>
+                              setState(() => _selectedCardId = card.id),
+                          onUseNewCard: () =>
+                              setState(() => _selectedCardId = null),
+                          onRemoveCard: _confirmRemoveCard,
+                        ),
                       ),
-                    ),
-                  )
-                : _methodsError != null
-                ? LoadFailed(
-                    compact: true,
-                    message: _methodsError!.isNetwork
-                        ? 'No connection, so we could not check which '
-                              'payment methods are available.'
-                        : _methodsError!.message,
-                    onRetry: _loadMethods,
-                  )
-                : ListenableBuilder(
-                    listenable: SavedPaymentStore.instance,
-                    builder: (context, _) => PaymentMethodsSection(
-                      strings: _strings,
-                      methods: _methods,
-                      selected: _selected,
-                      enabled: !_placing,
-                      onSelected: (method) => setState(() {
-                        _selected = method;
-                        // A card chosen for one method means nothing for
-                        // another.
-                        _selectedCardId = null;
-                      }),
-                      savedCards: SavedPaymentStore.instance.cards,
-                      selectedCardId: _selectedCardId,
-                      onCardSelected: (card) =>
-                          setState(() => _selectedCardId = card.id),
-                      onUseNewCard: () =>
-                          setState(() => _selectedCardId = null),
-                      onRemoveCard: _confirmRemoveCard,
-                    ),
-                  ),
+              ],
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),

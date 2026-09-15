@@ -4,13 +4,21 @@ import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/shimmer.dart';
 import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/presentation/catalog_visuals.dart';
+// For the fold's duration and curve. One way only -- the header knows nothing
+// of this strip, so the timing lives with the movement that owns it and the
+// strip follows.
+import 'search_header.dart';
 
-/// The department strip that sits directly under the search bar.
+/// The department strip, its own section between the header and the hero.
 ///
-/// Painted on the same teal band as the header rather than on the page, so the
-/// two read as one control surface: a shopper's eye goes search bar, then
-/// departments, then products, instead of finding a separate slab of chrome
-/// wedged between them.
+/// It used to be painted on the header's teal band, as part of it. It is a
+/// section of the page now: its own light ground, its own spacing, and a rule
+/// under it -- so the eye goes header, then departments, then products, with
+/// each of the three plainly a different thing.
+///
+/// Everything here is coloured for that ground rather than for the band. The
+/// chosen tab keeps Commerce Orange, which is the one mark that did not have
+/// to change: it was legible on the teal and it is legible on white.
 ///
 /// "For You" leads, and it is not a department -- it is the whole feed, which
 /// is where somebody who has not decided yet should land. Selecting anything
@@ -21,6 +29,8 @@ class DepartmentTabs extends StatefulWidget {
     required this.categories,
     required this.selectedCid,
     required this.onSelected,
+    this.onNewForYou,
+    this.compact = false,
   });
 
   final List<Category> categories;
@@ -31,6 +41,24 @@ class DepartmentTabs extends StatefulWidget {
   /// Null for "For You", a department otherwise.
   final ValueChanged<Category?> onSelected;
 
+  /// Opens the personalised feed.
+  ///
+  /// A destination rather than a filter, and the only tab on the strip that is
+  /// one: every other tab changes what is listed below without leaving the
+  /// page, and this pushes a screen on top of it. That is also why it never
+  /// draws as selected -- it is never the thing the feed underneath is showing.
+  ///
+  /// Optional, so a preview or a test can build the strip with nowhere to send
+  /// anyone. Given nothing to open, the tab is left out rather than drawn dead.
+  final VoidCallback? onNewForYou;
+
+  /// True once the feed has been scrolled, which folds the icon tiles away.
+  ///
+  /// The labels stay. They are what says which department is being shown, and
+  /// a strip that emptied itself on a scroll would lose the answer to that
+  /// exactly when the shopper is furthest from the top of the page.
+  final bool compact;
+
   /// How many departments the strip offers.
   ///
   /// The catalogue has forty-eight, which is a scroll nobody finishes. These
@@ -40,27 +68,66 @@ class DepartmentTabs extends StatefulWidget {
 
   /// One item's footprint. Fixed so the strip has a rhythm and the labels line
   /// up, rather than each item being as wide as its own name.
-  static const itemWidth = 68.0;
-  static const _tile = 38.0;
+  ///
+  /// 58 rather than the 68 it was: the ten points came out of the air between
+  /// the tiles, not out of the tiles themselves, so more departments reach the
+  /// first screen and the ones that do sit closer together.
+  static const itemWidth = 58.0;
+  static const _tile = 34.0;
   static const _labelGap = 4.0;
   static const _underline = 3.0;
+
+  /// The glyph inside a tile. Bigger than it was, on a bigger tile: the strip
+  /// is meant to be scanned, and the department is easier to recognise by its
+  /// mark than by six ellipsised letters.
+  static const _glyph = 20.0;
+
+  /// The label size. Named because [heightFor] has to agree with it.
+  static const _labelSize = 11.0;
+
+  /// How long the tiles take to go, and to come back.
+  ///
+  /// The header's own measure, borrowed deliberately: this strip sits directly
+  /// under the band and folds on the same gesture, so the two are one movement
+  /// and have to be timed as one.
+  ///
+  /// They were not. This ran 220ms on an ease-out against the header's 450ms
+  /// ease-in-out-cubic -- less than half the travel time, on a curve that
+  /// spends itself in the first few frames. The strip finished while the band
+  /// above it was barely halfway, so the artwork appeared to lurch, settle,
+  /// then carry on moving. That is the "coming apart" the header's own doc
+  /// warns about, and it is what made the image read as abrupt.
+  ///
+  /// Referencing [SearchHeader] rather than repeating its numbers, so the two
+  /// cannot drift apart again.
+  static const collapse = SearchHeader.fold;
+  static const collapseCurve = SearchHeader.foldCurve;
 
   /// The strip's height: tile, gap, one line of label, and the underline.
   ///
   /// One line, not two. This sits above the fold on every page load, and a
   /// second line of label costs fifteen points of the first screen to spell out
   /// department names that ellipsis handles.
-  static double heightFor(BuildContext context) {
-    final style =
-        Theme.of(context).textTheme.labelSmall ?? const TextStyle(fontSize: 11);
-    final line = MediaQuery.textScalerOf(context)
-        .scale((style.fontSize ?? 11) * 1.25);
-    return _tile + _labelGap + line + 4 + _underline;
+  static double heightFor(BuildContext context, {bool compact = false}) {
+    final line = MediaQuery.textScalerOf(context).scale(_labelSize * 1.25);
+    // Compact drops the tile and the gap under it. Everything else is where it
+    // was, so the labels neither move sideways nor change size.
+    return (compact ? 0 : _tile + _labelGap) + line + 4 + _underline;
   }
 
   @override
   State<DepartmentTabs> createState() => _DepartmentTabsState();
 }
+
+/// The ink every unchosen tab takes: a soft charcoal.
+///
+/// Between the two things this has been. The theme's muted grey was too faint
+/// to scan at eleven points; the near-black that replaced it was heavier than
+/// the page around it, so a row of twelve unchosen departments read as the
+/// darkest thing on the screen and pulled the eye off the products.
+///
+/// This still clears 9:1 on the page, so nothing is lost in legibility.
+const _ink = Color(0xFF454E52);
 
 class _DepartmentTabsState extends State<DepartmentTabs> {
   final _controller = ScrollController();
@@ -123,10 +190,36 @@ class _DepartmentTabsState extends State<DepartmentTabs> {
     // "For You" is index zero and the departments follow it.
     if (cid == null) return 0;
     final shown = _shown();
+    final slot = _newForYouSlot(shown);
     for (var i = 0; i < shown.length; i++) {
-      if (shown[i].cid == cid) return i + 1;
+      if (shown[i].cid == cid) {
+        final index = i + 1;
+        // Everything at or past the inserted tab has been pushed along one.
+        // This drives the selection shadow and the scroll-into-view, so an
+        // off-by-one here parks the orange wash under a department's
+        // neighbour rather than under the department.
+        return (slot != null && index >= slot) ? index + 1 : index;
+      }
     }
     return -1;
+  }
+
+  /// Which slot "New for You" takes, in strip positions, or null when there is
+  /// nowhere to send anyone.
+  ///
+  /// Immediately after "Men", by request. Found by name rather than pinned to a
+  /// number because the strip is the server's own list in the server's own
+  /// order: a fixed index would put this after whatever happened to be third
+  /// the day the catalogue was reordered. With no "Men" on the strip at all it
+  /// goes last, which is the one position that cannot displace a department.
+  int? _newForYouSlot(List<Category> shown) {
+    if (widget.onNewForYou == null) return null;
+    for (var i = 0; i < shown.length; i++) {
+      // Strip positions, not category positions: "For You" holds zero, so the
+      // department at `shown[i]` sits at `i + 1` and this follows it.
+      if (shown[i].name.trim().toLowerCase() == 'men') return i + 2;
+    }
+    return shown.length + 1;
   }
 
   List<Category> _shown() =>
@@ -142,19 +235,27 @@ class _DepartmentTabsState extends State<DepartmentTabs> {
   @override
   Widget build(BuildContext context) {
     final shown = _shown();
+    final slot = _newForYouSlot(shown);
+    final extra = slot == null ? 0 : 1;
 
     // No colour of its own: the shell paints one gradient behind this strip
     // and the search header above it, so the ramp runs unbroken across the
     // join instead of restarting at it.
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
-      child: SizedBox(
-        height: DepartmentTabs.heightFor(context),
+      child: AnimatedContainer(
+        duration: DepartmentTabs.collapse,
+        curve: DepartmentTabs.collapseCurve,
+        height: DepartmentTabs.heightFor(context, compact: widget.compact),
+        // The tiles are mid-fold for a fifth of a second; without this the
+        // column inside overflows its box on the way.
+        clipBehavior: Clip.hardEdge,
+        decoration: const BoxDecoration(),
         child: LayoutBuilder(
           builder: (context, constraints) {
             // Everything fits: centre it rather than leaving the whole set
             // hard against the left edge of a tablet or a desktop window.
-            final total = (shown.length + 1) * DepartmentTabs.itemWidth;
+            final total = (shown.length + 1 + extra) * DepartmentTabs.itemWidth;
             final fits = total <= constraints.maxWidth - 16;
 
             final strip = ListView.builder(
@@ -166,26 +267,49 @@ class _DepartmentTabsState extends State<DepartmentTabs> {
               padding: EdgeInsets.symmetric(
                 horizontal: fits ? (constraints.maxWidth - total) / 2 : 8,
               ),
-              itemCount: shown.length + 1,
+              itemCount: shown.length + 1 + extra,
               itemBuilder: (context, i) {
+                // The one tab that leaves the page. Built from the same [_Tab]
+                // as every other, so its type, spacing, height, ink, fold and
+                // pressed state are not a copy of the strip's -- they are the
+                // strip's.
+                if (slot != null && i == slot) {
+                  return _Tab(
+                    label: 'New for You',
+                    // The glyph the bottom bar already uses for this
+                    // destination, so the two read as the same place.
+                    icon: Icons.auto_awesome_outlined,
+                    // Never lit: it opens a screen rather than filtering the
+                    // feed, so there is no state of this page it describes.
+                    selected: false,
+                    compact: widget.compact,
+                    onTap: widget.onNewForYou!,
+                  );
+                }
+                // Back into category space: everything past the inserted tab
+                // is one along from the list it is read out of.
+                final index = (slot != null && i > slot) ? i - 1 : i;
+
                 // The selected tab's shadow is not drawn here. It used to be
                 // wrapped around this first tab, which meant "For You" carried
                 // it whether or not it was the one chosen -- and no other tab
                 // could ever have it. It is one layer under the strip now, and
                 // it slides. See [_SelectionShadow].
-                if (i == 0) {
+                if (index == 0) {
                   return _Tab(
                     label: 'For You',
                     icon: Icons.shopping_bag_outlined,
                     selected: widget.selectedCid == null,
+                    compact: widget.compact,
                     onTap: () => widget.onSelected(null),
                   );
                 }
-                final category = shown[i - 1];
+                final category = shown[index - 1];
                 return _Tab(
                   label: category.name,
                   icon: iconForCategory(category.name),
                   selected: category.cid == widget.selectedCid,
+                  compact: widget.compact,
                   onTap: () => widget.onSelected(category),
                 );
               },
@@ -306,15 +430,11 @@ class _SelectionShadow extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                // The strip's own shadow, unchanged: hard-edged and dropped
-                // straight down, not a soft halo.
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 0,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              // A wash of the active colour rather than the hard drop shadow
+              // it carried on the teal band. That shadow was a black rectangle
+              // offset four points under a transparent box: unnoticeable on
+              // the dark band, and a grey slab behind the tab on this one.
+              color: AppColors.commerceOrange.withValues(alpha: 0.10),
             ),
           ),
         );
@@ -397,7 +517,9 @@ class _BandBone extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: AppColors.onPrimary.withValues(alpha: 0.16),
+        // The page's own placeholder tone. On the teal this was white at 16%,
+        // which on a light ground is very nearly nothing at all.
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(radius),
       ),
     );
@@ -421,12 +543,17 @@ class _Tab extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.selected,
+    required this.compact,
     required this.onTap,
   });
 
   final String label;
   final IconData icon;
   final bool selected;
+
+  /// True while the feed is scrolled: the tile goes, the label stays.
+  final bool compact;
+
   final VoidCallback onTap;
 
   @override
@@ -435,9 +562,28 @@ class _Tab extends StatelessWidget {
     // On the band, so both states are shades of the header's own foreground.
     // An unselected tab is the same white held back, which keeps the strip one
     // material instead of a row of differently-coloured chips.
-    final foreground = selected
-        ? AppColors.onPrimary
-        : AppColors.onPrimary.withValues(alpha: 0.72);
+    //
+    // The chosen one is Commerce Orange throughout -- its mark, its words and
+    // its underline -- and everything else is the page's own near-black. The
+    // orange sits on a wash of itself rather than on a solid fill, because an
+    // orange mark on an orange tile is a mark nobody can see.
+    //
+    // A soft charcoal rather than the muted grey the labels used to take: the
+    // strip is navigation, and at eleven points a light grey label is the first
+    // thing a tired eye gives up on. Not black either -- twelve black labels
+    // outweigh the products they are meant to lead to.
+    // The held-back slate is a light-page ink; on the dark page it would all
+    // but vanish, so there the theme's own body ink takes its place.
+    final ink = theme.brightness == Brightness.dark
+        ? theme.colorScheme.onSurface
+        : _ink;
+    final foreground = selected ? AppColors.commerceOrange : ink;
+    // The glyph is the heavier mark of the two -- a filled shape against a few
+    // thin letters -- so it takes the same ink held back a little, which is
+    // what keeps the row from reading darker than the page it sits on.
+    final glyph = selected
+        ? AppColors.commerceOrange
+        : ink.withValues(alpha: 0.82);
 
     return Semantics(
       button: true,
@@ -452,28 +598,40 @@ class _Tab extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Colour animates; size does not. A tile that grew on selection
-              // would shove its neighbours sideways on every tap.
+              // Colour animates; size does not, except on the one thing that
+              // is meant to: scrolling the feed folds the tile away and the
+              // label rises into its place.
               AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
+                duration: DepartmentTabs.collapse,
+                curve: DepartmentTabs.collapseCurve,
                 width: DepartmentTabs._tile,
-                height: DepartmentTabs._tile,
+                height: compact ? 0 : DepartmentTabs._tile,
                 decoration: BoxDecoration(
-                  color: AppColors.onPrimary.withValues(
-                    alpha: selected ? 0.22 : 0.10,
-                  ),
+                  color: selected
+                      ? AppColors.commerceOrange.withValues(alpha: 0.14)
+                      : theme.colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, size: 19, color: foreground),
+                clipBehavior: Clip.hardEdge,
+                child: AnimatedOpacity(
+                  duration: DepartmentTabs.collapse,
+                  curve: DepartmentTabs.collapseCurve,
+                  opacity: compact ? 0 : 1,
+                  child: Icon(icon, size: DepartmentTabs._glyph, color: glyph),
+                ),
               ),
-              const SizedBox(height: DepartmentTabs._labelGap),
+              AnimatedContainer(
+                duration: DepartmentTabs.collapse,
+                curve: DepartmentTabs.collapseCurve,
+                height: compact ? 0 : DepartmentTabs._labelGap,
+              ),
               Flexible(
                 child: AnimatedDefaultTextStyle(
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOut,
                   style: (theme.textTheme.labelSmall ?? const TextStyle())
                       .copyWith(
+                        fontSize: DepartmentTabs._labelSize,
                         height: 1.25,
                         fontWeight: selected
                             ? FontWeight.w800
@@ -489,15 +647,21 @@ class _Tab extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              // The underline, which is what makes the selection unmistakable
-              // where the tinted tile alone is a matter of degree.
+              // The underline, in the same orange as the tile. It is the only
+              // mark left once the strip folds its tiles away on a scroll, so
+              // it carries the active colour on its own from there.
               AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
                 height: DepartmentTabs._underline,
                 width: selected ? 22 : 0,
                 decoration: BoxDecoration(
-                  color: AppColors.onPrimary,
+                  // Only the chosen tab carries the colour at all: an unselected
+                  // tab draws a nought-wide bar, and leaving it orange would
+                  // put the active colour in the tree twelve times over.
+                  color: selected
+                      ? AppColors.commerceOrange
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),

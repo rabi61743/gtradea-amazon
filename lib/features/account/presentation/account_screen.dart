@@ -1,8 +1,11 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/audio/sound_settings.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/widgets/state_toggle.dart';
 import '../../../shared/widgets/artwork_panel.dart';
 import '../../../shared/widgets/brand_wordmark.dart';
 import '../../../core/l10n/app_strings.dart';
@@ -26,12 +29,16 @@ import '../../catalog/data/product.dart';
 import '../../product/presentation/product_detail_screen.dart';
 import '../../profile/data/profile_store.dart';
 import '../../profile/presentation/profile_settings_screen.dart';
+import '../../security/presentation/login_activity_screen.dart';
 import '../../quotes/presentation/quote_requests_screen.dart';
 import 'product_history_screen.dart';
 import '../../settings/presentation/language_screen.dart';
+import '../../settings/presentation/theme_screen.dart';
+import '../../../core/theme/theme_settings.dart';
 import '../../wishlist/data/wishlist_store.dart';
 import '../../wishlist/presentation/wishlist_screen.dart';
 import '../data/recently_viewed_store.dart';
+import 'accounts_sheet.dart';
 
 /// The account tab: who you are, what you were looking at, and your settings.
 ///
@@ -99,6 +106,7 @@ class _AccountScreenState extends State<AccountScreen> {
         AddressStore.instance,
         SavedPaymentStore.instance,
         SoundSettings.instance,
+        ThemeSettings.instance,
       ]),
       builder: (context, _) {
         final account = AuthStore.instance.account;
@@ -112,6 +120,9 @@ class _AccountScreenState extends State<AccountScreen> {
             padding: const EdgeInsets.only(top: 12, bottom: 32),
             children: [
               if (account == null)
+                // Google and Apple are offered on the sign-in and create
+                // account pages, which both buttons here open -- not repeated
+                // on this card.
                 _GuestCard(
                   onSignIn: () => _openAuth(AuthMode.signIn),
                   onSignUp: () => _openAuth(AuthMode.signUp),
@@ -173,11 +184,23 @@ class _AccountScreenState extends State<AccountScreen> {
                       label: 'Profile settings',
                       onTap: () => _push(const ProfileSettingsScreen()),
                     ),
+                  if (account != null)
+                    _RowSpec(
+                      icon: Icons.shield_outlined,
+                      label: 'Login activity',
+                      onTap: () => _push(const LoginActivityScreen()),
+                    ),
                   _RowSpec(
                     icon: Icons.translate,
                     label: LanguageStore.instance.strings.language,
                     trailing: LanguageStore.instance.language.nativeName,
                     onTap: () => _push(const LanguageScreen()),
+                  ),
+                  _RowSpec(
+                    icon: Icons.contrast,
+                    label: 'Theme',
+                    trailing: ThemeScreen.labelFor(ThemeSettings.instance.mode),
+                    onTap: () => _push(const ThemeScreen()),
                   ),
                   _RowSpec(
                     icon: Icons.notifications_none,
@@ -192,10 +215,10 @@ class _AccountScreenState extends State<AccountScreen> {
                         ? Icons.volume_up_outlined
                         : Icons.volume_off_outlined,
                     label: 'Sound',
-                    // Said in words as well as shown by the switch: a switch
-                    // alone reads as on or off by position, which is a thing
-                    // to be interpreted rather than read.
-                    trailing: SoundSettings.instance.enabled ? 'On' : 'Off',
+                    // The word beside the switch is the toggle's own now --
+                    // see StateToggle, the same control the notification
+                    // groups use. Kept here as well it would print "On"
+                    // twice on one row.
                     toggle: SoundSettings.instance.enabled,
                     onToggle: SoundSettings.instance.setEnabled,
                   ),
@@ -288,12 +311,25 @@ class _AccountScreenState extends State<AccountScreen> {
   /// Signing out is confirmed rather than undoable. Unlike removing one saved
   /// product, getting back in costs the shopper a password.
   Future<void> _confirmSignOut() async {
+    final auth = AuthStore.instance;
+    final current = auth.account;
+    // Another account signed in here is where the app goes next, and the
+    // dialog says so rather than surprising anyone with someone else's cart.
+    final next = auth.savedAccounts
+        .where((saved) => saved.id != current?.id)
+        .map((saved) => saved.account)
+        .firstOrNull;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Sign out?'),
-        content: const Text(
-          'You will need to sign in again to see your orders.',
+        content: Text(
+          next == null
+              ? 'You will need to sign in again to see your orders.'
+              : 'You will be signed out of ${current?.email}. '
+                    '${next.email} is also signed in on this device, so you '
+                    'will switch to it.',
         ),
         actions: [
           TextButton(
@@ -308,11 +344,60 @@ class _AccountScreenState extends State<AccountScreen> {
       ),
     );
 
-    if (confirmed ?? false) AuthStore.instance.signOut();
+    if (!(confirmed ?? false) || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await auth.signOut();
+    final now = result.switchedTo;
+    final note = now != null
+        ? 'Signed out. Now using ${now.email}.'
+        : result.revoked
+        ? null
+        : 'Signed out on this device. The server could not be reached, so '
+              'the session will expire on its own.';
+    if (note != null) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(note)));
+    }
   }
 }
 
 /// The guest state: what an account buys you, then both ways in.
+/// The lift on this page's four cards, and nowhere else.
+///
+/// Account, Account settings, Help and information and Recently viewed carry
+/// it; the quick-action tiles, the rows inside a card and every button stay
+/// flat, which is what keeps the shadow meaning "this is a block" rather than
+/// becoming the page's default texture.
+/// The cards run edge to edge.
+///
+/// No side margin: each card is the full width of the page it is on, and only
+/// its own padding keeps the words off the glass. The corners go with the
+/// margin -- a rounded corner hard against the screen edge reads as a card
+/// that failed to reach it -- so these are square-cornered bands closed top
+/// and bottom by a hairline.
+const BorderRadius _cardShape = BorderRadius.zero;
+
+const List<BoxShadow> _cardLift = [
+  BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, 2)),
+];
+
+/// The brand wash both header cards are drawn in, laid over white.
+///
+/// It used to be the brand colour at 7% with nothing under it, so it took on
+/// the grey of the page: a dull blue-grey panel that the secondary text and
+/// the outlined button's pale edge all but disappeared into. Laid over white
+/// it is the same wash, a clear step lighter, and everything on it reads.
+Color _cardWash(ThemeData theme) => Color.alphaBlend(
+  theme.colorScheme.primary.withValues(alpha: 0.06),
+  theme.colorScheme.surface,
+);
+
+/// Supporting text on the wash: the body ink, softened a little, rather than
+/// the secondary grey, which measured too faint against the tint.
+Color _cardSubtext(ThemeData theme) =>
+    theme.colorScheme.onSurface.withValues(alpha: 0.8);
+
 class _GuestCard extends StatelessWidget {
   const _GuestCard({required this.onSignIn, required this.onSignUp});
 
@@ -323,19 +408,20 @@ class _GuestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+    return SizedBox(
+      width: double.infinity,
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+          borderRadius: _cardShape,
           // A wash of the brand colour rather than a plain card: this is the
           // one block on the page asking for something, so it should read as
           // an invitation instead of another settings row.
-          color: theme.colorScheme.primary.withValues(alpha: 0.07),
+          color: _cardWash(theme),
           border: Border.all(
             color: theme.colorScheme.primary.withValues(alpha: 0.25),
           ),
+          boxShadow: _cardLift,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -366,7 +452,7 @@ class _GuestCard extends StatelessWidget {
                         'Track orders, save addresses and keep your list '
                         'across devices.',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                          color: _cardSubtext(theme),
                           height: 1.35,
                         ),
                       ),
@@ -394,6 +480,13 @@ class _GuestCard extends StatelessWidget {
                   onPressed: onSignUp,
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(132, 44),
+                    // The brand blue for the edge and the words: the theme's
+                    // hairline edge was lost against the tinted card, and the
+                    // button read as a faint box beside the filled one.
+                    foregroundColor: theme.colorScheme.primary,
+                    backgroundColor: theme.colorScheme.surface,
+                    side: BorderSide(color: theme.colorScheme.primary),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   child: const Text('Sign Up'),
                 ),
@@ -422,16 +515,17 @@ class _ProfileCard extends StatelessWidget {
     final photo = ProfileStore.instance.avatarUrl;
     final initial = name.isEmpty ? '?' : name.characters.first.toUpperCase();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+    return SizedBox(
+      width: double.infinity,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-          color: theme.colorScheme.primary.withValues(alpha: 0.07),
+          borderRadius: _cardShape,
+          color: _cardWash(theme),
           border: Border.all(
             color: theme.colorScheme.primary.withValues(alpha: 0.25),
           ),
+          boxShadow: _cardLift,
         ),
         child: Row(
           children: [
@@ -455,10 +549,28 @@ class _ProfileCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color: _cardSubtext(theme),
                     ),
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Beside the account it changes: whose account this is, and the
+            // way to another one, in the same glance.
+            OutlinedButton.icon(
+              onPressed: () => showAccountsSheet(context),
+              icon: const Icon(Icons.swap_horiz, size: 18),
+              label: const Text('Switch'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                foregroundColor: theme.colorScheme.primary,
+                backgroundColor: theme.colorScheme.surface,
+                side: BorderSide(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.6),
+                ),
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
           ],
@@ -688,12 +800,18 @@ class _RowGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+    return SizedBox(
+      width: double.infinity,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
+          // The card the rows share, lifted off the page and run to both
+          // edges of it.
+          color: theme.colorScheme.surface,
+          borderRadius: _cardShape,
+          border: Border.symmetric(
+            horizontal: BorderSide(color: theme.colorScheme.outlineVariant),
+          ),
+          boxShadow: _cardLift,
         ),
         child: Column(
           children: [
@@ -731,7 +849,9 @@ class _SettingsRow extends StatelessWidget {
           ? () => onToggle(!toggle)
           : spec.onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        // The page margin, since the card around these rows no longer holds
+        // one of its own.
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
           children: [
             Padding(
@@ -774,7 +894,11 @@ class _SettingsRow extends StatelessWidget {
                       label: spec.label,
                       toggled: toggle,
                       child: ExcludeSemantics(
-                        child: Switch(value: toggle, onChanged: onToggle),
+                        // The notification screen's toggle, shared rather than
+                        // approximated: same thumb icon, same colours, same
+                        // word beside it, so one kind of decision has one
+                        // control across the app.
+                        child: StateToggle(enabled: toggle, onChanged: onToggle),
                       ),
                     )
                   else
@@ -813,56 +937,79 @@ class _RecentlyViewedRail extends StatelessWidget {
     final theme = Theme.of(context);
 
     return SizedBox(
-      // Grows with the device text scale, like the home rails: a fixed height
-      // clips the price line on a phone set to larger text.
-      height: 168 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.4),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: items.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 10),
-        itemBuilder: (context, i) {
-          final item = items[i];
-          return SizedBox(
-            width: 104,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-              onTap: () => onTap(item),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-                    child: SizedBox(
-                      width: 104,
-                      height: 104,
-                      child: ArtworkPanel(
-                        icon: Icons.checkroom,
-                        tint: theme.colorScheme.primary,
-                        imageUrl: item.imageUrl,
-                        iconScale: 0.4,
+      width: double.infinity,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: _cardShape,
+          border: Border.symmetric(
+            horizontal: BorderSide(color: theme.colorScheme.outlineVariant),
+          ),
+          boxShadow: _cardLift,
+        ),
+        // So a thumbnail cannot paint over the rounded corner as it scrolls
+        // past the edge.
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          // Grows with the device text scale, like the home rails: a fixed
+          // height clips the price line on a phone set to larger text.
+          height:
+              168 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.4),
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            // The card runs to the screen edges, so the rail carries the page
+            // margin itself and the first thumbnail lines up with the words
+            // above it.
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: items.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, i) {
+              final item = items[i];
+              return SizedBox(
+                width: 104,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+                  onTap: () => onTap(item),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(
+                          AppTheme.radiusControl,
+                        ),
+                        child: SizedBox(
+                          width: 104,
+                          height: 104,
+                          child: ArtworkPanel(
+                            icon: Icons.checkroom,
+                            tint: theme.colorScheme.primary,
+                            imageUrl: item.imageUrl,
+                            iconScale: 0.4,
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 6),
+                      Text(
+                        item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      Text(
+                        formatRupees(item.price),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  Text(
-                    formatRupees(item.price),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }

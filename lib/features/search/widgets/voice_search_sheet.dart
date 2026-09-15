@@ -378,6 +378,7 @@ class VoiceSearchButton extends StatelessWidget {
     required this.onResult,
     this.size = 22,
     this.color,
+    this.boxWidth,
   });
 
   /// Called with the transcript, once, only when something was heard.
@@ -385,6 +386,16 @@ class VoiceSearchButton extends StatelessWidget {
 
   final double size;
   final Color? color;
+
+  /// A narrower tap box, for a pill that wants this icon closer to its
+  /// neighbour.
+  ///
+  /// Null keeps the square `size + 14`, which is what every other search bar
+  /// gets -- this exists so the home header can close the gap between the
+  /// microphone and the camera without changing the button everywhere it is
+  /// drawn. The height is never narrowed: in a 38pt pill it is the tight
+  /// dimension, and it is the half of the target worth keeping.
+  final double? boxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -394,7 +405,24 @@ class VoiceSearchButton extends StatelessWidget {
       // Constrained to the icon so two of these sit side by side inside a pill
       // without the default 48pt boxes pushing the hint text out.
       padding: EdgeInsets.zero,
-      constraints: BoxConstraints.tightFor(width: size + 14, height: size + 14),
+      constraints: BoxConstraints.tightFor(
+        width: boxWidth ?? size + 14,
+        height: size + 14,
+      ),
+      // Narrowing [constraints] alone does nothing, which is the trap this hit
+      // once already: an IconButton takes Material's `padded` tap target from
+      // the theme and wraps itself out to a 48pt minimum *outside* whatever
+      // constraints say. The box read 26 and the button still measured 48, so
+      // the microphone and the camera stayed exactly as far apart as before.
+      //
+      // Only when a caller asks for the narrow box. Every other search bar
+      // keeps the padded target -- there the buttons stand alone and the 48pt
+      // rule is doing its job.
+      style: boxWidth == null
+          ? null
+          : IconButton.styleFrom(
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
       onPressed: () async {
         final transcript = await VoiceSearchSheet.show(context);
         if (transcript == null || transcript.trim().isEmpty) return;

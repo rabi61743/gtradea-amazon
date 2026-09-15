@@ -408,7 +408,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(OrderDetailScreen), findsOneWidget);
-      expect(find.text('Progress'), findsOneWidget);
+      // The rail is drawn without a heading now, as the reference has it:
+      // six stages across the card speak for themselves.
+      // Twice over: the stage on the rail, and the carrier's own first
+      // step in the journey below it.
+      expect(find.text('Order placed'), findsWidgets);
+      expect(find.text('Delivered'), findsWidgets);
     });
   });
 
@@ -426,12 +431,48 @@ void main() {
         expect(find.text(stage.label), findsWidgets, reason: stage.label);
       }
       expect(find.text('Ice silk jacket'), findsOneWidget);
-      expect(find.text('Blush pink · Qty 2'), findsOneWidget);
+      // The option and the count, on their own lines as the reference sets
+      // them.
+      expect(find.text('Blush pink'), findsOneWidget);
+      expect(find.text('Qty: 2'), findsOneWidget);
       expect(find.text('Jhamsikhel, Lalitpur, Bagmati'), findsOneWidget);
       expect(find.text('Cash on delivery'), findsOneWidget);
-      expect(find.text('Tracking'), findsOneWidget);
-      // The carrier's own reference, not one this app made up.
+      // The carrier's own reference, not one this app made up. The heading
+      // went with the redesign; the number it labelled did not.
       expect(find.text('SHIP-77'), findsOneWidget);
+    });
+
+    testWidgets('pairs payment and address, each with what it carries', (
+      tester,
+    ) async {
+      // The two cards the reference sets side by side. Every value in them is
+      // the order's own: the state the shop reports, what it means, the total
+      // it charged, and the address and number the parcel is going to.
+      _useTallWindow(tester);
+      final order = _at(
+        OrderStage.delivered,
+        status: 'delivered',
+        paymentStatus: 'paid',
+      );
+      await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Payment'), findsOneWidget);
+      expect(find.text('Paid'), findsOneWidget);
+      expect(find.text('Payment received'), findsOneWidget);
+      expect(find.text('Method'), findsOneWidget);
+
+      expect(find.text('Delivery address'), findsOneWidget);
+      expect(find.text('Rabi'), findsOneWidget);
+      // The number this order actually went out with.
+      expect(find.text('+9779812345678'), findsOneWidget);
+      expect(find.text('Nepal'), findsOneWidget);
+
+      // Side by side on a window this wide, as the reference draws them.
+      final payment = tester.getRect(find.text('Payment'));
+      final address = tester.getRect(find.text('Delivery address'));
+      expect(payment.left, lessThan(address.left));
+      expect(payment.top, closeTo(address.top, 2));
     });
 
     testWidgets('hides tracking until something has been dispatched', (
@@ -442,9 +483,11 @@ void main() {
       await tester.pumpWidget(_wrap(OrderDetailScreen(orderId: order.id)));
       await tester.pump();
 
-      // An empty Tracking heading would read as information that failed to
-      // load rather than information that does not exist yet.
-      expect(find.text('Tracking'), findsNothing);
+      // An empty tracking row would read as information that failed to load
+      // rather than information that does not exist yet. The number is the
+      // information -- the stage rail draws a small lorry of its own for the
+      // Shipped step, and that is a stage marker, not a tracking row.
+      expect(find.text('SHIP-77'), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
     });
@@ -513,7 +556,7 @@ void main() {
         OrderStore.instance.byId(order.id)!.outcome,
         OrderOutcome.cancelled,
       );
-      expect(find.textContaining('Nothing will be delivered'), findsOneWidget);
+      expect(find.text('This order was cancelled'), findsOneWidget);
       // The action is gone: a cancelled order cannot be cancelled again.
       expect(find.text('Cancel order'), findsNothing);
     });
@@ -567,7 +610,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Returned'), findsWidgets);
-      expect(find.textContaining('A courier will collect it'), findsOneWidget);
+      expect(find.text('This order is being returned'), findsOneWidget);
       expect(find.text('Request a return'), findsNothing);
     });
 

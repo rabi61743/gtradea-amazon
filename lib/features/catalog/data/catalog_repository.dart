@@ -490,14 +490,38 @@ class CatalogRepository {
         .toList(growable: false);
   }
 
+  /// One request for everyone who asks while it is running.
+  ///
+  /// Two parts of the home page read the banners at the same moment on a cold
+  /// start -- the carousel through [CatalogStore.banners], and the flash sale,
+  /// which looks for a live promo among them -- and each used to send its own
+  /// `/hero-banners`. They now share whichever request is already in flight.
+  /// Once it settles the next call asks again, so nothing is held past the
+  /// answer it was waiting for.
+  Future<List<HeroBanner>>? _heroBannersInFlight;
+
   Future<List<HeroBanner>> heroBanners() {
-    return guarded(() async {
+    final pending = _heroBannersInFlight;
+    if (pending != null) return pending;
+
+    final request = guarded(() async {
       final res = await _dio.get('/hero-banners', options: guestCall);
       return asRows(res.data)
           .map(HeroBanner.fromJson)
           .where((b) => b.title.isNotEmpty && !b.isExpired)
           .toList(growable: false);
     });
+    _heroBannersInFlight = request;
+    request
+        .whenComplete(() {
+          if (identical(_heroBannersInFlight, request)) {
+            _heroBannersInFlight = null;
+          }
+        })
+        // The callers await `request` itself and see its error there; this
+        // side branch only clears the slot.
+        .ignore();
+    return request;
   }
 
   /// The brand names the shop has on file, active ones only.

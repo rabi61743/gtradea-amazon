@@ -300,9 +300,13 @@ void main() {
       await pump(tester);
       final group = trio(tester);
 
+      // The section's own gap, not a copy of it. This assertion carried the
+      // literal 14 and broke the moment the spacing was tightened -- which is
+      // the wrong kind of failure: the identity still held, only the number
+      // had moved.
       expect(
         group.women.height,
-        closeTo(group.appliances.height * 2 + 14, 0.5),
+        closeTo(group.appliances.height * 2 + PromoSection.gap, 0.5),
       );
     });
 
@@ -373,7 +377,10 @@ void main() {
       await pump(tester);
       final group = trio(tester);
 
-      expect(group.men.height, closeTo(group.footwear.height * 2 + 14, 0.5));
+      expect(
+        group.men.height,
+        closeTo(group.footwear.height * 2 + PromoSection.gap, 0.5),
+      );
     });
 
     testWidgets('and none of the three is distorted', (tester) async {

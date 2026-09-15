@@ -603,9 +603,15 @@ void main() {
           )
           .right;
 
+      // Whatever margin this section sits on, rather than a number typed here.
+      // The category sections take the page's 97% measure now and the rails
+      // still take the flat edge, and the claim is the same for both: the
+      // action lines up with the words above it rather than half a step inside.
+      final margin =
+          tester.widget<SectionHeader>(header).margin ?? SectionHeader.edge;
       expect(
         headerRight - actionRight,
-        closeTo(SectionHeader.edge, 0.5),
+        closeTo(margin, 0.5),
         reason: 'the action is not on the margin',
       );
     });

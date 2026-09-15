@@ -38,12 +38,27 @@ class ProfileStore extends ChangeNotifier {
     // an expired refresh token clears the session on its own. Watching the
     // identity store catches all of them.
     AuthStore.instance.addListener(_onAuthChanged);
+    _ownerId = AuthStore.instance.account?.id;
   }
 
   static final ProfileStore instance = ProfileStore._();
 
+  /// Whose profile this is. A switch to another account changes it, and
+  /// everything held for the last one goes.
+  String? _ownerId;
+
+  /// Bumped with [_ownerId], so a profile asked for as one account and
+  /// answered after a switch is dropped rather than shown as the next one's.
+  int _generation = 0;
+
   void _onAuthChanged() {
-    if (!AuthStore.instance.isSignedIn && _profile != null) clear();
+    final id = AuthStore.instance.account?.id;
+    if (id == _ownerId) return;
+    _ownerId = id;
+    _generation++;
+    if (_profile != null || _error != null || _loading || _saving) clear();
+    // Another account now: its own name and photograph, not a blank header.
+    if (id != null) load(force: true);
   }
 
   ProfileRepository _profiles = ProfileRepository.instance;
@@ -103,13 +118,26 @@ class ProfileStore extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
-      _profile = await _profiles.fetch();
+      final profile = await _profiles.fetch();
+      if (generation != _generation) return;
+      _profile = profile;
+      // A photo changed on the website, or before this device kept the
+      // sign-in copy in step, still reaches the list of accounts here.
+      final photo = profile.avatarUrl;
+      if (photo != null && photo.isNotEmpty) {
+        AuthStore.instance.adoptProfilePhoto(photo).ignore();
+      }
     } on ApiError catch (e) {
+      if (generation != _generation) return;
       _error = e.message;
     } finally {
-      _loading = false;
-      notifyListeners();
+      // After a switch the new account's own load owns these flags.
+      if (generation == _generation) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -160,16 +188,56 @@ class ProfileStore extends ChangeNotifier {
     }
   }
 
+  /// Files a contact number on the account, changing nothing else.
+  ///
+  /// [saveName] is the account screen's door, where the shopper is editing
+  /// their name anyway. Checkout has only a number, and sending a name it was
+  /// never given -- or refusing the save because the account has no name on it
+  /// yet -- would be writing over one field to store another.
+  Future<void> savePhone(String phone) async {
+    final trimmed = phone.trim();
+    if (trimmed.isEmpty) return;
+    await _write(() => _profiles.update(phone: trimmed));
+  }
+
   /// Uploads a new profile photo and stores it on the profile.
   ///
   /// Two requests, and the order matters: nothing is written to the profile
   /// until the picture is actually stored, so a failed upload cannot leave the
   /// row pointing at an address that holds nothing.
   Future<void> savePhoto(File file) async {
+    // Whose photo this is. A switch while the upload runs must not carry this
+    // picture into the next account's sign-in record.
+    final owner = AuthStore.instance.account?.id;
+    String? stored;
     await _write(() async {
       final url = await _profiles.uploadAvatar(file);
+      stored = url;
       return _profiles.update(avatarUrl: url);
     });
+    final url = stored;
+    if (url != null && AuthStore.instance.account?.id == owner) {
+      await _syncSignInPhoto(url);
+    }
+  }
+
+  /// Copies the profile's photograph to the account's sign-in record.
+  ///
+  /// GoTrue keeps its own `avatar_url` in user_metadata, as it keeps the
+  /// name, and that copy is what the list of accounts on this device draws --
+  /// for every saved account, not only the active one. Left alone, a new photo
+  /// showed in the header while the account list kept the old one.
+  ///
+  /// Best effort, like the name: the profile row is the source of truth and
+  /// is already written. When GoTrue cannot be told, this device's copy is
+  /// still brought up to date so the list is right here.
+  Future<void> _syncSignInPhoto(String url) async {
+    try {
+      await _auth.updateUser(data: {'avatar_url': url});
+      await AuthStore.instance.reloadFromSession();
+    } on ApiError {
+      await AuthStore.instance.adoptProfilePhoto(url);
+    }
   }
 
   /// Changes the sign-in address through GoTrue.
@@ -255,7 +323,11 @@ class ProfileStore extends ChangeNotifier {
     _saving = true;
     notifyListeners();
     try {
-      _profile = await call();
+      final generation = _generation;
+      final profile = await call();
+      // Saved to the account it was made in; shown only if that is still the
+      // one on screen.
+      if (generation == _generation) _profile = profile;
     } finally {
       _saving = false;
       notifyListeners();

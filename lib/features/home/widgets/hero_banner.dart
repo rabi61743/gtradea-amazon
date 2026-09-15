@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 
 import '../../../core/images/app_images.dart';
 
@@ -50,12 +51,16 @@ class BannerItem {
   bool get isArtworkOnly => headline.isEmpty && caption.isEmpty;
 }
 
-/// Full-width hero carousel that advances on its own, with indicators.
+/// Full-width hero carousel that advances on its own.
 ///
-/// Auto-advance stops the moment the customer touches it and does not resume:
-/// a banner that keeps moving under a finger is how people tap the wrong offer.
-/// It also stays still when the platform asks for reduced motion, which is what
-/// `MediaQuery.disableAnimations` reports.
+/// Auto-advance yields to a finger and then takes over again: it stops the
+/// moment the customer touches the carousel -- a banner that keeps moving under
+/// a finger is how people tap the wrong offer -- and starts again [_resumeAfter]
+/// once they have finished, on whichever slide they left it on. It never gets
+/// stuck on a slide because somebody swiped to it.
+///
+/// It stays still, permanently, only when the platform asks for reduced motion,
+/// which is what `MediaQuery.disableAnimations` reports.
 class HeroBanner extends StatefulWidget {
   const HeroBanner({
     super.key,
@@ -79,15 +84,75 @@ class HeroBanner extends StatefulWidget {
   /// not more engaging, only harder to read across.
   static const maxCardWidth = 900.0;
 
+  /// How much of the page the card takes, by request.
+  ///
+  /// A share rather than the fixed 16pt inset it used to carry: the margin is
+  /// then the same fraction of a phone, a tablet and a desktop window, and the
+  /// card matches the other cards down this page, which are measured the same
+  /// way.
+  static const widthFactor = 0.97;
+
+  /// The inset on each side that leaves the card [widthFactor] of [width].
+  static double insetFor(double width) => width * (1 - widthFactor) / 2;
+
+  /// Whether the carousel is allowed to run its clock at all.
+  ///
+  /// True in the app, always. It exists for the suite: the clock that advances
+  /// the slides is also what fills the progress bar, so it schedules a frame
+  /// for as long as the carousel is on screen -- and a tree with a frame
+  /// always pending is a tree `pumpAndSettle` waits on forever. Every test
+  /// that pumps a page with a hero on it would hang.
+  ///
+  /// So `test/flutter_test_config.dart` switches it off for the whole suite,
+  /// and the tests that are about the carousel switch it back on for
+  /// themselves. Nothing about the timing is mocked -- when it is on, it is
+  /// the real clock at the real interval.
+  @visibleForTesting
+  static bool autoplayEnabled = true;
+
+  /// The progress bar, so a test can measure the fill rather than the pixels.
+  static const progressKey = ValueKey('hero-autoplay-progress');
+
   @override
   State<HeroBanner> createState() => _HeroBannerState();
 }
 
-class _HeroBannerState extends State<HeroBanner> {
+class _HeroBannerState extends State<HeroBanner>
+    with SingleTickerProviderStateMixin {
   final _controller = PageController();
-  Timer? _timer;
+
+  /// The autoplay clock **and** what the progress bar is drawn from.
+  ///
+  /// One thing, deliberately. A bar driven by a second timer beside the
+  /// carousel's own is a bar that drifts: it would fill at its own pace, reset
+  /// on its own schedule, and disagree with the slide underneath it the first
+  /// time a frame was dropped or a page took longer to settle. Here the
+  /// carousel advances *because* this controller finished, so the bar reaching
+  /// its end and the slide changing are the same event.
+  late final AnimationController _clock = AnimationController(
+    vsync: this,
+    duration: widget.interval,
+  )..addStatusListener(_onClock);
+
+  /// Whether the carousel is advancing on its own right now.
+  bool _autoplaying = false;
+
+  /// The wait between a shopper letting go and the carousel picking up again.
+  ///
+  /// Long enough to read the slide they chose, short enough that the carousel
+  /// is plainly still running rather than parked.
+  static const _resumeAfter = Duration(milliseconds: 2500);
+
+  /// Pending resumption, if a shopper has just been at it. Held so a second
+  /// swipe restarts the wait rather than stacking a second timer on it.
+  Timer? _resume;
+
+  /// True while the platform is asking for less movement. Read from
+  /// [MediaQuery] in [didChangeDependencies], and the one case where autoplay
+  /// does not come back at all.
+  bool _reduceMotion = false;
+
   int _index = 0;
-  bool _userTookOver = false;
 
   /// Drives the parallax. Kept separate from [_index] because it updates on
   /// every frame of a drag, not once per settled page.
@@ -97,6 +162,25 @@ class _HeroBannerState extends State<HeroBanner> {
   void initState() {
     super.initState();
     _controller.addListener(_onScroll);
+  }
+
+  /// The clock reaching its end is what turns the page.
+  void _onClock(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    if (!mounted || !_controller.hasClients || widget.items.length < 2) return;
+
+    final next = (_index + 1) % widget.items.length;
+    _controller.animateToPage(
+      next,
+      // A little longer when it is the loop back to the first: that one travels
+      // the whole set, and at the ordinary duration it reads as a rewind rather
+      // than as a return.
+      duration: Duration(milliseconds: next == 0 ? 700 : 520),
+      curve: Curves.easeOutCubic,
+    );
+    // Restarted here rather than waiting for the page to settle, so the bar
+    // begins the next slide's fill as the slide begins moving.
+    _clock.forward(from: 0);
   }
 
   void _onScroll() {
@@ -110,10 +194,13 @@ class _HeroBannerState extends State<HeroBanner> {
     super.didChangeDependencies();
     // Read here rather than in initState: MediaQuery is not available yet at
     // initState, and the answer can change while the app is running.
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
-    if (reduceMotion || _userTookOver || widget.items.length < 2) {
+    _reduceMotion = MediaQuery.of(context).disableAnimations;
+    if (!_canAutoplay) {
       _stop();
-    } else {
+    } else if (_resume?.isActive != true) {
+      // Not while a shopper's own pause is still running: a rebuild in the
+      // middle of it would take the slide out from under them, which is the
+      // whole thing the pause is for.
       _start();
     }
     _warm();
@@ -166,46 +253,53 @@ class _HeroBannerState extends State<HeroBanner> {
       _index = 0;
       _page = 0;
       if (_controller.hasClients) _controller.jumpToPage(0);
+      if (_autoplaying) _clock.forward(from: 0);
+    }
+    // The bar's fill is the carousel's own interval, whatever it is set to.
+    if (oldWidget.interval != widget.interval) {
+      _clock.duration = widget.interval;
+      if (_autoplaying) _clock.forward(from: _clock.value);
     }
   }
 
   void _start() {
-    _timer ??= Timer.periodic(widget.interval, (_) {
-      if (!mounted || !_controller.hasClients) return;
-      final next = (_index + 1) % widget.items.length;
-      _controller.animateToPage(
-        next,
-        duration: const Duration(milliseconds: 520),
-        curve: Curves.easeOutCubic,
-      );
-    });
+    if (_autoplaying || !_canAutoplay) return;
+    setState(() => _autoplaying = true);
+    _clock.forward(from: _clock.value);
   }
 
   void _stop() {
-    _timer?.cancel();
-    _timer = null;
+    _resume?.cancel();
+    _clock.stop();
+    if (_autoplaying) setState(() => _autoplaying = false);
   }
 
-  /// Jumps to a banner the shopper picked off the indicator.
-  ///
-  /// Counts as taking over, exactly as a swipe does: someone who has said which
-  /// banner they want should not have it slide away from under them three
-  /// seconds later. A tap is not a UserScrollNotification, so the listener on
-  /// the PageView never sees this one.
-  void _goTo(int index) {
-    if (!_controller.hasClients || index == _index) return;
-    _userTookOver = true;
-    _stop();
-    _controller.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeOutCubic,
-    );
+  /// Whether the carousel is allowed to run at all.
+  bool get _canAutoplay =>
+      HeroBanner.autoplayEnabled && !_reduceMotion && widget.items.length > 1;
+
+  /// A finger is on it: stop, and forget any pending resumption -- the wait
+  /// starts again when they let go, not from where it was.
+  void _pause() {
+    _resume?.cancel();
+    _clock.stop();
+    if (_autoplaying) setState(() => _autoplaying = false);
+  }
+
+  /// They have let go. Pick up again after a beat, on whatever slide they left
+  /// it on.
+  void _resumeSoon() {
+    if (!_canAutoplay || _autoplaying) return;
+    _resume?.cancel();
+    _resume = Timer(_resumeAfter, () {
+      if (mounted) _start();
+    });
   }
 
   @override
   void dispose() {
-    _stop();
+    _resume?.cancel();
+    _clock.dispose();
     _controller.removeListener(_onScroll);
     _controller.dispose();
     super.dispose();
@@ -230,43 +324,80 @@ class _HeroBannerState extends State<HeroBanner> {
           });
         }
 
+        // The card's own box, which the bar is laid over: the same share of
+        // the width, the same ceiling, and centred the same way -- so the bar
+        // sits inside the card rather than beside it on a wide window.
+        final cardWidth = width > HeroBanner.maxCardWidth
+            ? HeroBanner.maxCardWidth
+            : width;
         return Column(
           children: [
             SizedBox(
               height: height,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (notification) {
-                  if (notification is UserScrollNotification) {
-                    _userTookOver = true;
-                    _stop();
-                  }
-                  return false;
-                },
-                child: PageView.builder(
-                  controller: _controller,
-                  itemCount: widget.items.length,
-                  onPageChanged: (i) {
-                    setState(() => _index = i);
-                    // Warm the one after this, so a swipe lands on artwork
-                    // that is already there.
-                    _warm();
-                  },
-                  itemBuilder: (context, i) => _BannerCard(
-                    item: widget.items[i],
-                    // How far this card is from resting in the middle, -1 to 1.
-                    // The card uses it to drift its artwork and settle its
-                    // words, which is what makes the swipe feel like depth
-                    // rather than a slide show.
-                    offset: (i - _page).clamp(-1.0, 1.0),
+              child: Stack(
+                children: [
+                  NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      // A finger on the carousel pauses it; letting go starts
+                      // the wait. Both are needed: the first alone is what left
+                      // it stuck on whatever slide somebody swiped to.
+                      if (notification is UserScrollNotification) {
+                        if (notification.direction != ScrollDirection.idle) {
+                          _pause();
+                        } else {
+                          _resumeSoon();
+                        }
+                      } else if (notification is ScrollEndNotification) {
+                        _resumeSoon();
+                      }
+                      return false;
+                    },
+                    child: PageView.builder(
+                      controller: _controller,
+                      itemCount: widget.items.length,
+                      onPageChanged: (i) {
+                        setState(() {
+                          _index = i;
+                          // The new slide starts its turn from nothing, so the
+                          // pill measures this slide rather than carrying the
+                          // last one's progress into it.
+                          if (!_autoplaying) _clock.value = 0;
+                        });
+                        // Warm the one after this, so a swipe lands on artwork
+                        // that is already there.
+                        _warm();
+                        _resumeSoon();
+                      },
+                      itemBuilder: (context, i) => _BannerCard(
+                        item: widget.items[i],
+                        sideInset: HeroBanner.insetFor(cardWidth),
+                        // How far this card is from resting in the middle, -1 to 1.
+                        // The card uses it to drift its artwork and settle its
+                        // words, which is what makes the swipe feel like depth
+                        // rather than a slide show.
+                        offset: (i - _page).clamp(-1.0, 1.0),
+                      ),
+                    ),
                   ),
-                ),
+                  // A short pill along the foot of the card, centred on it and
+                  // inside its rounded corner. Nothing sits below the carousel
+                  // any more: this is the whole indicator.
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 12,
+                    child: Center(
+                      child: _CarouselProgress(
+                        key: HeroBanner.progressKey,
+                        clock: _clock,
+                        index: _index,
+                        count: widget.items.length,
+                        running: _autoplaying,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 10),
-            _Indicator(
-              count: widget.items.length,
-              index: _index,
-              onSelected: _goTo,
             ),
           ],
         );
@@ -275,114 +406,94 @@ class _HeroBannerState extends State<HeroBanner> {
   }
 }
 
-/// Where you are in the carousel, and how to get somewhere else.
+/// Where the carousel has got to, as a small pill on the card itself.
 ///
-/// A rail of dots that slides to keep the current one centred, rather than a
-/// row of twelve. Twelve dots is a line of specks nobody can count or aim at,
-/// and the static "2 / 12" that replaced them told you where you were but let
-/// you do nothing about it.
+/// The whole indicator, and the only one: the rail of dots that used to sit
+/// under the carousel is gone, and with it the gap it needed. This is 52 by 4,
+/// with rounded ends, centred along the foot of the artwork -- part of the
+/// picture rather than a control parked beneath it.
 ///
-/// Three jobs at once:
+/// **What it fills from.** Two things at once, and both are the carousel's own:
+/// which slide is showing, and how far that slide is through its turn. The
+/// second comes straight from the [AnimationController] whose completion turns
+/// the page -- there is no second timer to drift against, so the pill is full
+/// at the instant the last slide ends. A shopper who swipes moves the first
+/// term immediately, which is what makes the pill answer a swipe rather than
+/// lag behind it.
 ///
-///   * **position** -- the active dot is a wide pill, and the count beside it
-///     says which of how many, because a windowed rail cannot show that a
-///     twelfth exists.
-///   * **progress** -- the dots behind the current one are tinted, so the rail
-///     reads left-to-right as ground covered rather than as an undifferentiated
-///     row.
-///   * **control** -- every dot is a button, and the rail can be swiped.
-class _Indicator extends StatefulWidget {
-  const _Indicator({
-    required this.count,
+/// The fill is animated rather than set, so a swipe slides it along instead of
+/// snapping, and so it keeps moving when the clock stops.
+class _CarouselProgress extends StatelessWidget {
+  const _CarouselProgress({
+    super.key,
+    required this.clock,
     required this.index,
-    required this.onSelected,
+    required this.count,
+    required this.running,
   });
 
-  final int count;
+  final Animation<double> clock;
+
+  /// Which slide is showing, and how many there are.
   final int index;
-  final ValueChanged<int> onSelected;
+  final int count;
 
-  /// Past this the rail scrolls rather than showing everything at once.
-  static const maxVisible = 7;
+  /// Whether the carousel is advancing on its own. The pill draws the same
+  /// either way -- the clock holds its value when it stops, so a paused
+  /// carousel simply stops creeping -- and this is here for the one case that
+  /// has no progress to show: a single banner, which is already at its end.
+  final bool running;
 
-  /// Taller than the dots it draws, because each one is a tap target and an
-  /// 8pt circle is far under any sane one.
-  static const railHeight = 22.0;
-
-  static const _dot = 8.0;
-  static const _pill = 26.0;
-  static const _gap = 6.0;
-
-  @override
-  State<_Indicator> createState() => _IndicatorState();
-}
-
-class _IndicatorState extends State<_Indicator> {
-  /// How far the rail must slide to keep the active dot in the middle.
-  double _offsetFor(double viewport) {
-    const step = _Indicator._dot + _Indicator._gap;
-    // Everything before the active one, plus half the pill itself.
-    final centreOfActive = widget.index * step + _Indicator._pill / 2;
-    final full = (widget.count - 1) * step + _Indicator._pill;
-    if (full <= viewport) return 0;
-    // Clamped so the ends sit flush rather than leaving a gap at either edge.
-    return (centreOfActive - viewport / 2).clamp(0.0, full - viewport);
-  }
+  static const double _width = 52;
+  static const double _height = 4;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    if (widget.count < 2) return const SizedBox.shrink();
-
-    const step = _Indicator._dot + _Indicator._gap;
-    final full = (widget.count - 1) * step + _Indicator._pill;
-    final viewport = widget.count > _Indicator.maxVisible
-        ? (_Indicator.maxVisible - 1) * step + _Indicator._pill
-        : full;
-
-    return Semantics(
-      // One phrase for the whole rail. A screen reader announcing twelve
-      // unlabelled dots is worse than no indicator at all -- and this is now
-      // the only place the position is said in words, since the "2/12" caption
-      // that used to sit beside the dots has gone. Removing it from the screen
-      // is a look; removing it from here would take the position away from
-      // anyone who cannot see the dots at all.
-      label: 'Banner ${widget.index + 1} of ${widget.count}',
-      container: true,
-      child: Center(
+    return IgnorePointer(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_height),
         child: SizedBox(
-          width: viewport,
-          height: _Indicator.railHeight,
-          child: ClipRect(
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(end: _offsetFor(viewport)),
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeOutCubic,
-              builder: (context, offset, child) =>
-                  Transform.translate(offset: Offset(-offset, 0), child: child),
-              // The rail is wider than the window it slides behind -- that is
-              // the point of it -- so it has to be let out of the SizedBox's
-              // width. Without this the Row is squeezed to the viewport and
-              // reports an overflow instead of scrolling.
-              child: OverflowBox(
-                maxWidth: double.infinity,
-                alignment: Alignment.centerLeft,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (var i = 0; i < widget.count; i++)
-                      _Dot(
-                        active: i == widget.index,
-                        // Everything up to here reads as ground covered, so
-                        // the rail is a progress bar as well as a position.
-                        seen: i < widget.index,
-                        theme: theme,
-                        label: 'Go to banner ${i + 1}',
-                        onTap: () => widget.onSelected(i),
-                      ),
-                  ],
-                ),
-              ),
+          width: _width,
+          height: _height,
+          // A neutral under it rather than a tint of the artwork: the track has
+          // to read on a dark photograph and on a bright one alike.
+          child: ColoredBox(
+            color: Colors.white.withValues(alpha: 0.45),
+            child: AnimatedBuilder(
+              animation: clock,
+              builder: (context, _) {
+                // One banner is a carousel with nowhere to go: a full pill,
+                // rather than an empty one that will never fill.
+                if (count <= 1) return const _PillFill();
+
+                // The slide, plus how far through it the clock has got. The
+                // clock holds where it stopped, so a pause holds the pill
+                // there too -- and a swipe zeroes it, so the new slide starts
+                // its own turn rather than inheriting the last one's.
+                final within = clock.value.clamp(0.0, 1.0);
+                final progress = ((index + within) / count).clamp(0.0, 1.0);
+
+                return Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TweenAnimationBuilder<double>(
+                    // Short: long enough that a swipe slides rather than jumps,
+                    // short enough that it has caught up before the eye moves
+                    // back to the picture.
+                    duration: const Duration(milliseconds: 240),
+                    curve: Curves.easeOut,
+                    tween: Tween<double>(end: progress),
+                    builder: (context, value, _) => FractionallySizedBox(
+                      widthFactor: value,
+                      // Both factors. The Align hands its child loose
+                      // constraints, so a fill with no height of its own takes
+                      // the smallest it is allowed -- which is none, and a
+                      // pill that paints nothing at all.
+                      heightFactor: 1,
+                      child: const ColoredBox(color: AppColors.commerceOrange),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -391,72 +502,22 @@ class _IndicatorState extends State<_Indicator> {
   }
 }
 
-/// One dot: a tap target, and a mark of how far along the set it sits.
-class _Dot extends StatelessWidget {
-  const _Dot({
-    required this.active,
-    required this.seen,
-    required this.theme,
-    required this.label,
-    required this.onTap,
-  });
-
-  final bool active;
-
-  /// Behind the current position. Tinted rather than grey, so the rail reads
-  /// left-to-right as progress instead of as an undifferentiated row.
-  final bool seen;
-
-  final ThemeData theme;
-  final String label;
-  final VoidCallback onTap;
+/// The pill filled end to end, for a carousel with one slide in it.
+class _PillFill extends StatelessWidget {
+  const _PillFill();
 
   @override
-  Widget build(BuildContext context) {
-    final width = active ? _Indicator._pill : _Indicator._dot;
-    final colour = active
-        ? theme.colorScheme.primary
-        : seen
-        ? theme.colorScheme.primary.withValues(alpha: 0.45)
-        : theme.colorScheme.outlineVariant;
-
-    return Semantics(
-      button: true,
-      selected: active,
-      label: label,
-      excludeSemantics: true,
-      child: GestureDetector(
-        onTap: onTap,
-        // Opaque, and taller than the dot it draws: an 8pt circle is far under
-        // any sane tap target, so the hit area is the full height of the rail
-        // with the dot centred in it.
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          height: _Indicator.railHeight,
-          width: width + _Indicator._gap,
-          child: Center(
-            child: AnimatedContainer(
-              // Width and colour both animate, so moving between banners is a
-              // pill sliding along the rail rather than one dot blinking off
-              // and another on.
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeOutCubic,
-              width: width,
-              height: _Indicator._dot,
-              decoration: BoxDecoration(
-                color: colour,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      const ColoredBox(color: AppColors.commerceOrange);
 }
 
 class _BannerCard extends StatelessWidget {
-  const _BannerCard({required this.item, this.offset = 0});
+  const _BannerCard({required this.item, this.offset = 0, this.sideInset = 16});
+
+  /// The margin on each side, which is what makes the card its share of the
+  /// page. Passed in rather than fixed here: the parent is the one that knows
+  /// how wide the page is.
+  final double sideInset;
 
   final BannerItem item;
 
@@ -479,7 +540,7 @@ class _BannerCard extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: HeroBanner.maxCardWidth),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: sideInset),
           child: Semantics(
             button: item.onTap != null,
             label: [
@@ -808,7 +869,13 @@ class _HeroBannerSkeletonState extends State<HeroBannerSkeleton>
                     maxWidth: HeroBanner.maxCardWidth,
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: HeroBanner.insetFor(
+                        constraints.maxWidth > HeroBanner.maxCardWidth
+                            ? HeroBanner.maxCardWidth
+                            : constraints.maxWidth,
+                      ),
+                    ),
                     child: AnimatedBuilder(
                       animation: _shimmer,
                       builder: (context, _) => DecoratedBox(
@@ -825,11 +892,9 @@ class _HeroBannerSkeletonState extends State<HeroBannerSkeleton>
                 ),
               ),
             ),
-            // The same gap and rail height the indicator occupies, so nothing
-            // below moves when the real banners replace this. The rail is
-            // taller than the dots it draws because each one is a tap target.
-            const SizedBox(height: 10),
-            const SizedBox(height: _Indicator.railHeight),
+            // Nothing below the card. The indicator lives inside the carousel
+            // now, so there is no rail to reserve space for -- and reserving
+            // some would put back the gap this change removed.
           ],
         );
       },

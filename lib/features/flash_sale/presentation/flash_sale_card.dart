@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
+import '../../../shared/widgets/page_width.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
@@ -60,6 +64,16 @@ const _inkLift = [
 class FlashSaleCard extends StatefulWidget {
   const FlashSaleCard({super.key, required this.sale, this.onTap, this.now});
 
+  /// The card's own padding, inside its rounded edge.
+  ///
+  /// On the widget rather than its state because a test needs it: four places
+  /// depended on this number and three carried their own copy -- this padding,
+  /// the artwork's sizing, the clock's reserve, and a test computing the room
+  /// the clock should get. Taking the visible one from 11 to 8 left the other
+  /// three behind, so the card reserved space for a layout it no longer had
+  /// and the test failed a card that was doing exactly what it was asked.
+  static const pad = 8.0;
+
   final FlashSale sale;
 
   /// Where the card goes. The deals page, same as the panel below it -- a card
@@ -84,24 +98,127 @@ class _FlashSaleCardState extends State<FlashSaleCard> {
     }
   }
 
+  /// The clock in its panel, unchanged.
+  Widget _timerPanel() {
+    // The clock in a panel of its own, a shade lighter than the
+    // card. It is the reason this block is at the top of the page,
+    // so it gets a frame rather than sitting loose on the teal.
+    return Container(
+      width: double.infinity,
+      // Vertical only, and no ground of its own. The banner is the card's own
+      // background now and shows through here; a wash, a hairline and a lift
+      // over artwork would read as a panel sitting on the picture rather than
+      // as the clock the picture is for.
+      //
+      // The cells inside keep theirs -- white boxes, red digits, white labels
+      // -- which is what keeps the figures legible over the red.
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      // Room to shrink only if it ever needs it. At the sizes people
+      // actually use this does nothing; at 2x text the four cells
+      // are wider than a phone and something has to give, and a
+      // clock scaled a little beats an overflow.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SaleCountdown(
+          endsAt: widget.sale.endsAt,
+          now: widget.now,
+          // Days, Hours, Minutes, Seconds, each labelled and each in
+          // its own box. The light variant, because the card under
+          // it is white now -- white boxes and white unit labels
+          // would both disappear into it.
+          boxed: true,
+          // The smaller cells. Every figure and label is still
+          // there and still legible; they simply stop taking a
+          // block's worth of height on a card that was asked to
+          // read as a banner.
+          compact: true,
+          // The on-colour variant: white boxes with red digits,
+          // white unit labels, white colons. It is the variant this
+          // card used while it was teal, and it is what the card
+          // needs again now that it is filled.
+          onLight: false,
+          onEnded: () {
+            if (mounted) setState(() => _ended = true);
+          },
+        ),
+      ),
+    );
+  }
+
+  /// The shape the artwork is drawn at in the card's corner.
+  ///
+  /// Not the file's own 3:1 -- that is a wide banner, and the corner wants the
+  /// gift itself. The box is filled from the right, so what falls outside it is
+  /// the flat red the artwork has nothing in.
+  static const _artAspect = 1.25;
+
+  /// How much of the card's width the artwork takes, and how tall it is drawn.
+  ///
+  /// From the reference: a little over a fifth of the width, standing about
+  /// four fifths of the card's height in its bottom-right corner. Shares rather
+  /// than fixed points, so it keeps its place on a phone, a tablet and a
+  /// desktop window alike -- with a ceiling on the height, because the card's
+  /// height comes from the type on it and not from the width of the screen.
+  static const _artShare = 0.22;
+  static const _artMaxHeight = 86.0;
+
+  /// What the clock needs before the artwork is given anything, and the gap
+  /// between the two.
+  ///
+  /// 250 is measured: the four cells, their colons, the labels under them and
+  /// the panel's own padding and border come to a little over 230, and below
+  /// that the panel's FittedBox starts scaling the clock down.
+  static const _clockFloor = 250.0;
+  static const _artGap = 8.0;
+
+  /// The artwork's box, or null on a card too narrow to give it one.
+  static Size? _artSize(double cardWidth) {
+    const padding = FlashSaleCard.pad;
+    final room = cardWidth - padding * 2 - _artGap - _clockFloor + padding;
+    final width = math.min(
+      math.min(cardWidth * _artShare, room),
+      _artMaxHeight * _artAspect,
+    );
+    if (width < 56) return null;
+    return Size(width, width / _artAspect);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Gone the moment it runs out. A "Flash Sale" heading over a clock reading
     // zeros is worse than no card: it advertises an offer that has stopped.
     if (_ended) return const SizedBox.shrink();
 
-    final theme = Theme.of(context);
-    final subhead = widget.sale.subhead;
-
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      // 97% of the screen, centred, which is the measure every section down
+      // this page shares -- see [PageWidth].
+      //
+      // Six above rather than fourteen. This is the gap between the hero and
+      // this card, and it is one of the two largest at the top of the page --
+      // the last pass at the home page's spacing missed it entirely, because
+      // it belongs to the card rather than to the feed that stacks it.
+      //
+      // [FlashSaleCardSkeleton] carries the same measure and has to move with
+      // it, or the page shifts when the sale lands.
+      padding: PageWidth.insets(context, top: 6),
       // Outside the Material, which clips: a shadow drawn on the Ink inside
       // would be cut off at the very edge it is meant to fall past.
       child: DecoratedBox(
         decoration: BoxDecoration(
           // Rounded to the card's own radius, so the shadow follows its
           // corners rather than boxing them.
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard + 10),
+          //
+          // The theme's plain card radius, which is what the product cards and
+          // the deal tiles take. It was 22, then briefly the carousel's 16 --
+          // and 22 to 16 turned out to be invisible at this size, six points of
+          // radius on a card the width of the screen. 12 is a step you can
+          // actually see, and it lines this card up with the cards rather than
+          // with the banner above it.
+          //
+          // All four places that carry the radius move together: this shadow,
+          // the Material that clips, the Ink beneath the artwork, and the
+          // skeleton that stands in while the sale loads.
+          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
           // Two layers rather than one, which is what makes it read as a
           // shadow instead of a grey outline: a close, tighter one for the
           // contact edge, and a wider, fainter one for the diffusion that
@@ -128,135 +245,137 @@ class _FlashSaleCardState extends State<FlashSaleCard> {
           // rather than on the page, which is why the card needs no border: the
           // colour is the edge.
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard + 10),
+          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
           clipBehavior: Clip.antiAlias,
           child: Ink(
             decoration: BoxDecoration(
+              // The gradient stays underneath the picture: it is what the card
+              // is if the file ever fails to load, and what shows through the
+              // scrim on the left where the artwork is only flat red anyway.
               gradient: AppColors.flashSaleBand,
-              borderRadius: BorderRadius.circular(AppTheme.radiusCard + 10),
+              borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+              // The supplied banner, filling the card from the right.
+              //
+              // Cover rather than fill: the file is 3:1 and this card is nearer
+              // 2.7:1, so covering it crops a little from one side and nothing
+              // is stretched. Aligned right, so what is cropped is the flat red
+              // at the artwork's left end and what is kept is the gift.
+              image: const DecorationImage(
+                image: AssetImage('assets/images/gift_banner.jpg'),
+                fit: BoxFit.cover,
+                alignment: Alignment.centerRight,
+              ),
             ),
             child: InkWell(
               onTap: widget.onTap,
-              child: Padding(
-                // Trimmed from 16 with the rest of the card: the height was
-                // asked to come down to the promo banner's, and padding is the
-                // part of that which costs nothing to read.
-                padding: const EdgeInsets.all(11),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        // The bolt, on a tile a shade lighter than the card so it
-                        // reads as a mark rather than as a hole. Commerce Orange
-                        // itself: the card's own gradient is that colour with the
-                        // light taken out, so the tile is the accent at full
-                        // strength. White on it is 3.90:1, which an icon needs 3
-                        // for.
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: AppColors.accent,
-                            borderRadius: BorderRadius.circular(10),
-                            boxShadow: _lift,
-                          ),
-                          child: const Icon(
-                            Icons.bolt,
-                            size: 20,
-                            color: AppColors.onAccent,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        // Expanded, and no Spacer after it. It was Flexible with a
-                        // Spacer beside it, and both are flex:1 -- so the row split
-                        // its free space evenly between the words and the gap, and
-                        // the label ellipsised to "Flash ..." on a 412dp handset
-                        // with room to spare. Taking the space here and letting the
-                        // button sit at the end of it is the same layout with the
-                        // words intact.
-                        Expanded(
-                          child: Text(
-                            'Flash Sales',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              // White on the red now. The heading was red on white
-                              // until the card was filled; red on red is nothing.
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.3,
-                              shadows: _inkLift,
-                            ),
-                          ),
-                        ),
-                        if (widget.onTap != null) const _ShopNow(),
-                      ],
-                    ),
-                    if (subhead != null && subhead.isNotEmpty) ...[
-                      const SizedBox(height: 5),
-                      _Subhead(text: subhead),
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  final art = _artSize(box.maxWidth);
+                  return Stack(
+                    children: [
+                      // A scrim over the artwork's left-hand side, where every
+                      // word on this card is set.
+                      //
+                      // The picture is busy on the right and plain on the left,
+                      // so this is heaviest where the words are and gone by the
+                      // time it reaches the gift: the heading, the sentence and
+                      // the clock keep the contrast they had, and the artwork
+                      // keeps the part of it worth seeing.
+                      const Positioned.fill(child: _BannerScrim()),
+                      _content(
+                        context,
+                        // The clock stops before the gift begins.
+                        reserve: art == null
+                            ? 0
+                            : art.width - FlashSaleCard.pad + _artGap,
+                      ),
                     ],
-                    const SizedBox(height: 6),
-                    // The clock in a panel of its own, a shade lighter than the
-                    // card. It is the reason this block is at the top of the page,
-                    // so it gets a frame rather than sitting loose on the teal.
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        boxShadow: _lift,
-                        // A wash of white over the red rather than a colour of its
-                        // own, so the panel stays a shade of the card however the
-                        // gradient behind it changes.
-                        color: Colors.white.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(
-                          AppTheme.radiusCard,
-                        ),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.18),
-                        ),
-                      ),
-                      // Room to shrink only if it ever needs it. At the sizes people
-                      // actually use this does nothing; at 2x text the four cells
-                      // are wider than a phone and something has to give, and a
-                      // clock scaled a little beats an overflow.
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: SaleCountdown(
-                          endsAt: widget.sale.endsAt,
-                          now: widget.now,
-                          // Days, Hours, Minutes, Seconds, each labelled and each in
-                          // its own box. The light variant, because the card under
-                          // it is white now -- white boxes and white unit labels
-                          // would both disappear into it.
-                          boxed: true,
-                          // The smaller cells. Every figure and label is still
-                          // there and still legible; they simply stop taking a
-                          // block's worth of height on a card that was asked to
-                          // read as a banner.
-                          compact: true,
-                          // The on-colour variant: white boxes with red digits,
-                          // white unit labels, white colons. It is the variant this
-                          // card used while it was teal, and it is what the card
-                          // needs again now that it is filled.
-                          onLight: false,
-                          onEnded: () {
-                            if (mounted) setState(() => _ended = true);
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Everything written on the card, over the artwork.
+  Widget _content(BuildContext context, {required double reserve}) {
+    final theme = Theme.of(context);
+    final subhead = widget.sale.subhead;
+
+    return Padding(
+      // Trimmed from 16, then to 11, and now to [pad]: the card's height is
+      // the bulk between the hero and the promo banners, and padding is the
+      // part of it that costs nothing to read.
+      //
+      // [FlashSaleCardSkeleton.height] mirrors what this produces and is
+      // pinned against the real card by a test, so it moves with this.
+      padding: const EdgeInsets.all(FlashSaleCard.pad),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              // The bolt, on a tile a shade lighter than the card so it
+              // reads as a mark rather than as a hole. Commerce Orange
+              // itself: the card's own gradient is that colour with the
+              // light taken out, so the tile is the accent at full
+              // strength. White on it is 3.90:1, which an icon needs 3
+              // for.
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppColors.accent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: _lift,
+                ),
+                child: const Icon(
+                  Icons.bolt,
+                  size: 20,
+                  color: AppColors.onAccent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Expanded, and no Spacer after it. It was Flexible with a
+              // Spacer beside it, and both are flex:1 -- so the row split
+              // its free space evenly between the words and the gap, and
+              // the label ellipsised to "Flash ..." on a 412dp handset
+              // with room to spare. Taking the space here and letting the
+              // button sit at the end of it is the same layout with the
+              // words intact.
+              Expanded(
+                child: Text(
+                  'Flash Sales',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    // White on the red now. The heading was red on white
+                    // until the card was filled; red on red is nothing.
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                    shadows: _inkLift,
+                  ),
+                ),
+              ),
+              if (widget.onTap != null) const _ShopNow(),
+            ],
+          ),
+          if (subhead != null && subhead.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            _Subhead(text: subhead),
+          ],
+          const SizedBox(height: 4),
+          // The clock, ending where the corner artwork begins.
+          Padding(
+            padding: EdgeInsets.only(right: reserve),
+            child: _timerPanel(),
+          ),
+        ],
       ),
     );
   }
@@ -357,6 +476,36 @@ class _ShopNow extends StatelessWidget {
             color: AppColors.flashSaleBottom,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The wash between the banner and the words set on it.
+///
+/// The card's own colour at the left, where the heading, the sentence and the
+/// clock are, fading out across the middle so the gift at the right end is left
+/// as the artwork drew it. Without it the type sits on a picture with its own
+/// highlights and loses its edge; with it the card reads as one thing.
+class _BannerScrim extends StatelessWidget {
+  const _BannerScrim();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            // The card's own red at nearly full strength under the words, and
+            // nothing at all by the time it reaches the gift.
+            Color(0xF2B5301A),
+            Color(0xD9B5301A),
+            Color(0x00B5301A),
+          ],
+          stops: [0.0, 0.42, 0.78],
+        ),
       ),
     );
   }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/page_width.dart';
+
 import '../cart/presentation/cart_screen.dart';
 import '../../../core/ui/action_status.dart';
 import '../../../shared/widgets/loadable_view.dart';
@@ -10,6 +12,7 @@ import '../cart/data/cart_store.dart';
 import '../catalog/presentation/catalog_visuals.dart';
 import '../deals/presentation/deals_screen.dart';
 import '../flash_sale/presentation/flash_sale_card.dart';
+import '../flash_sale/presentation/flash_sale_card_skeleton.dart';
 import '../search/presentation/search_results_screen.dart';
 import 'data/fallback_banners.dart';
 import '../catalog/presentation/browse_screen.dart';
@@ -143,7 +146,8 @@ class _HomeFeedState extends State<HomeFeed> {
     // with the name written across the foot of it, on a scrim. Reusing it
     // rather than drawing a second kind of category tile is what keeps the two
     // blocks reading as one page -- and the caption cannot be clipped by a long
-    // name, because inside a square frame there is nothing to overflow.
+    // name, because inside a square frame there is nothing to overflow.'
+
     return SubcategoryGrid(
       title: 'Fashion favourites',
       // Describes the four tiles rather than praising them. "Best prices" or
@@ -151,6 +155,14 @@ class _HomeFeedState extends State<HomeFeed> {
       subtitle: 'Clothing, bags and beauty.',
       leadingIcon: Icons.checkroom_outlined,
       actionLabel: 'Shop more',
+      // The page's own measure, as the hero and the flash sale above it use.
+      // These sections were inset a flat sixteen points, which on a phone is
+      // three times the margin the rest of the page keeps and left them
+      // visibly narrower than everything they sit under.
+      margin: PageWidth.marginOf(context),
+      // Thirteen of these stack down this page, so the rhythm between them is
+      // paid twelve times over. See [SectionHeader.denseGapAbove].
+      dense: true,
       children: picks,
       onSelected: (category) => _openSearch(context, cid: category.cid),
       onSeeAll: () =>
@@ -236,6 +248,8 @@ class _HomeFeedState extends State<HomeFeed> {
       subtitle: 'Components and modules by category.',
       leadingIcon: Icons.memory_outlined,
       actionLabel: 'Shop more',
+      margin: PageWidth.marginOf(context),
+      dense: true,
       children: picks,
       // Into the category, not straight at a product list. These four each hold
       // a level of their own -- Antenna six subcategories, Capacitor twelve --
@@ -297,6 +311,8 @@ class _HomeFeedState extends State<HomeFeed> {
       subtitle: 'Camping, training and match-day kit.',
       leadingIcon: Icons.hiking_outlined,
       actionLabel: 'Shop more',
+      margin: PageWidth.marginOf(context),
+      dense: true,
       // Two across rather than the index's three: four tiles meant to be
       // looked at, with room for the names the catalogue actually uses.
       columns: 2,
@@ -381,6 +397,8 @@ class _HomeFeedState extends State<HomeFeed> {
       subtitle: 'Kitchen, laundry and living.',
       leadingIcon: Icons.kitchen_outlined,
       actionLabel: 'Shop more',
+      margin: PageWidth.marginOf(context),
+      dense: true,
       children: picks,
       // Into the category rather than straight at a product list, as the
       // electronics tiles do. Each of these holds dozens of subcategories, and
@@ -417,6 +435,9 @@ class _HomeFeedState extends State<HomeFeed> {
         quantity: product.minOrder,
         minOrder: product.minOrder,
         category: product.categoryName,
+        // The catalogue's own id beside the label. The cart's recommendations
+        // can query this directly; the name they can only guess at.
+        categoryCid: product.categoryCid,
         source: '1688',
       ),
     );
@@ -506,7 +527,9 @@ class _HomeFeedState extends State<HomeFeed> {
       child: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const SizedBox(height: 14),
+          // Above the banner, under the department strip. Eight rather than
+          // fourteen: the strip already keeps its own room beneath it.
+          const SizedBox(height: 8),
           // Not a LoadableView: this is the one block that must never show an
           // error. A red retry panel where the storefront's artwork belongs is
           // worse than a storefront -- and the rails below read the same server,
@@ -559,8 +582,20 @@ class _HomeFeedState extends State<HomeFeed> {
           ListenableBuilder(
             listenable: store.flashSale,
             builder: (context, _) {
-              final sale = store.flashSale.value;
-              if (sale == null || sale.items.isEmpty) {
+              final loadable = store.flashSale;
+              final sale = loadable.value;
+              // Nothing yet. While the request is still out the slot keeps the
+              // card's height, so a sale that lands a second later takes the
+              // space it was already given instead of pushing the banners below
+              // it down the page. Once the server has answered and there is no
+              // sale, the slot goes entirely -- which is the ordinary case, and
+              // it must not leave a hole.
+              if (sale == null) {
+                return loadable.isLoading
+                    ? const FlashSaleCardSkeleton()
+                    : const SizedBox.shrink();
+              }
+              if (sale.items.isEmpty) {
                 return const SizedBox.shrink();
               }
               void openDeals() => Navigator.of(context)
@@ -733,7 +768,7 @@ class _NoCategories extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+      padding: PageWidth.insets(context, top: 14, bottom: 14),
       child: Row(
         children: [
           Icon(
@@ -788,6 +823,18 @@ class _DepartmentBlock extends StatelessWidget {
 
     return SubcategoryGrid(
       title: 'Browse ${department.name}',
+      // The same measure as the curated blocks above, so every Browse section
+      // down the page lines up with them and with the hero.
+      margin: PageWidth.marginOf(context),
+      dense: true,
+      // Three across rather than two, and six tiles rather than four. A
+      // department has about forty children, so this shows half again as many
+      // of them in roughly two thirds the height -- which is what the width
+      // freed by the 97% measure is for. The curated blocks above stay at two:
+      // they hold exactly four, and three across would leave one on a row of
+      // its own.
+      columns: 3,
+      shown: 6,
       children: children,
       onSelected: onOpenChild,
       onSeeAll: onSeeAll,

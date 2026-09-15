@@ -69,10 +69,19 @@ class ServerOrder {
     this.paymentMethod,
     this.shippingAddress = const {},
     this.items = const [],
+    this.raw = const {},
   });
 
   final String id;
   final String orderNumber;
+
+  /// The row exactly as the server sent it.
+  ///
+  /// Kept for what this model does not name: an invoice or receipt prints
+  /// whatever charges, billing details and document numbers the server
+  /// records, and those are read from here only where they are present --
+  /// never assumed to exist.
+  final Map<String, dynamic> raw;
 
   /// Free text, lowercased on the way in so every comparison downstream can
   /// stop worrying about case.
@@ -118,6 +127,7 @@ class ServerOrder {
     items: asRows(json['items'] ?? json['order_items'])
         .map(ServerOrderItem.fromJson)
         .toList(growable: false),
+    raw: json,
   );
 }
 
@@ -186,6 +196,7 @@ class TrackingShipment {
     this.etaFrom,
     this.etaTo,
     this.timeline = const [],
+    this.itemCount,
   });
 
   final String shipmentNo;
@@ -201,6 +212,16 @@ class TrackingShipment {
   final DateTime? etaTo;
   final List<TrackingStep> timeline;
 
+  /// How many of the order's items travel in this parcel, when the server
+  /// says.
+  ///
+  /// Null is "it did not say", which is not zero. The shop assigns items to
+  /// shipments -- its own admin API has an endpoint for exactly that -- so
+  /// the number exists; whether this response carries it is the server's
+  /// business, and a count invented here would be a claim about which parcel
+  /// somebody's goods are in.
+  final int? itemCount;
+
   factory TrackingShipment.fromJson(Map<String, dynamic> json) {
     final eta = asMap(json['eta']);
     return TrackingShipment(
@@ -215,6 +236,12 @@ class TrackingShipment {
       timeline: asRows(json['timeline'])
           .map(TrackingStep.fromJson)
           .toList(growable: false),
+      // Whichever way the server counts them: a number, or the rows
+      // themselves.
+      itemCount:
+          asInt(json['itemCount']) ??
+          asInt(json['item_count']) ??
+          (json['items'] is List ? (json['items'] as List).length : null),
     );
   }
 }

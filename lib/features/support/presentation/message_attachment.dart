@@ -17,6 +17,22 @@ import '../data/support_attachment.dart';
 /// credentials -- the bucket is private, so there is no address to hand an
 /// [Image] directly, and that is also what keeps one shopper out of another's
 /// files.
+/// One corner for everything a message carries -- sent or received, picture
+/// or document -- so a thread of mixed attachments reads as one set.
+const double _attachmentRadius = 10;
+
+/// How large a picture may be before it stops being a preview.
+///
+/// It had no ceiling at all: inside the bubble's column the height was
+/// unbounded, so a portrait photograph took the full 78% of the width the
+/// bubble allows and as much height again as its aspect asked for. One
+/// attachment filled the screen and the conversation around it disappeared.
+const Size _pictureCapPhone = Size(220, 200);
+
+/// Roomier where there is room. A phone's ceiling on a tablet or a desktop
+/// window reads as a stamp in the corner of a bubble twice its width.
+const Size _pictureCapWide = Size(300, 260);
+
 class MessageAttachment extends StatelessWidget {
   const MessageAttachment({
     super.key,
@@ -32,9 +48,16 @@ class MessageAttachment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SupportAttachmentRepository.isImageKey(storageKey)
-        ? _Picture(storageKey: storageKey, onDark: onDark)
-        : _Document(storageKey: storageKey, onDark: onDark);
+    // The gap above belongs to the attachment as a whole rather than to either
+    // shape it can take. A picture that will not decode falls back to being
+    // named, and while both carried their own padding that fallback set itself
+    // twice as far from the message as the picture it replaced.
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: SupportAttachmentRepository.isImageKey(storageKey)
+          ? _Picture(storageKey: storageKey, onDark: onDark)
+          : _Document(storageKey: storageKey, onDark: onDark),
+    );
   }
 }
 
@@ -73,45 +96,110 @@ class _Picture extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cap = MediaQuery.sizeOf(context).shortestSide >= 600
+        ? _pictureCapWide
+        : _pictureCapPhone;
+    final repository = SupportAttachmentRepository.instance;
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: FutureBuilder(
-          future: SupportAttachmentRepository.instance.download(storageKey),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return _Document(storageKey: storageKey, onDark: onDark);
-            }
-            final bytes = snapshot.data;
-            if (bytes == null) {
-              return SizedBox(
-                height: 120,
-                child: Center(
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: onDark ? theme.colorScheme.onPrimary : null,
-                    ),
-                  ),
-                ),
-              );
-            }
-            return InkWell(
-              onTap: () => _preview(context, bytes, storageKey),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(_attachmentRadius),
+      child: FutureBuilder(
+        future: repository.download(storageKey),
+        // A picture already fetched paints on its first frame rather than
+        // spending one as the loading box, which is what made the thread
+        // jerk as pictures scrolled back into view.
+        initialData: repository.downloaded(storageKey),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _Document(storageKey: storageKey, onDark: onDark);
+          }
+          final bytes = snapshot.data;
+          if (bytes == null) return _loading(theme, cap);
+          return InkWell(
+            onTap: () => _preview(context, bytes, storageKey),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: cap.width,
+                maxHeight: cap.height,
+              ),
+              // Contain rather than cover: the cap is a ceiling, not a shape
+              // to fill. The picture keeps its own proportions, and nothing is
+              // cropped out of the preview to make it fit -- which is what a
+              // cover fit would have done as soon as the box stopped matching
+              // the photograph's aspect.
               child: Image.memory(
                 bytes,
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
+                // Decoded at the size it is shown, not the camera's. A phone
+                // photograph decoded whole is ~48 MB for a 220pt preview: two
+                // or three of them overran the image cache, so every picture
+                // scrolled back to was decoded again -- laid out at nothing
+                // until it was -- and the full texture was scaled down on
+                // every frame of the scroll. The preview dialog below still
+                // opens the original.
+                cacheWidth: (cap.width * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
                 // A picture that will not decode is still a file that was
                 // sent: it falls back to being named rather than vanishing.
                 errorBuilder: (context, _, _) =>
                     _Document(storageKey: storageKey, onDark: onDark),
+                // The badge rides with the decoded frame rather than sitting
+                // over the whole slot, because the error path above replaces
+                // the picture with a named file and skips this builder --
+                // stacked outside, an "open larger" mark would have been
+                // stamped across the very file that could not be shown.
+                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                  return Stack(
+                    children: [
+                      child,
+                      // Says the picture opens, without laying a control
+                      // across the face of it -- what a gallery uses.
+                      Positioned(
+                        right: 6,
+                        bottom: 6,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.open_in_full,
+                              size: 13,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
-            );
-          },
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// A box roughly the size of what is coming, rather than a bare spinner on
+  /// an unconstrained line: the bubble settles once instead of jumping when
+  /// the bytes land.
+  Widget _loading(ThemeData theme, Size cap) {
+    return Container(
+      width: cap.width,
+      height: cap.height * 0.7,
+      alignment: Alignment.center,
+      color: onDark
+          ? theme.colorScheme.onPrimary.withValues(alpha: 0.12)
+          : theme.colorScheme.surface.withValues(alpha: 0.65),
+      child: SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: onDark ? theme.colorScheme.onPrimary : null,
         ),
       ),
     );
@@ -171,34 +259,67 @@ class _Document extends StatelessWidget {
         : theme.colorScheme.onSurface;
     final name = SupportAttachmentRepository.fileNameFor(storageKey);
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: InkWell(
-        onTap: () => _open(context, storageKey),
-        borderRadius: BorderRadius.circular(8),
+    return InkWell(
+      onTap: () => _open(context, storageKey),
+      borderRadius: BorderRadius.circular(_attachmentRadius),
+      child: Container(
+        // A chip rather than an underlined line of text. The underline was the
+        // only thing saying this could be opened, and against the filled
+        // bubble it read as part of the message: a bounded surface carries
+        // that better, and gives the picture beside it a shape to match.
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: onDark
+              ? theme.colorScheme.onPrimary.withValues(alpha: 0.12)
+              : theme.colorScheme.surface.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(_attachmentRadius),
+          border: Border.all(color: ink.withValues(alpha: 0.20)),
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(_icon(name), size: 18, color: ink),
             const SizedBox(width: 8),
             Flexible(
-              child: Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: ink,
-                  decoration: TextDecoration.underline,
-                  decorationColor: ink.withValues(alpha: 0.5),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: ink,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    _kind(name),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: ink.withValues(alpha: 0.70),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Icon(Icons.open_in_new, size: 14, color: ink),
           ],
         ),
       ),
     );
+  }
+
+  /// What kind of file it is, taken from its own name.
+  ///
+  /// The message carries a key and nothing else -- no size, no mime type --
+  /// so this says only what is actually known. Inventing a figure to fill the
+  /// line would be worse than the line not being there.
+  static String _kind(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot == name.length - 1) return 'File';
+    return '${name.substring(dot + 1).toUpperCase()} file';
   }
 
   IconData _icon(String name) {

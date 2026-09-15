@@ -16,6 +16,7 @@ import 'package:gtradea_amazon/features/support/presentation/support_button.dart
 import 'package:gtradea_amazon/features/support/presentation/support_tickets_screen.dart';
 import 'package:gtradea_amazon/features/support/presentation/ticket_detail_screen.dart';
 import 'package:gtradea_amazon/main.dart';
+import 'package:gtradea_amazon/shared/widgets/brand_lockup.dart';
 import 'package:gtradea_amazon/shared/widgets/brand_wordmark.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -153,40 +154,41 @@ void main() {
   });
 
   group('the header still holds its shape', () {
-    testWidgets('the logo has not moved or changed size', (tester) async {
-      // The whole constraint on this change: add two things, move nothing.
+    testWidgets('the brand keeps its inset, at the size the screen allows', (
+      tester,
+    ) async {
       _phone(tester);
       await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
       await tester.pump();
 
-      final logo = tester.getRect(find.byType(BrandWordmark));
+      final logo = tester.getRect(find.byType(BrandLockup));
       expect(logo.left, 16, reason: 'same inset as before');
 
-      // The drawn height, not the box: the widget fills the row's 48pt either
-      // way, and it is the mark inside that must not have been resized.
+      // 30 on a phone this width, 26 below 360 and 34 from a tablet up: the
+      // lockup grew when the header did, and it is sized rather than fixed so
+      // it cannot crowd a small screen.
+      final lockup = tester.widget<BrandLockup>(find.byType(BrandLockup));
+      expect(lockup.height, 30);
+      // The mark inside it is the on-dark artwork, unchanged.
       final mark = tester.widget<BrandWordmark>(find.byType(BrandWordmark));
-      expect(mark.height, 30);
+      expect(mark.height, lockup.height);
     });
 
-    testWidgets('the bell still ends on the same margin', (tester) async {
+    testWidgets('the action group ends on the margin', (tester) async {
       _phone(tester);
       await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
       await tester.pump();
 
       final width =
           tester.view.physicalSize.width / tester.view.devicePixelRatio;
-      final bell = tester.getRect(
-        find.descendant(
-          of: find.byType(NotificationBell),
-          matching: find.byIcon(Icons.notifications_none),
-        ),
-      );
+      // The group is a block now rather than three loose IconButtons, so it is
+      // the block that lands on the margin -- and its last tile with it. That
+      // is the bell again: messages and notifications were swapped by request,
+      // so the last thing on the row is notifications.
+      final group = tester.getRect(find.byType(NotificationBell));
 
-      // Still exactly on the margin after the icons shrank. This assertion is
-      // what caught the drift: the header's right inset used to be a hardcoded
-      // 12, which was half of (48 - 24) and silently assumed a 24pt glyph, so
-      // a 21pt one pushed the bell 1.5pt past its margin.
-      expect(bell.right, width - 16);
+      expect(group.right, lessThanOrEqualTo(width - 16));
+      expect(group.right, greaterThan(width - 40), reason: 'on the margin');
     });
 
     testWidgets('the search pill spans the header, compactly', (tester) async {
@@ -203,22 +205,90 @@ void main() {
       // 38 by request: the pill was made more compact. It is short for a tap
       // target and gets away with it because it spans the header -- the height
       // is the only tight dimension.
-      expect(pill.height, 38);
+      //
+      // Compared loosely because this measures the laid-out rect, not the
+      // widget: the pill is a literal `SizedBox(height: 38)`, but the row above
+      // it now ends on a fractional y, and bottom-minus-top came back as
+      // 38.000000000000014. Pinning the exact double would be pinning the
+      // arithmetic of whatever sits above the pill.
+      expect(pill.height, moreOrLessEquals(38));
     });
 
-    testWidgets('the icons keep their order: chat, tracker, bell', (
+    testWidgets('the microphone and the camera sit close together', (
       tester,
     ) async {
+      // Pinned because this silently did not work once. Both buttons were
+      // given a 26pt box and stayed 48pt apart: an IconButton takes Material's
+      // padded tap target from the theme and expands to a 48pt minimum
+      // *outside* its constraints, so the constant read 26 while the layout
+      // never moved.
+      //
+      // What is asserted is therefore the rendered distance between the two
+      // glyphs, never the constant that is supposed to produce it -- measuring
+      // the constant is what made the first attempt look finished.
+      _phone(tester);
+      await tester.pumpWidget(
+        _wrap(
+          SearchHeader(
+            onTap: () {},
+            onVoiceResult: (_) {},
+            onImageSearch: () {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final mic = tester.getRect(find.byIcon(Icons.mic_none));
+      final cam = tester.getRect(find.byIcon(Icons.center_focus_weak));
+
+      expect(
+        cam.left - mic.right,
+        lessThanOrEqualTo(10),
+        reason: 'was 30 while the tap target overruled the box',
+      );
+      expect(
+        cam.left - mic.right,
+        greaterThan(0),
+        reason: 'close together, not overlapping',
+      );
+      expect(mic.top, cam.top, reason: 'and still level with each other');
+    });
+
+    testWidgets('the actions keep their order: orders, messages, alerts', (
+      tester,
+    ) async {
+      // Messages and notifications were swapped by request. The order is the
+      // assertion: orders, then the conversation about them, then the alerts.
       _phone(tester);
       await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
       await tester.pump();
 
-      final chat = tester.getRect(find.byType(SupportButton));
       final tracker = tester.getRect(find.byType(OrderTrackerButton));
+      final messages = tester.getRect(find.byType(SupportButton));
       final bell = tester.getRect(find.byType(NotificationBell));
 
-      expect(chat.right, lessThanOrEqualTo(tracker.left));
-      expect(tracker.right, lessThanOrEqualTo(bell.left));
+      expect(tracker.right, lessThanOrEqualTo(messages.left));
+      expect(messages.right, lessThanOrEqualTo(bell.left));
+    });
+
+    testWidgets('each action says what it is', (tester) async {
+      // The words are the whole point of the group: three bare glyphs on a
+      // teal band were a guessing game, and the truck read as delivery rather
+      // than as orders.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      for (final word in ['Orders', 'Notifications', 'Messages']) {
+        expect(
+          find.descendant(
+            of: find.byType(SearchHeader),
+            matching: find.text(word),
+          ),
+          findsOneWidget,
+          reason: word,
+        );
+      }
     });
 
     testWidgets('nothing overflows once both are added', (tester) async {
@@ -239,7 +309,7 @@ void main() {
       await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
       await tester.pump();
 
-      final chat = tester.widget<SupportButton>(find.byType(SupportButton));
+      final cart = tester.widget<SupportButton>(find.byType(SupportButton));
       final tracker = tester.widget<OrderTrackerButton>(
         find.byType(OrderTrackerButton),
       );
@@ -247,9 +317,9 @@ void main() {
         find.byType(NotificationBell),
       );
 
-      expect(chat.size, tracker.size);
+      expect(cart.size, tracker.size);
       expect(tracker.size, bell.size);
-      expect(chat.size, lessThan(24), reason: 'smaller than Material default');
+      expect(cart.size, lessThan(24), reason: 'smaller than Material default');
     });
 
     testWidgets('the glyphs are drawn at the size the row asks for', (
@@ -283,9 +353,6 @@ void main() {
       await tester.pump();
 
       final pin = tester.widget<Icon>(find.byIcon(Icons.location_on_outlined));
-      final chevron = tester.widget<Icon>(
-        find.byIcon(Icons.keyboard_arrow_down),
-      );
       final bell = tester.widget<NotificationBell>(
         find.byType(NotificationBell),
       );
@@ -293,30 +360,79 @@ void main() {
       // Smaller than the header icons: it sits inside a labelled control
       // rather than standing alone, so it reads at a smaller size than they do.
       expect(pin.size, lessThan(bell.size));
-      // The two ends of one control, kept a step apart as they were.
-      expect(chevron.size, lessThan(pin.size as num));
+
+      // The chevron used to be asserted here too, a step smaller than the pin.
+      // It is not drawn any more: the coin chip now always shares this row, so
+      // the location control is permanently in its compact form, and compact
+      // drops the chevron to buy the address its words back. Pinned as an
+      // absence rather than dropped, so the day the chip goes away again this
+      // says what changed.
+      expect(
+        find.byIcon(Icons.keyboard_arrow_down),
+        findsNothing,
+        reason: 'compact location control, because the coin chip is beside it',
+      );
     });
 
-    testWidgets('but every tap target is still a full 48', (tester) async {
-      // The row got tighter. The things people have to hit did not.
+    testWidgets('and the group is tight without losing the targets', (
+      tester,
+    ) async {
+      // The tiles are equal columns rather than three boxes sized by how long
+      // their words are, and each is still something a thumb can hit: the
+      // glyph shrank when the label arrived under it, the target did not.
       _phone(tester);
       await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
       await tester.pump();
 
+      final sizes = <String, Size>{};
       for (final button in [
-        SupportButton,
         OrderTrackerButton,
         NotificationBell,
+        SupportButton,
       ]) {
         final box = tester.getSize(
           find.descendant(
             of: find.byType(button),
-            matching: find.byType(IconButton),
+            matching: find.byType(InkWell),
           ),
         );
-        expect(box.width, greaterThanOrEqualTo(48), reason: '$button');
-        expect(box.height, greaterThanOrEqualTo(48), reason: '$button');
+        sizes['$button'] = box;
+        expect(box.width, greaterThanOrEqualTo(44), reason: '$button');
+        expect(box.height, greaterThanOrEqualTo(36), reason: '$button');
       }
+
+      expect(sizes.values.map((s) => s.width).toSet(), hasLength(1));
+    });
+
+    testWidgets('compacting the three did not grow the blurred field', (
+      tester,
+    ) async {
+      // The condition the compaction was asked under: smaller glyphs and
+      // smaller words inside the *existing* block, not a taller block. It was
+      // 52 tall when the tiles carried 20pt glyphs over 10.5pt labels; it is
+      // 44 now, which is the tap-target floor (36) plus the block's own 4pt of
+      // padding, top and bottom.
+      //
+      // Pinned against the field beside it rather than only as a number: the
+      // two blurred fields read as a pair, and the actions block used to
+      // overhang its neighbour by ten points.
+      _phone(tester);
+      await tester.pumpWidget(_wrap(SearchHeader(onTap: () {})));
+      await tester.pump();
+
+      Size block(Type of) => tester.getSize(
+        find
+            .ancestor(of: find.byType(of), matching: find.byType(Container))
+            .first,
+      );
+
+      final actions = block(SupportButton);
+      expect(actions.height, lessThanOrEqualTo(44));
+      expect(
+        actions.height - block(DeliveryLocationButton).height,
+        lessThanOrEqualTo(2),
+        reason: 'level with the field beside it, not overhanging it',
+      );
     });
   });
 
@@ -411,11 +527,17 @@ void main() {
       // The bell and the tracker each badge a real count. This endpoint gives
       // no unread figure, and a dot invented from nothing would claim someone
       // is waiting when nobody knows.
+      //
+      // The tile it shares with those two always builds the badge widget and
+      // hides it at zero, so what is asserted is that nothing is shown rather
+      // than that nothing is built.
       _phone(tester);
       await tester.pumpWidget(_wrap(const SupportButton()));
       await tester.pump();
 
-      expect(find.byType(Badge), findsNothing);
+      for (final badge in tester.widgetList<Badge>(find.byType(Badge))) {
+        expect(badge.isLabelVisible, isFalse);
+      }
     });
   });
 

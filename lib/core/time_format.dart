@@ -78,8 +78,15 @@ String formatDateHeading(DateTime when, {DateTime? now}) {
 
   if (difference == 0) return 'Today';
   if (difference == -1) return 'Yesterday';
-  return '${when.day} ${_months[when.month - 1]} ${when.year}';
+  return formatCalendarDate(when);
 }
+
+/// A plain calendar date: "2 Sep 2026".
+///
+/// For the places that print the day something happened rather than how long
+/// ago -- a record's own date, which should read the same tomorrow.
+String formatCalendarDate(DateTime when) =>
+    '${when.day} ${_months[when.month - 1]} ${when.year}';
 
 String formatTime(DateTime when) {
   final hour = when.hour % 12 == 0 ? 12 : when.hour % 12;

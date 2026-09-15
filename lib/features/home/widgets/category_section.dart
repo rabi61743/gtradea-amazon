@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/widgets/page_width.dart';
+
 import '../../../shared/widgets/section_header.dart';
 import 'category_tile.dart';
 
@@ -58,14 +60,20 @@ class CategorySection extends StatelessWidget {
           onSeeAll: onSeeAll,
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(
+            horizontal: PageWidth.marginOf(context),
+          ),
           child: GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             padding: EdgeInsets.zero,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              mainAxisSpacing: 16,
+              // Rows tighter than columns, not the other way round: this was
+              // the loosest row gap on the page, and vertical space is the one
+              // being spent thirteen times down a stacked feed. The 14 across
+              // is untouched.
+              mainAxisSpacing: 10,
               crossAxisSpacing: 14,
               childAspectRatio: 0.86,
             ),

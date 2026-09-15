@@ -155,27 +155,83 @@ class NotificationSettings extends ChangeNotifier {
 
   static const _key = 'gtradea_notification_settings';
 
+  /// Where [accountId]'s choices live. A guest's are the original key.
+  ///
+  /// Per account: two people sharing a device each decide what they are told
+  /// about, and one muting promotions does not mute them for the other.
+  static String storageKeyFor(String? accountId) =>
+      (accountId == null || accountId.isEmpty) ? _key : '${_key}_$accountId';
+
   final Set<NotificationGroup> _muted = {};
   bool _loaded = false;
+
+  /// The account whose choices are held; null for a guest.
+  String? _scope;
+  bool _bound = false;
+  int _epoch = 0;
 
   bool isEnabled(NotificationGroup group) => !_muted.contains(group);
   bool get isLoaded => _loaded;
 
+  /// Follows the active account for the rest of the app's life.
+  void bindToAuth([AuthStore? auth]) {
+    if (_bound) return;
+    _bound = true;
+    (auth ?? AuthStore.instance).addListener(_onIdentityChanged);
+  }
+
+  void _onIdentityChanged() {
+    final id = AuthStore.instance.account?.id;
+    if (id == _scope && _loaded) return;
+    _scope = id;
+    _epoch++;
+    // Everything on until this account's own choices are read, rather than
+    // the last account's mutes applying for the length of a disk read.
+    _muted.clear();
+    notifyListeners();
+    // As with the first load: choices still under the device-wide key become
+    // this account's, once, only if it has none of its own yet.
+    unawaited(_readInto(storageKeyFor(id), _epoch, migrateLegacy: true));
+  }
+
   Future<void> load() async {
     if (_loaded) return;
+    _scope = AuthStore.instance.account?.id;
+    await _readInto(storageKeyFor(_scope), _epoch, migrateLegacy: true);
+  }
+
+  Future<void> _readInto(
+    String key,
+    int epoch, {
+    bool migrateLegacy = false,
+  }) async {
+    final found = <NotificationGroup>{};
     try {
       final prefs = await SharedPreferences.getInstance();
-      final stored = prefs.getStringList(_key);
+      var stored = prefs.getStringList(key);
+      // Before choices were kept per account they were the device's, set by
+      // whoever was signed in. They become that account's, once.
+      if (migrateLegacy && stored == null && key != _key) {
+        stored = prefs.getStringList(_key);
+        if (stored != null) {
+          await prefs.setStringList(key, stored);
+          await prefs.remove(_key);
+        }
+      }
       if (stored != null) {
         for (final name in stored) {
           for (final group in NotificationGroup.values) {
-            if (group.name == name) _muted.add(group);
+            if (group.name == name) found.add(group);
           }
         }
       }
     } catch (_) {
       // Unreadable: everything on, which is the default a shopper expects.
     }
+    if (epoch != _epoch) return;
+    _muted
+      ..clear()
+      ..addAll(found);
     _loaded = true;
     notifyListeners();
   }
@@ -191,13 +247,15 @@ class NotificationSettings extends ChangeNotifier {
   void resetForTest() {
     _muted.clear();
     _loaded = false;
+    _scope = null;
+    _epoch++;
   }
 
   Future<void> _persist() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(
-        _key,
+        storageKeyFor(_scope),
         _muted.map((group) => group.name).toList(),
       );
     } catch (_) {
@@ -333,14 +391,20 @@ class NotificationStore extends ChangeNotifier {
   ///
   /// Failures are swallowed: a notification list that empties itself because
   /// the network blinked is worse than one that is briefly out of date.
+  /// Bumped on every change of account, so a list asked for as one account
+  /// is never merged into the next one's.
+  int _epoch = 0;
+
   Future<void> syncFromServer() async {
     if (!AuthStore.instance.isSignedIn) return;
+    final epoch = _epoch;
     List<AppNotification> rows;
     try {
       rows = await NotificationRepository.instance.list();
     } on ApiError {
       return;
     }
+    if (epoch != _epoch) return;
     // A successful read counts as a sync even when it changes nothing, or the
     // next one would be treated as the first and stay silent for something
     // that genuinely just arrived.
@@ -391,6 +455,7 @@ class NotificationStore extends ChangeNotifier {
 
   Future<void> _switchTo(String? email) async {
     if (email == _scope) return;
+    _epoch++;
     _scope = email;
     // Notifications are not carried across identities the way a cart is.
     // They are about orders, and the orders themselves are already scoped --

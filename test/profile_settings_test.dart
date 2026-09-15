@@ -11,6 +11,7 @@ import 'package:gtradea_amazon/core/network/session_store.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_repository.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
+import 'package:gtradea_amazon/features/profile/data/email_verification_store.dart';
 import 'package:gtradea_amazon/features/profile/data/profile.dart';
 import 'package:gtradea_amazon/features/profile/data/profile_repository.dart';
 import 'package:gtradea_amazon/features/profile/data/profile_store.dart';
@@ -58,6 +59,13 @@ FakeApi stubGoTrue() {
     sessions: SessionStore.instance,
     dio: auth.dio(baseUrl: 'https://test.local/auth/v1'),
   );
+  // The verification flow keeps its own handle on auth. Without this it would
+  // fall back to the real repository and a test that turns the demo off would
+  // reach the network instead of this fake.
+  EmailVerificationStore.instance.authRepositoryForTest = AuthRepository(
+    sessions: SessionStore.instance,
+    dio: auth.dio(baseUrl: 'https://test.local/auth/v1'),
+  );
   return auth;
 }
 
@@ -82,6 +90,7 @@ void main() {
     api = stubCatalog();
     AuthStore.instance.resetForTest();
     ProfileStore.instance.resetForTest();
+    EmailVerificationStore.instance.resetForTest();
     api.on('GET', '/profile', body: profileJson());
   });
 
@@ -153,8 +162,14 @@ void main() {
       signInForTest();
       await _pump(tester);
 
-      await tester.enterText(find.widgetWithText(TextField, 'Name'), '   ');
-      await tester.tap(find.text('Save changes'));
+      // Each detail is edited in its own sheet now, opened by the row.
+      await tester.tap(find.text('Full Name'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Full name'),
+        '   ',
+      );
+      await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 
       expect(find.text('Enter your name.'), findsOneWidget);
@@ -177,11 +192,13 @@ void main() {
       );
 
       await _pump(tester);
+      await tester.tap(find.text('Full Name'));
+      await tester.pumpAndSettle();
       await tester.enterText(
-        find.widgetWithText(TextField, 'Name'),
+        find.widgetWithText(TextField, 'Full name'),
         'Kabita Sharma',
       );
-      await tester.tap(find.text('Save changes'));
+      await tester.tap(find.text('Save'));
       // Twice, and not by superstition. A successful save goes on to mirror the
       // name into GoTrue's user_metadata, and writing the session awaits a
       // platform channel -- which schedules no frame, so the first settle
@@ -190,31 +207,41 @@ void main() {
       await tester.pumpAndSettle();
       await tester.pumpAndSettle();
 
-      expect(find.text('Profile updated'), findsOneWidget);
+      expect(find.text('Name updated'), findsOneWidget);
       // The row the server returned, not a hopeful copy of what was typed.
       expect(ProfileStore.instance.profile?.fullName, 'Kabita Sharma');
     });
 
-    testWidgets('the phone is saved with the name', (tester) async {
-      // The only place in the app that collects one. The new-address form does
-      // not, and an order carrying no phone is refused outright by the server,
-      // so without this field checkout cannot complete at all.
+    testWidgets('the phone row opens verification, not a text box', (
+      tester,
+    ) async {
+      // A number is the one detail here that has to be *proved* rather than
+      // typed: it is what a courier rings, and an order carrying none is
+      // refused outright by the server. Editing it in place would write
+      // whatever was entered, including somebody else's number.
       signInForTest();
-      stubGoTrue().on('PUT', '/user', body: const {'id': 'user-1'});
+      stubGoTrue();
       api.on('PATCH', '/profile', body: profileJson());
 
       await _pump(tester);
-      await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Rabi Y');
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Phone number'),
-        '9800000000',
-      );
-      await tester.tap(find.text('Save changes'));
-      await tester.pumpAndSettle();
+      await tester.tap(find.text('Phone Number'));
       await tester.pumpAndSettle();
 
-      final sent = api.calls.firstWhere((c) => c.method == 'PATCH');
-      expect(sent.json['phone'], '9800000000');
+      expect(
+        find.text('Change Phone Number'),
+        findsOneWidget,
+        reason: 'the row opens the verification flow',
+      );
+      expect(
+        find.text('Send OTP'),
+        findsOneWidget,
+        reason: 'and asks the server for a code rather than saving a guess',
+      );
+      expect(
+        api.calls.where((c) => c.method == 'PATCH'),
+        isEmpty,
+        reason: 'nothing reaches the profile until a code is confirmed',
+      );
     });
 
     testWidgets('a rejected save leaves the old profile untouched', (
@@ -229,8 +256,13 @@ void main() {
       await _pump(tester);
       expect(ProfileStore.instance.profile?.fullName, 'Rabi Yadav');
 
-      await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Someone');
-      await tester.tap(find.text('Save changes'));
+      await tester.tap(find.text('Full Name'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Full name'),
+        'Someone',
+      );
+      await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 
       expect(find.text('Nope.'), findsOneWidget);
@@ -343,15 +375,22 @@ void main() {
     ) async {
       signInForTest();
       final auth = stubGoTrue();
+      // The demo walks the screens without a mail round-trip, and `kDebugMode`
+      // is true in a test, so it is on by default. Left on, nothing would be
+      // sent for a *good* address either and the last assertion would hold for
+      // the wrong reason.
+      EmailVerificationStore.demo = false;
+      addTearDown(() => EmailVerificationStore.demo = true);
       await _pump(tester);
 
-      await tester.tap(find.text('Change').first);
+      // The row opens the verification flow now, not a sheet.
+      await tester.tap(find.text('Email Address'));
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.widgetWithText(TextField, 'New email address'),
+        find.widgetWithText(TextField, 'youremail@example.com'),
         'rabi@nowhere',
       );
-      await tester.tap(find.text('Update email'));
+      await tester.tap(find.text('Send Verification Code'));
       await tester.pumpAndSettle();
 
       expect(find.text('Enter a valid email address.'), findsOneWidget);
@@ -429,7 +468,7 @@ void main() {
       final auth = stubGoTrue();
       await _pump(tester);
 
-      await tester.tap(find.text('Change').last);
+      await tester.tap(find.text('Change Password'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextField, 'Current password'),
@@ -457,7 +496,7 @@ void main() {
       stubGoTrue();
       await _pump(tester);
 
-      await tester.tap(find.text('Change').last);
+      await tester.tap(find.text('Change Password'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextField, 'Current password'),
@@ -480,7 +519,7 @@ void main() {
       stubGoTrue();
       await _pump(tester);
 
-      await tester.tap(find.text('Change').last);
+      await tester.tap(find.text('Change Password'));
       await tester.pumpAndSettle();
 
       final fields = tester

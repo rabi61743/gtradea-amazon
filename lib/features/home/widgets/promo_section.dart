@@ -1,4 +1,6 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+
+import '../../../shared/widgets/page_width.dart';
 
 /// The promotional block under the flash sale: four category banners, the
 /// delivery banner, and the offers strip that closes it.
@@ -151,7 +153,26 @@ class PromoSection extends StatelessWidget {
   final num? threshold;
 
   static const _radius = 16.0;
-  static const _gap = 14.0;
+
+  /// The one measure between banners, across and down alike.
+  ///
+  /// Read thirty-three times in this section: thirteen as the width between two
+  /// banners sharing a row -- Electronics beside Furniture, Kids beside Kitchen
+  /// -- and twenty as the height between one row and the next, including both
+  /// trios. So this single number is the whole of the section's spacing on both
+  /// axes, and halving it from 10 closes the section up everywhere at once
+  /// rather than in thirty-three places.
+  ///
+  /// Nothing is resized by this. Every banner sits in an [Expanded] and holds a
+  /// fixed aspect ratio, so a narrower gap gives the pictures the points back
+  /// and they grow into them, in proportion and without overflowing.
+  ///
+  /// Public because the layout has an identity that depends on it: the tall
+  /// banner in each trio is exactly twice a stacked one *plus this gap*, since
+  /// it has to span the space between the pair for the columns to end level.
+  /// The test that pins that identity used to carry its own copy of the number,
+  /// which silently went stale the moment this changed -- so it reads this now.
+  static const gap = 5.0;
 
   /// One shape for all four category tiles.
   ///
@@ -225,7 +246,7 @@ class PromoSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: PageWidth.insets(context, top: 6),
       child: Column(
         // Stretch, not the default centre, so the banner spans the same width
         // as the grid above it.
@@ -241,7 +262,7 @@ class PromoSection extends StatelessWidget {
                   onTap: onElectronics,
                 ),
               ),
-              const SizedBox(width: _gap),
+              const SizedBox(width: gap),
               Expanded(
                 child: _Banner(
                   asset: 'assets/images/furniture.jpg',
@@ -252,7 +273,7 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           Row(
             children: [
               Expanded(
@@ -263,7 +284,7 @@ class PromoSection extends StatelessWidget {
                   onTap: onToys,
                 ),
               ),
-              const SizedBox(width: _gap),
+              const SizedBox(width: gap),
               Expanded(
                 child: _Banner(
                   asset: 'assets/images/kitchen.jpg',
@@ -274,7 +295,7 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           // Under the four tiles rather than over them. The tiles are the
           // section: this is the promise that closes it.
           _Banner(
@@ -285,9 +306,9 @@ class PromoSection extends StatelessWidget {
             ratio: _bannerRatio,
             onTap: onFreeDelivery,
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           _BannerTrio(
-            gap: _gap,
+            gap: gap,
             tallOnLeft: false,
             tallRatio: _womenRatio,
             stackedRatio: _stackedRatio,
@@ -309,11 +330,11 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           // The same arrangement mirrored: the tall one takes the left, the
           // stacked pair the right.
           _BannerTrio(
-            gap: _gap,
+            gap: gap,
             tallOnLeft: true,
             tallRatio: _menRatio,
             stackedRatio: _menStackedRatio,
@@ -335,7 +356,7 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           // Side by side, sharing the row evenly. Expanded rather than a fixed
           // width, so the pair follows whatever the page is given -- phone,
           // tablet or a desktop window.
@@ -349,7 +370,8 @@ class PromoSection extends StatelessWidget {
                   onTap: onBaby,
                 ),
               ),
-              const SizedBox(width: _gap),
+
+              const SizedBox(width: gap),
               Expanded(
                 child: _Banner(
                   asset: 'assets/images/beauty_care.jpg',
@@ -360,14 +382,14 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           _Banner(
             asset: 'assets/images/trending_now.jpg',
             label: 'Trending now.',
             ratio: _trendingRatio,
             onTap: onTrending,
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           // Two by two, the same arrangement the four tiles at the top of this
           // section use. All four files are within a fifth of a percent of one
           // ratio, so equal columns give equal cards without forcing a height.
@@ -381,7 +403,7 @@ class PromoSection extends StatelessWidget {
                   onTap: onBathroom,
                 ),
               ),
-              const SizedBox(width: _gap),
+              const SizedBox(width: gap),
               Expanded(
                 child: _Banner(
                   asset: 'assets/images/clean_home.jpg',
@@ -392,7 +414,7 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           Row(
             children: [
               Expanded(
@@ -403,7 +425,7 @@ class PromoSection extends StatelessWidget {
                   onTap: onLighting,
                 ),
               ),
-              const SizedBox(width: _gap),
+              const SizedBox(width: gap),
               Expanded(
                 child: _Banner(
                   asset: 'assets/images/safety_security.jpg',
@@ -414,7 +436,7 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           Row(
             children: [
               Expanded(
@@ -427,7 +449,7 @@ class PromoSection extends StatelessWidget {
                   onTap: onSchool,
                 ),
               ),
-              const SizedBox(width: _gap),
+              const SizedBox(width: gap),
               Expanded(
                 child: _Banner(
                   asset: 'assets/images/pet_world.jpg',
@@ -438,14 +460,14 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           _Banner(
             asset: 'assets/images/packaging.jpg',
             label: 'Packaging materials. Protect, seal, ship, deliver.',
             ratio: _packagingRatio,
             onTap: onPackaging,
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           Row(
             children: [
               Expanded(
@@ -458,7 +480,7 @@ class PromoSection extends StatelessWidget {
                   onTap: onTextiles,
                 ),
               ),
-              const SizedBox(width: _gap),
+              const SizedBox(width: gap),
               Expanded(
                 child: _Banner(
                   asset: 'assets/images/bags_wallets.jpg',
@@ -471,7 +493,7 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           _Banner(
             asset: 'assets/images/promo_banner.jpg',
             label:
@@ -480,7 +502,7 @@ class PromoSection extends StatelessWidget {
             ratio: _offersRatio,
             onTap: onOffers,
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           Row(
             children: [
               Expanded(
@@ -491,7 +513,7 @@ class PromoSection extends StatelessWidget {
                   onTap: onDecor,
                 ),
               ),
-              const SizedBox(width: _gap),
+              const SizedBox(width: gap),
               Expanded(
                 child: _Banner(
                   asset: 'assets/images/outdoor_living.jpg',
@@ -502,14 +524,14 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           _Banner(
             asset: 'assets/images/tent_outdoor.jpg',
             label: 'Tent and outdoor accessories.',
             ratio: _campingRatio,
             onTap: onCamping,
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           // The trade half of the catalogue, closing the section the way it
           // opened: two by two, all four the same shape.
           Row(
@@ -522,7 +544,7 @@ class PromoSection extends StatelessWidget {
                   onTap: onIndustrial,
                 ),
               ),
-              const SizedBox(width: _gap),
+              const SizedBox(width: gap),
               Expanded(
                 child: _Banner(
                   asset: 'assets/images/agri_farming.jpg',
@@ -533,7 +555,7 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           Row(
             children: [
               Expanded(
@@ -544,7 +566,7 @@ class PromoSection extends StatelessWidget {
                   onTap: onElectrical,
                 ),
               ),
-              const SizedBox(width: _gap),
+              const SizedBox(width: gap),
               Expanded(
                 child: _Banner(
                   asset: 'assets/images/machinery_equipment.jpg',
@@ -557,7 +579,7 @@ class PromoSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: _gap),
+          const SizedBox(height: gap),
           // Its own destination rather than a category: a collection the shop
           // curates, like Free Delivery at the top of this section.
           _Banner(
@@ -624,8 +646,16 @@ class _BannerTrio extends StatelessWidget {
         final w = tallRatio;
         final s = stackedRatio;
 
-        // The stacked column's width, from the two rules above.
-        final narrow = (constraints.maxWidth - gap * (1 + w)) / (1 + 2 * w / s);
+        // The stacked column's width, from the two rules above. Never below
+        // zero: on the zero-wide first frame Android can lay out, the gaps
+        // alone exceed the width, and a negative SizedBox is an assertion
+        // that aborted the home feed's layout in a debug build. Any real width
+        // gives a positive value, so the clamp changes nothing on screen.
+        final narrow =
+            ((constraints.maxWidth - gap * (1 + w)) / (1 + 2 * w / s)).clamp(
+              0.0,
+              double.infinity,
+            );
         final stackedHeight = narrow / s;
 
         final column = SizedBox(
@@ -708,6 +738,17 @@ class _Banner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The window can be zero wide on the very first frame Android lays out,
+    // before it has been given a size. A cache width of 0 is an assertion in
+    // `Image`, and in a debug build that assertion thrown mid-layout left the
+    // home feed's list without geometry -- the whole feed, hero and all,
+    // painted nothing. Undecided until there is a width to decide from; the
+    // next frame has one.
+    final decodeWidth =
+        (MediaQuery.sizeOf(context).width *
+                MediaQuery.devicePixelRatioOf(context))
+            .round();
+
     return DecoratedBox(
       // Outside the Material, which clips: a shadow drawn inside would be cut
       // off at the very edge it is meant to fall past.
@@ -736,10 +777,7 @@ class _Banner extends StatelessWidget {
                 // width for a slot a third of that: this sits on the home
                 // page, which is already the heaviest screen in the app for
                 // image memory.
-                cacheWidth:
-                    (MediaQuery.of(context).size.width *
-                            MediaQuery.devicePixelRatioOf(context))
-                        .round(),
+                cacheWidth: decodeWidth > 0 ? decodeWidth : null,
                 errorBuilder: (context, _, _) => const ColoredBox(
                   // A file that will not decode must not leave a hole where a
                   // tappable card was: the tile still reads as a panel and

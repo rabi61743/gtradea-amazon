@@ -156,14 +156,23 @@ void main() {
     });
   });
 
-  group('the colours are the app own', () {
-    testWidgets('the confirmation is the palette success green', (
+  group('the colours are the brand own', () {
+    double contrast(Color a, Color b) {
+      final la = a.computeLuminance();
+      final lb = b.computeLuminance();
+      return ((la > lb ? la : lb) + 0.05) / ((la > lb ? lb : la) + 0.05);
+    }
+
+    testWidgets('Trust Blue card, Commerce Orange accents, white ink', (
       tester,
     ) async {
-      // The reference's green, taken from the app rather than copied off the
-      // picture.
       await pump(tester, title: 'Egg storage box');
 
+      // The card itself: the brand blue, not the page and not a grey bar.
+      final bar = tester.widget<SnackBar>(find.byType(SnackBar));
+      expect(bar.backgroundColor, AppColors.trustBlue);
+
+      // The tick and the button in the accent.
       final tick = tester.widget<Container>(
         find
             .ancestor(
@@ -172,7 +181,56 @@ void main() {
             )
             .first,
       );
-      expect((tick.decoration as BoxDecoration).color, AppColors.success);
+      expect(
+        (tick.decoration as BoxDecoration).color,
+        AppColors.commerceOrange,
+      );
+      final button = tester.widget<Material>(
+        find
+            .ancestor(
+              of: find.text('View cart'),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(button.color, AppColors.commerceOrange);
+
+      // And the words read on the blue.
+      final title = tester.widget<Text>(find.text('Egg storage box'));
+      expect(title.style!.color, Colors.white);
+      expect(
+        contrast(Colors.white, AppColors.trustBlue),
+        greaterThanOrEqualTo(4.5),
+      );
+    });
+  });
+
+  group('it is compact', () {
+    testWidgets('three short lines, not a panel', (tester) async {
+      await pump(
+        tester,
+        title:
+            'Power Saver Household Black Technology Power Saver Smart '
+            'Energy Saving Box',
+        size: const Size(1080, 2400),
+      );
+      final height = tester.getSize(find.byType(SnackBar)).height;
+      // Measured in this harness, whose test font sets every glyph a full em
+      // wide: 185 before the card was tightened, 144 after. The ceiling sits
+      // between them, so the padding cannot creep back unnoticed.
+      expect(height, lessThan(160), reason: 'the card is $height tall');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('and still fits a narrow phone', (tester) async {
+      await pump(
+        tester,
+        title: 'Egg storage box',
+        variant: 'brown, 30 eggs',
+        // 320dp: the narrowest phone in common use.
+        size: const Size(960, 2000),
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 }

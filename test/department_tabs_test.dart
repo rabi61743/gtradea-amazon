@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
+import 'package:gtradea_amazon/core/theme/colors.dart';
 import 'package:gtradea_amazon/features/catalog/data/catalog_repository.dart';
 import 'package:gtradea_amazon/features/catalog/data/catalog_store.dart';
 import 'package:gtradea_amazon/features/catalog/presentation/catalog_visuals.dart';
+import 'package:gtradea_amazon/features/for_you/presentation/new_for_you_screen.dart';
 import 'package:gtradea_amazon/features/home/home_feed.dart';
 import 'package:gtradea_amazon/features/home/widgets/department_tabs.dart';
 import 'package:gtradea_amazon/main.dart';
@@ -47,7 +49,12 @@ void main() {
   });
 
   group('the active shadow travels', () {
-    /// Where the one selection shadow is, and how many there are.
+    /// Where the one selection mark is, and how many there are.
+    ///
+    /// It was a hard drop shadow while the strip lived on the header's teal
+    /// band. The strip is its own light section now, where that read as a grey
+    /// slab, so the mark is a wash of the active colour instead -- which is
+    /// what this looks for.
     List<Rect> shadows(WidgetTester tester) => tester
         .widgetList<DecoratedBox>(find.byType(DecoratedBox))
         .toList(growable: false)
@@ -56,7 +63,8 @@ void main() {
         .where((entry) {
           final decoration = entry.value.decoration;
           return decoration is BoxDecoration &&
-              (decoration.boxShadow?.isNotEmpty ?? false);
+              decoration.color ==
+                  AppColors.commerceOrange.withValues(alpha: 0.10);
         })
         .map((entry) => tester.getRect(find.byType(DecoratedBox).at(entry.key)))
         .toList(growable: false);
@@ -353,6 +361,136 @@ void main() {
     });
   });
 
+  group('the New for You tab', () {
+    List<Category> named(List<String> names) => [
+      for (var i = 0; i < names.length; i++)
+        Category(cid: 'cid-$i', name: names[i], sortOrder: i),
+    ];
+
+    /// The one selection mark, as the shadow group finds it.
+    List<Rect> shadows(WidgetTester tester) => tester
+        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+        .toList(growable: false)
+        .asMap()
+        .entries
+        .where((entry) {
+          final decoration = entry.value.decoration;
+          return decoration is BoxDecoration &&
+              decoration.color ==
+                  AppColors.commerceOrange.withValues(alpha: 0.10);
+        })
+        .map((entry) => tester.getRect(find.byType(DecoratedBox).at(entry.key)))
+        .toList(growable: false);
+
+    Future<void> strip(
+      WidgetTester tester, {
+      List<String> names = const ['Women', 'Men', 'Kidswear'],
+      String? selected,
+      VoidCallback? onNewForYou,
+    }) async {
+      _phone(tester);
+      await tester.pumpWidget(
+        _wrap(
+          DepartmentTabs(
+            categories: named(names),
+            selectedCid: selected,
+            onSelected: (_) {},
+            onNewForYou: onNewForYou,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    double xOf(WidgetTester tester, String label) =>
+        tester.getRect(find.text(label)).center.dx;
+
+    testWidgets('sits immediately after Men, displacing nothing', (
+      tester,
+    ) async {
+      await strip(tester, onNewForYou: () {});
+
+      // Ordered by where they actually are, not by the index they were built
+      // from: the point of the feature is the position on screen.
+      expect(xOf(tester, 'For You'), lessThan(xOf(tester, 'Women')));
+      expect(xOf(tester, 'Women'), lessThan(xOf(tester, 'Men')));
+      expect(xOf(tester, 'Men'), lessThan(xOf(tester, 'New for You')));
+      expect(xOf(tester, 'New for You'), lessThan(xOf(tester, 'Kidswear')));
+    });
+
+    testWidgets('is found by name, so a reordered catalogue still fits it', (
+      tester,
+    ) async {
+      // The strip is the server's list in the server's order. Pinned to a
+      // number, this would follow whatever happened to be third.
+      await strip(
+        tester,
+        names: ['Toys', 'Kidswear', 'Men', 'Women'],
+        onNewForYou: () {},
+      );
+
+      expect(xOf(tester, 'Men'), lessThan(xOf(tester, 'New for You')));
+      expect(xOf(tester, 'New for You'), lessThan(xOf(tester, 'Women')));
+    });
+
+    testWidgets('goes last when there is no Men to follow', (tester) async {
+      // The one position that cannot push a department out of its place.
+      await strip(tester, names: ['Women', 'Toys'], onNewForYou: () {});
+
+      expect(find.text('New for You'), findsOneWidget);
+      expect(xOf(tester, 'Toys'), lessThan(xOf(tester, 'New for You')));
+    });
+
+    testWidgets('is left out entirely when there is nowhere to send anyone', (
+      tester,
+    ) async {
+      // Rather than drawn dead. A tab that looks like the others and does
+      // nothing is worse than no tab.
+      await strip(tester);
+
+      expect(find.text('New for You'), findsNothing);
+      expect(find.text('Men'), findsOneWidget);
+    });
+
+    testWidgets('reports the tap', (tester) async {
+      var opened = 0;
+      await strip(tester, onNewForYou: () => opened++);
+
+      await tester.tap(find.text('New for You'));
+      await tester.pumpAndSettle();
+
+      expect(opened, 1);
+    });
+
+    testWidgets('never draws as selected, because it is not a filter', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await strip(tester, onNewForYou: () {});
+
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('New for You')),
+        isSemantics(isSelected: false, isButton: true),
+      );
+
+      handle.dispose();
+    });
+
+    testWidgets('and a department past it still gets the mark', (tester) async {
+      // The off-by-one this feature could most easily introduce: inserting a
+      // tab shifts every slot after it, and the selection shadow is positioned
+      // by slot. Kidswear sits past the inserted tab, so if the arithmetic
+      // slipped the wash would sit under its neighbour instead.
+      await strip(tester, selected: 'cid-2', onNewForYou: () {});
+
+      final tab = tester.getRect(find.text('Kidswear'));
+      final shadow = shadows(tester).single;
+
+      expect(shadow.left, lessThanOrEqualTo(tab.left));
+      expect(shadow.right, greaterThanOrEqualTo(tab.right));
+    });
+  });
+
   group('the glyphs', () {
     test('the busiest departments do not collapse onto one icon', () {
       // Women, Men, Kidswear and Toys sit next to each other in the strip.
@@ -500,6 +638,39 @@ void main() {
       expect(find.textContaining('Nothing trending in'), findsOneWidget);
       // Not a dead end: nothing trending is not the same as nothing in it.
       expect(find.textContaining('See everything in'), findsOneWidget);
+    });
+
+    testWidgets('the New for You tab opens the personalised feed', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+
+      // Scoped to the strip: the bottom bar carries the same words, and an
+      // unscoped finder would match two widgets and tap whichever came first.
+      final tab = find.descendant(
+        of: find.byType(DepartmentTabs),
+        matching: find.text('New for You'),
+      );
+      expect(tab, findsOneWidget);
+
+      // After Men on the real catalogue, not only on a fixture.
+      final men = find.descendant(
+        of: find.byType(DepartmentTabs),
+        matching: find.text('Men'),
+      );
+      expect(
+        tester.getRect(tab).center.dx,
+        greaterThan(tester.getRect(men).center.dx),
+      );
+
+      await tester.ensureVisible(tab);
+      await tester.pumpAndSettle();
+      await tester.tap(tab);
+      await tester.pumpAndSettle();
+
+      // The screen the bottom bar's second slot opens -- one destination, not
+      // a second copy of the feed.
+      expect(find.byType(NewForYouScreen), findsOneWidget);
     });
   });
 }

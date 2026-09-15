@@ -13,6 +13,7 @@ import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/data/catalog_store.dart';
 import '../../catalog/data/product.dart';
 import '../../catalog/presentation/catalog_visuals.dart';
+import '../../../shared/widgets/page_width.dart';
 import '../../wishlist/data/wishlist_store.dart';
 import '../data/search_filters.dart';
 import '../widgets/product_result_card.dart';
@@ -689,10 +690,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Widget _body() {
     return LoadingGate(
       loading: _loading,
-      loadingChild: const SingleChildScrollView(
-        padding: EdgeInsets.all(12),
-        physics: NeverScrollableScrollPhysics(),
-        child: ResultGridSkeleton(),
+      loadingChild: SingleChildScrollView(
+        // The grid's own margin and spec, so the placeholders sit exactly
+        // where the cards will.
+        padding: PageWidth.insets(context, top: 12, bottom: 12),
+        physics: const NeverScrollableScrollPhysics(),
+        child: const ResultGridSkeleton(specFor: ResultGridSpec.search),
       ),
       child: _settled(),
     );
@@ -750,7 +753,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              // The measure every other section of this app takes: 97% of the
+              // screen, centred. A flat 12 gave a phone a wider margin than a
+              // desktop window in proportion, and left the results narrower
+              // than the rails and cards a shopper had just scrolled past.
+              padding: PageWidth.insets(context, bottom: 12),
               sliver: _grid(),
             ),
             SliverToBoxAdapter(child: _Footer(loading: _loadingMore)),
@@ -766,24 +773,28 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         // The sliver is inside the grid's own padding, so this is already the
         // space the cards divide up.
         final available = constraints.crossAxisExtent;
-        final columns = ProductResultCard.columnsFor(available);
+        // The search grid's own sizing: larger cards, tighter gaps. The
+        // loading skeleton reads the same spec, so nothing jumps on arrival.
+        final spec = ResultGridSpec.search(available);
 
         return SliverGrid(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            mainAxisSpacing: ProductResultCard.gridGap,
-            crossAxisSpacing: ProductResultCard.gridGap,
+            crossAxisCount: spec.columns,
+            mainAxisSpacing: spec.gap,
+            crossAxisSpacing: spec.gap,
             // The card's exact height rather than a ratio standing in for it,
             // so a change to the card cannot silently start clipping it.
             mainAxisExtent: ProductResultCard.heightFor(
               context,
-              ProductResultCard.widthFor(available),
+              spec.cardWidth(available),
+              padding: spec.cardPadding,
             ),
           ),
           delegate: SliverChildBuilderDelegate((context, i) {
             final product = _results[i];
             return ProductResultCard(
               product: product,
+              padding: spec.cardPadding,
               saved: WishlistStore.instance.contains(product.numIid),
               onTap: () => openProduct(context, product),
               onToggleSaved: () => _toggleSaved(product),
@@ -1051,7 +1062,9 @@ class _ResultsHeader extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      // The grid's own margin, so the count and the first row of cards start
+      // on the same line down the page.
+      padding: PageWidth.insets(context, top: 12, bottom: 10),
       child: Align(
         alignment: Alignment.centerLeft,
         child: RichText(
@@ -1197,7 +1210,8 @@ class _Notice extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      // As the count line and the grid below it.
+      padding: PageWidth.insets(context, top: 12, bottom: 10),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(

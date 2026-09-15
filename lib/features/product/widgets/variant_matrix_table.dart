@@ -1108,8 +1108,10 @@ class _QtyFieldState extends State<_QtyField> {
                     : theme.colorScheme.surface,
                 hintText: '0',
                 hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                  // Quieter than a typed quantity, but still readable: at half
+                  // strength the "0" measured under 3:1 on the white cell.
                   color: theme.colorScheme.onSurfaceVariant.withValues(
-                    alpha: 0.5,
+                    alpha: 0.8,
                   ),
                 ),
                 contentPadding: const EdgeInsets.symmetric(vertical: 8),

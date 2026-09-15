@@ -33,6 +33,8 @@ class ProductResultCard extends StatelessWidget {
     this.onAddToCart,
     this.onToggleSaved,
     this.saved = false,
+    this.padding = _pad,
+    this.dense = false,
   });
 
   final Product product;
@@ -41,10 +43,34 @@ class ProductResultCard extends StatelessWidget {
   final VoidCallback? onToggleSaved;
   final bool saved;
 
+  /// Inside the border, around everything. A grid that wants bigger pictures
+  /// in the same width passes less; see [ResultGridSpec].
+  final double padding;
+
+  /// The marketplace treatment: tighter internal gaps and the price in the
+  /// brand's own ink.
+  ///
+  /// Opt-in, and false everywhere it is not asked for. This card is drawn by
+  /// six surfaces -- search, the department feed, the home grid, the home
+  /// carousel, the cart's recommendations and the discovery feed -- and only
+  /// the last of them asked to be denser. A flag rather than a second card
+  /// keeps the other five on exactly the layout they have, byte for byte,
+  /// while the thing they share stays one widget.
+  final bool dense;
+
   /// The card's internal rhythm, kept together so the gaps stay related.
   static const _pad = 10.0;
   static const _gap = 8.0;
   static const _gapTight = 5.0;
+
+  /// The same rhythm, closed right up, for [dense].
+  ///
+  /// Four points between the picture and the price, two between the lines
+  /// under it. Every point taken out here is a point the row does not spend on
+  /// air -- and because the grid measures its rows from [heightFor], it comes
+  /// off the vertical gap between rows as well as off the card.
+  static const _gapDense = 4.0;
+  static const _gapTightDense = 2.0;
 
   /// Lines of title the card always reserves, so cards in a row end level even
   /// when one title runs short.
@@ -55,6 +81,15 @@ class ProductResultCard extends StatelessWidget {
   /// rather than the layout its diagonal implies.
   static const targetWidth = 190.0;
   static const gridGap = 10.0;
+
+  /// The gap between *rows* of cards, as against [gridGap] between columns.
+  ///
+  /// The two were one number, which is why the home page could not be made
+  /// vertically denser without also narrowing its pictures. They are separate
+  /// because the page spends them differently: a column gap is paid once
+  /// across the width, a row gap is paid again for every row down a feed that
+  /// stacks thirteen sections.
+  static const rowGap = 6.0;
 
   static int columnsFor(double width) =>
       (width / targetWidth).floor().clamp(2, 6);
@@ -74,7 +109,12 @@ class ProductResultCard extends StatelessWidget {
   ///
   /// Everything variable goes through the reader's text scaler: at 200% type a
   /// fixed height clips the sold line off the bottom.
-  static double heightFor(BuildContext context, double cardWidth) {
+  static double heightFor(
+    BuildContext context,
+    double cardWidth, {
+    double padding = _pad,
+    bool dense = false,
+  }) {
     final theme = Theme.of(context);
     final scaler = MediaQuery.textScalerOf(context);
 
@@ -82,7 +122,7 @@ class ProductResultCard extends StatelessWidget {
         scaler.scale((style?.fontSize ?? fallback) * 1.35 * lines);
 
     // The picture is square and spans the padded width.
-    final image = cardWidth - _pad * 2;
+    final image = cardWidth - padding * 2;
     final title = lineOf(
       theme.textTheme.bodySmall,
       12,
@@ -95,19 +135,29 @@ class ProductResultCard extends StatelessWidget {
     // The seller badge is a scaled label inside 2pt of padding.
     final credibility = lineOf(theme.textTheme.labelSmall, 11) + 4;
 
-    return _pad * 2 +
+    // The same two gaps the card draws. They are read from here rather than
+    // hardcoded because the grid asks for this as a `mainAxisExtent`: a dense
+    // card measured with the roomy gaps is a card the grid clips.
+    final gap = dense ? _gapDense : _gap;
+    final tight = dense ? _gapTightDense : _gapTight;
+
+    return padding * 2 +
         image +
-        _gap +
+        gap +
         price +
-        _gapTight +
+        tight +
         title +
-        _gapTight +
+        tight +
         credibility;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    // Kept in step with [heightFor], which reads the same two.
+    final gap = dense ? _gapDense : _gap;
+    final tight = dense ? _gapTightDense : _gapTight;
 
     final titleStyle = (theme.textTheme.bodySmall ?? const TextStyle())
         .copyWith(height: 1.3, fontWeight: FontWeight.w500);
@@ -128,7 +178,7 @@ class ProductResultCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppTheme.radiusCard),
             border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
-          padding: const EdgeInsets.all(_pad),
+          padding: EdgeInsets.all(padding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
@@ -162,9 +212,13 @@ class ProductResultCard extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(height: _gap),
-              _PriceRow(product: product, onAddToCart: onAddToCart),
-              const SizedBox(height: _gapTight),
+              SizedBox(height: gap),
+              _PriceRow(
+                product: product,
+                onAddToCart: onAddToCart,
+                dense: dense,
+              ),
+              SizedBox(height: tight),
               SizedBox(
                 height: titleHeight,
                 child: Text(
@@ -175,7 +229,7 @@ class ProductResultCard extends StatelessWidget {
                 ),
               ),
               if (product.salesLabel != null || product.tradeScore != null) ...[
-                const SizedBox(height: _gapTight),
+                SizedBox(height: tight),
                 _Credibility(product: product),
               ],
             ],
@@ -289,10 +343,18 @@ class _SaveButton extends StatelessWidget {
 }
 
 class _PriceRow extends StatelessWidget {
-  const _PriceRow({required this.product, this.onAddToCart});
+  const _PriceRow({
+    required this.product,
+    this.onAddToCart,
+    this.dense = false,
+  });
 
   final Product product;
   final VoidCallback? onAddToCart;
+
+  /// Puts the price in the brand's ink, as the home rails already do. On a
+  /// discovery grid the price is the thing being scanned for.
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -310,6 +372,7 @@ class _PriceRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
+                    color: dense ? theme.colorScheme.primary : null,
                   ),
                 )
               // Not "Rs. 0". The row is a real product whose pricing has not
@@ -427,6 +490,104 @@ class _Credibility extends StatelessWidget {
   }
 }
 
+/// How a grid of [ProductResultCard]s divides its width: the columns, the gap
+/// between cards, and the padding inside each.
+///
+/// One object so a grid, its skeleton and the card's own height all read the
+/// same three numbers and cannot disagree about where a card ends.
+@immutable
+class ResultGridSpec {
+  const ResultGridSpec({
+    required this.columns,
+    required this.gap,
+    required this.cardPadding,
+    this.rowGap,
+  });
+
+  final int columns;
+  final double gap;
+  final double cardPadding;
+
+  /// Between rows, when it differs from the gap between columns.
+  ///
+  /// **Null means "the same as [gap]"**, which is what every grid did before
+  /// this existed -- so a spec that does not ask for one is laid out exactly as
+  /// it was, and only the home grid asks. Callers resolve it with
+  /// `rowGap ?? gap`.
+  ///
+  /// Nullable and public rather than a private field behind a getter: a getter
+  /// would have needed a custom initializer, and Dart has no private named
+  /// parameter to initialise it from.
+  final double? rowGap;
+
+  /// The width one card gets out of [available].
+  ///
+  /// The column gap, deliberately: this divides the *width*, and the row gap
+  /// has no business in it.
+  double cardWidth(double available) =>
+      (available - gap * (columns - 1)) / columns;
+
+  /// The home grid, the rails and the department feed.
+  ///
+  /// The card's own defaults across, and a tighter measure down: the home page
+  /// stacks section after section, so the vertical gap is the one being paid
+  /// over and over. The horizontal is untouched.
+  static ResultGridSpec standard(double available) => ResultGridSpec(
+    columns: ProductResultCard.columnsFor(available),
+    gap: ProductResultCard.gridGap,
+    rowGap: ProductResultCard.rowGap,
+    cardPadding: ProductResultCard._pad,
+  );
+
+  /// The search results. Bigger cards and tighter gaps than the standard
+  /// grid, because a results page exists to look at the products: on a phone
+  /// the picture gains about ten points a side from the card's padding and the
+  /// gutter, and on a wider window the cards are allowed to grow rather than
+  /// multiply into a row of thumbnails.
+  static ResultGridSpec search(double available) {
+    // Two columns on anything phone-sized. Three would put a 110pt card
+    // under a thumb.
+    if (available < 560) {
+      return const ResultGridSpec(columns: 2, gap: 8, cardPadding: 6);
+    }
+    final target = available >= 1000 ? 240.0 : 210.0;
+    return ResultGridSpec(
+      columns: (available / target).floor().clamp(3, 6),
+      gap: 10,
+      cardPadding: 8,
+    );
+  }
+
+  /// The discovery feed: wide cards with very little between them.
+  ///
+  /// Two columns on a phone -- three would put a 110pt card under a thumb --
+  /// with the gutter down to four points and the card's own padding to four.
+  /// On a 412pt phone that leaves each card about 202 points and its picture
+  /// about 194, which is most of the half-width there is to give.
+  ///
+  /// **Wider windows take the width in bigger cards, not more of them.** This
+  /// went the other way first -- up to seven columns at 1280, on the reasoning
+  /// that a scanning feed wants density -- and that is a row of thumbnails,
+  /// not a marketplace. The target width per card is now well above
+  /// [search]'s, so a desktop window gets four broad cards where the results
+  /// page gets five narrow ones.
+  ///
+  /// Every number here divides [available] exactly -- `cardWidth` subtracts
+  /// the gutters before dividing -- so no combination of these can overflow
+  /// sideways.
+  static ResultGridSpec discovery(double available) {
+    if (available < 560) {
+      return const ResultGridSpec(columns: 2, gap: 4, cardPadding: 4);
+    }
+    final target = available >= 1000 ? 280.0 : 240.0;
+    return ResultGridSpec(
+      columns: (available / target).floor().clamp(3, 5),
+      gap: 6,
+      cardPadding: 5,
+    );
+  }
+}
+
 /// The grid's shape while the page is in flight.
 ///
 /// Cards rather than a spinner, and built from the real card's own constants
@@ -438,9 +599,16 @@ class _Credibility extends StatelessWidget {
 /// the sold line, and the round add-to-cart button. A skeleton that omits the
 /// button is a skeleton that shifts when the button appears.
 class ResultGridSkeleton extends StatelessWidget {
-  const ResultGridSkeleton({super.key, this.count = 6});
+  const ResultGridSkeleton({
+    super.key,
+    this.count = 6,
+    this.specFor = ResultGridSpec.standard,
+  });
 
   final int count;
+
+  /// The layout of the grid this stands in for, so it matches it exactly.
+  final ResultGridSpec Function(double available) specFor;
 
   @override
   Widget build(BuildContext context) {
@@ -449,12 +617,17 @@ class ResultGridSkeleton extends StatelessWidget {
     return Shimmer(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final width = ProductResultCard.widthFor(constraints.maxWidth);
-          final height = ProductResultCard.heightFor(context, width);
+          final spec = specFor(constraints.maxWidth);
+          final width = spec.cardWidth(constraints.maxWidth);
+          final height = ProductResultCard.heightFor(
+            context,
+            width,
+            padding: spec.cardPadding,
+          );
 
           return Wrap(
-            spacing: ProductResultCard.gridGap,
-            runSpacing: ProductResultCard.gridGap,
+            spacing: spec.gap,
+            runSpacing: spec.gap,
             children: [
               for (var i = 0; i < count; i++)
                 SizedBox(
@@ -467,7 +640,7 @@ class ResultGridSkeleton extends StatelessWidget {
                         color: theme.colorScheme.outlineVariant,
                       ),
                     ),
-                    padding: const EdgeInsets.all(ProductResultCard._pad),
+                    padding: EdgeInsets.all(spec.cardPadding),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       mainAxisSize: MainAxisSize.min,

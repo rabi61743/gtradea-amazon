@@ -1,18 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is on -->
-    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <!-- Show a splash screen on the activity. Automatically removed when
-             the Flutter engine draws its first frame -->
-        <item name="android:windowBackground">@drawable/launch_background</item>
-    </style>
-    <!-- Theme applied to the Android Window as soon as the process has started.
-         This theme determines the color of the Android Window while your
-         Flutter UI initializes, as well as behind your Flutter UI while its
-         running.
+    <!-- Deliberately the same colours as values/styles.xml, and that is not an
+         oversight.
 
-         This Theme is only used starting with V2 of Flutter's Android embedding. -->
-    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+         These themes dress the window the system shows before any of this
+         app's code runs, so the only thing they can key off is the *device's*
+         dark mode. But the app carries a theme of its own, it defaults to
+         Light, and the two are independent: a shopper with a dark phone who
+         never opened Account settings then Theme is running a Light app.
+         Keying the launch window off the device painted #1B2229 for the whole
+         engine and Dart start-up and then cut to a light app, measured here at
+         roughly 3.2s of dark on a debug build, and that is the "black screen"
+         being reported. Matching the device was the wrong target. Matching the
+         app is the right one, and the app's default is light.
+
+         A shopper who did choose Dark is not left on a light window: that is
+         the case MainActivity handles, repainting the ground from the saved
+         preference right after super.onCreate(). It cannot help before the
+         process exists, which is exactly why the static colour here is the
+         app's own default rather than the device's. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:colorBackground">#F3F2F2</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:colorBackground">#F3F2F2</item>
     </style>
 </resources>

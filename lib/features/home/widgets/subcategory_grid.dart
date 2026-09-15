@@ -38,7 +38,34 @@ class SubcategoryGrid extends StatelessWidget {
     this.actionLabel = 'See All',
     this.shown = defaultShown,
     this.fillMissingImages = false,
+    this.margin,
+    this.dense = false,
+    this.columns = defaultColumns,
   });
+
+  /// How many tiles across.
+  ///
+  /// Two for a curated block of four. Three for a department's own children,
+  /// where there are about forty to choose from and the point is to show more
+  /// of them in less height -- six tiles at three across take roughly two
+  /// thirds the room four took at two.
+  final int columns;
+
+  /// Tightens the room around the heading.
+  ///
+  /// For the home feed, where thirteen of these sections stack one on another
+  /// and the full rhythm is repeated twelve times more than it was designed
+  /// for. The category screen shows one and keeps the page's own spacing.
+  final bool dense;
+
+  /// The inset the heading and the tiles share.
+  ///
+  /// Null keeps [SectionHeader.edge], which is what the category screen -- the
+  /// only other caller -- lays this grid out on. The home feed passes the
+  /// page's own 97% measure, so these sections line up with the hero, the flash
+  /// sale and the promotional block above them instead of sitting a step
+  /// narrower than all three.
+  final double? margin;
 
   /// Whether a category with no artwork should go and find a picture.
   ///
@@ -82,8 +109,22 @@ class SubcategoryGrid extends StatelessWidget {
 
   static const defaultShown = 4;
 
-  static const columns = 2;
+  /// Two across for a curated set of four, which divides cleanly and leaves
+  /// the tiles big enough to be looked at rather than scanned.
+  static const defaultColumns = 2;
+
   static const gap = 12.0;
+
+  /// The gap between tiles on a page of stacked sections.
+  ///
+  /// Four points tighter than [gap]. On the home feed the width freed by the
+  /// 97% measure should go to the pictures rather than to the air between
+  /// them, and at three across the old twelve read as a road down the middle
+  /// of the section.
+  ///
+  /// [gap] itself is unchanged: the category screen's loading skeleton is laid
+  /// out from it, and that screen keeps the page's own spacing.
+  static const denseGap = 8.0;
 
   @override
   Widget build(BuildContext context) {
@@ -102,15 +143,23 @@ class SubcategoryGrid extends StatelessWidget {
             leadingIcon: leadingIcon,
             onSeeAll: onSeeAll,
             actionLabel: actionLabel,
+            margin: margin,
+            topGap: dense ? SectionHeader.denseGapAbove : null,
+            bottomGap: dense ? SectionHeader.denseGapBelow : null,
           )
         else
           const SizedBox(height: SectionHeader.gapBelow),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: SectionHeader.edge),
+          // The same inset the heading took, so the words and the tiles start
+          // on one line down the page.
+          padding: EdgeInsets.symmetric(
+            horizontal: margin ?? SectionHeader.edge,
+          ),
           child: LayoutBuilder(
             builder: (context, constraints) {
+              final spacing = dense ? denseGap : gap;
               final width =
-                  (constraints.maxWidth - gap * (columns - 1)) / columns;
+                  (constraints.maxWidth - spacing * (columns - 1)) / columns;
 
               return GridView.builder(
                 shrinkWrap: true,
@@ -118,8 +167,11 @@ class SubcategoryGrid extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
-                  mainAxisSpacing: gap,
-                  crossAxisSpacing: gap,
+                  // One measure both ways, so the rows sit as close together
+                  // as the columns do and the block reads as a grid rather
+                  // than as rows that happen to line up.
+                  mainAxisSpacing: spacing,
+                  crossAxisSpacing: spacing,
                   // Square, and stated rather than expressed as a ratio: with
                   // the caption inside the frame there is nothing below the
                   // picture for a text scale to grow, so the tile's height is

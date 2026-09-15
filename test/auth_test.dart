@@ -618,6 +618,62 @@ void main() {
       return api;
     }
 
+    testWidgets('a provider button appears only where the server has it', (
+      tester,
+    ) async {
+      final api = wireGoTrue();
+      // The server's own answer, which is the only thing that decides this.
+      api.on(
+        'GET',
+        '/settings',
+        body: {
+          'external': {'google': true, 'apple': true, 'github': false},
+        },
+      );
+
+      await tester.pumpWidget(_wrap(const AuthScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Continue with Google'), findsOneWidget);
+      expect(find.text('Continue with Apple'), findsOneWidget);
+      // Not every provider GoTrue knows about -- only the ones switched on.
+      expect(find.textContaining('GitHub'), findsNothing);
+    });
+
+    testWidgets('Apple is offered even when the server has it switched off', (
+      tester,
+    ) async {
+      // Tall enough to hold the whole form, so the button is on screen.
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final api = wireGoTrue();
+      api.on(
+        'GET',
+        '/settings',
+        body: {
+          'external': {'google': true, 'apple': false},
+        },
+      );
+
+      await tester.pumpWidget(_wrap(const AuthScreen()));
+      await tester.pumpAndSettle();
+
+      // Always drawn; the server's answer is checked on tap instead.
+      expect(find.text('Continue with Google'), findsOneWidget);
+      expect(find.text('Continue with Apple'), findsOneWidget);
+
+      await tester.tap(find.text('Continue with Apple'));
+      await tester.pumpAndSettle();
+
+      // No WebView onto a 400 page: the refusal is said on the screen.
+      expect(
+        find.textContaining('Apple sign-in is not available yet'),
+        findsOneWidget,
+      );
+      expect(AuthStore.instance.isSignedIn, isFalse);
+    });
+
     testWidgets('a valid sign-in sends the password and updates the store', (
       tester,
     ) async {
@@ -735,6 +791,10 @@ void main() {
     });
 
     testWidgets('switching modes keeps what was already typed', (tester) async {
+      // Tall enough that the link is not left sitting on the window's edge.
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(_wrap(const AuthScreen()));
       await tester.pumpAndSettle();
 

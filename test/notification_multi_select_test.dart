@@ -64,7 +64,9 @@ void main() {
   Future<void> confirm(WidgetTester tester) async {
     await tester.tap(find.byTooltip('Delete selected'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+    // The confirm button names the count -- "Delete (2)" -- as the design
+    // has it, so this matches the prefix rather than the whole label.
+    await tester.tap(find.textContaining('Delete ('));
     await tester.pumpAndSettle();
   }
 
@@ -140,7 +142,7 @@ void main() {
 
       await tester.tap(find.byTooltip('Delete selected'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
 
       expect(NotificationStore.instance.count, 3);

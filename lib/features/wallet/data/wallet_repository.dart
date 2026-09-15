@@ -10,6 +10,8 @@ class WalletEntry {
     required this.amount,
     this.note = '',
     this.at,
+    this.status = '',
+    this.orderNumber = '',
   });
 
   final String id;
@@ -20,6 +22,21 @@ class WalletEntry {
 
   final String note;
   final DateTime? at;
+
+  /// What the server calls the state of this movement, or empty when it does
+  /// not say.
+  ///
+  /// Read under several names and rendered only when present. The alternative
+  /// -- defaulting it to "Completed" -- would put a word on screen that the
+  /// server never said, about money.
+  final String status;
+
+  /// The order this movement belongs to, when it belongs to one.
+  ///
+  /// Same rule: shown only if the server names it. Coins move for reasons that
+  /// have no order behind them, and captioning those with a blank reference
+  /// would invent a relationship.
+  final String orderNumber;
 
   bool get isCredit => amount >= 0;
 
@@ -32,6 +49,13 @@ class WalletEntry {
         asString(json['type']) ??
         '',
     at: asDate(json['created_at']) ?? asDate(json['createdAt']),
+    status: asString(json['status']) ?? asString(json['state']) ?? '',
+    orderNumber:
+        asString(json['order_number']) ??
+        asString(json['orderNumber']) ??
+        asString(json['order_id']) ??
+        asString(json['orderId']) ??
+        '',
   );
 }
 

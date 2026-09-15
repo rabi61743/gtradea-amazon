@@ -1,6 +1,7 @@
 import 'package:gtradea_amazon/core/network/api_client.dart';
 import 'package:gtradea_amazon/core/realtime/realtime_service.dart';
 import 'package:gtradea_amazon/features/catalog/data/catalog_store.dart';
+import 'package:gtradea_amazon/features/product/data/product_repository.dart';
 
 import 'catalog.dart';
 import 'fake_api.dart';
@@ -59,6 +60,11 @@ FakeApi stubCatalog({
   api.on('GET', '/cart', body: const {'items': [], 'subtotal': 0});
   api.on('DELETE', '/cart', status: 204);
 
+  // The home header reads the account's coin balance for the chip beside the
+  // delivery line, for the same reason the cart is here: a signed-in test
+  // fetches it whatever the test is actually about.
+  api.on('GET', '/wallet', body: const {'balance': 0});
+
   api.on('GET', '/feed/discover', body: feedRows(products));
   api.on('GET', '/feed/trending-products', body: feedRows(products));
   api.on('GET', '/search/products', body: feedRows(products));
@@ -114,6 +120,10 @@ void useStubbedApi(FakeApi api) {
   _installed = api;
   ApiClient.overrideDio = api.dio();
   CatalogStore.instance.resetForTest();
+  // Product records are remembered for five minutes against the singleton
+  // repository, which outlives a test. A stub installed for this test must
+  // not be answered from the last one.
+  ProductRepository.instance.clearDetailCache();
 }
 
 FakeApi? _installed;
@@ -127,6 +137,8 @@ FakeApi ensureApiStub() => _installed ?? stubCatalog();
 void clearApiStub() {
   _installed = null;
   ApiClient.overrideDio = null;
+  // As in stubCatalog: what one test fetched must not answer the next.
+  ProductRepository.instance.clearDetailCache();
 }
 
 const _departmentNames = [

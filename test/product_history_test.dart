@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/network/api_client.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
+import 'package:gtradea_amazon/core/theme/colors.dart';
+import 'package:gtradea_amazon/features/account/presentation/recent_views_section.dart';
 import 'package:gtradea_amazon/features/account/data/product_views_repository.dart';
 import 'package:gtradea_amazon/features/account/presentation/product_history_screen.dart';
 import 'package:gtradea_amazon/features/auth/data/auth_store.dart';
@@ -149,12 +151,11 @@ void main() {
       expect(find.text('Product History'), findsOneWidget);
       expect(find.text('Recently Viewed'), findsOneWidget);
       expect(find.text('Recently Purchased'), findsOneWidget);
-      // The heading the reference shows over the newest group.
-      expect(find.text('Today'), findsOneWidget);
-      expect(find.text('boAt Rockerz 550'), findsOneWidget);
-      expect(find.text('Over Ear Headphones'), findsOneWidget);
-      expect(find.text('Rs. 3,999'), findsOneWidget);
-      expect(find.text('Add to cart'), findsWidgets);
+      expect(find.text('boAt Rockerz 550'), findsWidgets);
+      // The card's category line, and the section's detail line under it.
+      expect(find.text('Over Ear Headphones'), findsWidgets);
+      expect(find.text('Rs. 3,999'), findsWidgets);
+      expect(find.text('Buy Now'), findsWidgets);
     });
 
     testWidgets('opens the product that was tapped, by its own id', (
@@ -173,7 +174,8 @@ void main() {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Second thing'));
+      // The history card, not its echo in the section below the list.
+      await tester.tap(find.text('Second thing').first);
       await tester.pumpAndSettle();
 
       final opened = tester.widget<ProductDetailScreen>(
@@ -202,7 +204,7 @@ void main() {
       await tester.enterText(find.byType(TextField), 'adidas');
       await tester.pumpAndSettle();
 
-      expect(find.text('Adidas Grand Court'), findsOneWidget);
+      expect(find.text('Adidas Grand Court'), findsWidgets);
       expect(find.text('boAt Rockerz 550'), findsNothing);
     });
 
@@ -244,23 +246,152 @@ void main() {
       expect(find.text('Products you open will appear here.'), findsNothing);
     });
 
-    testWidgets('a swipe forgets one, and tells the server', (tester) async {
+    testWidgets('follows the viewed tab, without asking the server again', (
+      tester,
+    ) async {
       signIn();
-      api.on('GET', '/product-views', body: [_view(name: 'boAt Rockerz 550')]);
-      api.on('DELETE', '/product-views', status: 204);
+      api.on(
+        'GET',
+        '/product-views',
+        body: [
+          _view(id: '1', name: 'boAt Rockerz 550', price: 3999),
+          _view(id: '2', name: 'Cordless Drill Machine', price: 5490),
+        ],
+      );
       _tall(tester);
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle();
 
-      await tester.drag(find.text('boAt Rockerz 550'), const Offset(-600, 0));
+      // No strip at the head of the section any more; the rows are it.
+      expect(find.text('Your recent searches, all in one place'), findsNothing);
+      // One row per product, and one fetch behind them.
+      expect(find.text('boAt Rockerz 550'), findsOneWidget);
+      expect(
+        api.calls.where((c) => c.path.contains('/product-views')).length,
+        1,
+        reason: 'the section draws what the screen already holds',
+      );
+    });
+
+    testWidgets('bones stand in for the rows while the history is fetched', (
+      tester,
+    ) async {
+      signIn();
+      // Held open, so the page can be looked at mid-fetch.
+      api.onCall(
+        'GET',
+        '/product-views',
+        (_) => reply([
+          _view(name: 'boAt Rockerz 550'),
+        ], delay: const Duration(seconds: 2)),
+      );
+      _tall(tester);
+      await tester.pumpWidget(_wrap());
+      await tester.pump();
+
+      expect(find.byType(RecentViewsSkeleton), findsOneWidget);
+      // Shaped like the row it stands in for, not a spinner.
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
 
-      expect(find.text('boAt Rockerz 550'), findsNothing);
-      expect(
-        api.calls.where((c) => c.method == 'DELETE'),
-        isNotEmpty,
-        reason: 'or it returns on the next open',
+      expect(find.byType(RecentViewsSkeleton), findsNothing);
+      expect(find.text('boAt Rockerz 550'), findsOneWidget);
+    });
+
+    testWidgets('the price is Trust Blue and a badge is Commerce Orange', (
+      tester,
+    ) async {
+      signIn();
+      api.on('GET', '/product-views', body: [_view(price: 2850)]);
+      api.onCall(
+        'GET',
+        '/api/1688/product',
+        (_) => reply({
+          'item': {'num_iid': '900001', 'total_sold': 12000},
+          'pricing': {'displayPrice': 2850},
+        }),
       );
+      _tall(tester);
+      await tester.pumpWidget(_wrap());
+      await tester.pumpAndSettle();
+
+      final price = tester.widget<Text>(find.text('Rs. 2,850'));
+      expect(price.style?.color, AppColors.trustBlue);
+
+      // The subcategory tag, in Cosmic Orange.
+      final tag = tester.widget<Text>(find.text('Over Ear Headphones'));
+      expect(tag.style?.color, AppColors.commerceOrange);
+
+      // And Buy Now is filled in the same blue as the price.
+      final buy = tester.widget<FilledButton>(
+        find
+            .ancestor(
+              of: find.text('Buy Now'),
+              matching: find.byType(FilledButton),
+            )
+            .first,
+      );
+      expect(
+        buy.style?.backgroundColor?.resolve(<WidgetState>{}),
+        AppColors.trustBlue,
+      );
+    });
+
+    testWidgets('every card is 97% of the page, centred in it', (tester) async {
+      signIn();
+      api.on('GET', '/product-views', body: [_view(name: 'boAt Rockerz 550')]);
+      _tall(tester);
+      await tester.pumpWidget(_wrap());
+      await tester.pumpAndSettle();
+
+      final page = tester.getSize(find.byType(ProductHistoryScreen)).width;
+
+      // The history card, and the row in the section under it.
+      final cards = tester
+          .widgetList<FractionallySizedBox>(find.byType(FractionallySizedBox))
+          .map((box) => box.widthFactor)
+          .toSet();
+      expect(cards, {0.97});
+
+      // The rows are the list now; the Card is the purchased tab's.
+      final card = tester.getRect(
+        find
+            .ancestor(
+              of: find.text('boAt Rockerz 550'),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(card.width, closeTo(page * 0.97, 0.5));
+      expect(card.left, closeTo(page - card.right, 0.5));
+    });
+
+    testWidgets('and honours the search box the screen already has', (
+      tester,
+    ) async {
+      signIn();
+      api.on(
+        'GET',
+        '/product-views',
+        body: [
+          _view(id: '1', name: 'boAt Rockerz 550', price: 3999),
+          _view(id: '2', name: 'Cordless Drill Machine', price: 5490),
+        ],
+      );
+      _tall(tester);
+      await tester.pumpWidget(_wrap());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'drill');
+      await tester.pumpAndSettle();
+
+      // Search behaviour is untouched; the section simply shows what is left.
+      expect(find.text('boAt Rockerz 550'), findsNothing);
+      expect(find.text('Cordless Drill Machine'), findsOneWidget);
     });
   });
 }

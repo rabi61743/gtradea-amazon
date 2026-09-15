@@ -35,13 +35,15 @@ double _contrast(Color a, Color b) {
 const _white = Color(0xFFFFFFFF);
 
 void main() {
-  group('the four brand colours', () {
+  group('the six brand colours', () {
     test('are the exact hexes the brand system specifies', () {
       // Byte-for-byte, so a well-meaning tweak somewhere else in the app cannot
       // quietly become the brand.
       expect(_hex(AppColors.trustBlue), '#267488');
       expect(_hex(AppColors.commerceOrange), '#E94724');
+      expect(_hex(AppColors.premiumIvory), '#F2ECE6');
       expect(_hex(AppColors.himalayanSlate), '#36454F');
+      expect(_hex(AppColors.mountainGrey), '#E5E7EB');
       expect(_hex(AppColors.successGreen), '#22C55E');
     });
 
@@ -50,12 +52,14 @@ void main() {
       // block the only place a colour is decided.
       expect(AppColors.primaryLight, AppColors.trustBlue);
       expect(AppColors.accent, AppColors.commerceOrange);
-      // The page is the one neutral that is no longer derived from the slate:
-      // it is plain white. The other three washes still are.
-      expect(AppColors.backgroundLight, const Color(0xFFFFFFFF));
+      // The page is Premium Ivory, by request: its own stated role. Cards
+      // stay white on it, and Mountain Grey does the two things the brand
+      // names it for -- every line, and the quiet fill under a chip.
+      expect(AppColors.backgroundLight, AppColors.premiumIvory);
+      expect(AppColors.cardLight, const Color(0xFFFFFFFF));
+      expect(AppColors.mutedLight, AppColors.mountainGrey);
       expect(AppColors.foregroundLight, AppColors.himalayanSlate);
-      expect(AppColors.borderLight, AppColors.hairline);
-      expect(AppColors.mutedLight, AppColors.surfaceWash);
+      expect(AppColors.borderLight, AppColors.mountainGrey);
       expect(AppColors.success, AppColors.successGreen);
     });
   });
@@ -63,18 +67,15 @@ void main() {
   group('60-30-10', () {
     final theme = AppTheme.light;
 
-    test('the 60 is the page itself, and it is white', () {
-      // Was the 6% slate wash, so that a white card read as a card rather than
-      // as an edge. White now, by request. The consequence is recorded here
-      // rather than left to be discovered: page and card are the same colour,
-      // so a card is told apart by its hairline border alone.
-      expect(theme.scaffoldBackgroundColor, _white);
+    test('the 60 is the page, and it is Premium Ivory', () {
+      expect(theme.scaffoldBackgroundColor, AppColors.premiumIvory);
       expect(theme.colorScheme.surface, _white);
-      expect(
-        theme.colorScheme.outlineVariant,
-        AppColors.hairline,
-        reason: 'the only thing separating a card from the page now',
-      );
+      expect(theme.colorScheme.outlineVariant, AppColors.hairline);
+      // A white card has to read on it, and the line round the card has to
+      // read on the card. Both are what stops a page of cards becoming one
+      // flat sheet.
+      expect(_contrast(_white, AppColors.premiumIvory), greaterThan(1.1));
+      expect(_contrast(AppColors.hairline, _white), greaterThan(1.1));
     });
 
     test('the 30 is the structure', () {
@@ -93,35 +94,21 @@ void main() {
       expect(theme.colorScheme.secondary, isNot(AppColors.commerceOrange));
     });
 
-    test('every neutral is Himalayan Slate over white, at a stated alpha', () {
-      // Premium Ivory and Mountain Grey were the fifth and sixth brand colours
-      // and are gone. The roles they filled are not: these three carry them,
-      // and each is a blend of a colour that is still in the system rather than
-      // a hex of its own. They are written as literals because they are used
-      // in const contexts, so this is what stops the literal and the intent
-      // drifting apart.
-      // Compared as eight-bit hexes, not as Colors. alphaBlend keeps its
-      // channels as floats, and a literal can only be written to the byte --
-      // comparing the objects fails on a rounding difference of half a
-      // 255th, which is not a colour anybody can see.
-      String slateOverWhite(double alpha) => _hex(
-        Color.alphaBlend(
-          AppColors.himalayanSlate.withValues(alpha: alpha),
-          _white,
-        ),
-      );
-
-      expect(_hex(AppColors.pageWash), slateOverWhite(0.06));
-      expect(_hex(AppColors.surfaceWash), slateOverWhite(0.08));
-      expect(_hex(AppColors.hairline), slateOverWhite(0.14));
+    test('every neutral is one of the two the brand names', () {
+      // The washes derived from Himalayan Slate are gone: the brand has its
+      // own two neutrals again, and these names point straight at them. A
+      // neutral that is neither is a seventh colour by another name.
+      expect(AppColors.pageWash, AppColors.premiumIvory);
+      expect(AppColors.surfaceWash, AppColors.premiumIvory);
+      expect(AppColors.hairline, AppColors.mountainGrey);
     });
 
     test('the neutrals are ordered: page, fill, line', () {
-      // A muted fill has to sit on the page and a border has to sit on both.
-      // Equal or inverted luminance is how a chip disappears into the page it
-      // is drawn on.
+      // A fill has to read on the white page, and a line has to read on both
+      // the page and the fill. Equal or inverted luminance is how a chip
+      // disappears into what it is drawn on.
       expect(
-        _luminance(AppColors.pageWash),
+        _luminance(_white),
         greaterThan(_luminance(AppColors.surfaceWash)),
       );
       expect(
@@ -130,9 +117,9 @@ void main() {
       );
     });
 
-    test('the two dropped colours are gone, not renamed', () {
-      // The point of the removal. If either hex shows up again under any name,
-      // the palette quietly went back to six.
+    test('and nothing outside the six has crept in', () {
+      // Every neutral in the light theme is one of the six or white. A hex
+      // that is none of those is a seventh brand colour by another name.
       final palette = [
         AppColors.trustBlue,
         AppColors.commerceOrange,
@@ -149,8 +136,18 @@ void main() {
         AppColors.foregroundDark,
       ];
 
-      expect(palette, isNot(contains(const Color(0xFFF2ECE6))));
-      expect(palette, isNot(contains(const Color(0xFFE5E7EB))));
+      const brand = [
+        AppColors.trustBlue,
+        AppColors.commerceOrange,
+        AppColors.premiumIvory,
+        AppColors.himalayanSlate,
+        AppColors.mountainGrey,
+        AppColors.successGreen,
+        _white,
+      ];
+      for (final colour in palette) {
+        expect(brand, contains(colour), reason: _hex(colour));
+      }
     });
 
     test('the neutrals do the quiet work', () {
@@ -162,13 +159,37 @@ void main() {
 
   group('what the brand values measure', () {
     test('body text on the page is comfortably readable', () {
-      // Himalayan Slate on the page wash, which is most of the words in the
-      // app. AA wants 4.5.
+      // Himalayan Slate on white and on the ivory panels, which between them
+      // carry every word in the app. AA wants 4.5.
       expect(
         _contrast(AppColors.himalayanSlate, AppColors.pageWash),
         greaterThan(4.5),
       );
       expect(_contrast(AppColors.himalayanSlate, _white), greaterThan(4.5));
+      expect(
+        _contrast(AppColors.himalayanSlate, AppColors.mountainGrey),
+        greaterThan(4.5),
+      );
+    });
+
+    test('secondary text clears AA on white and on the ivory', () {
+      // The ivory is warmer and darker than white, so a caption that was
+      // comfortable on one had to be checked against the other. This is why
+      // the muted foreground was darkened when the ivory came back.
+      expect(
+        _contrast(AppColors.mutedForegroundLight, _white),
+        greaterThan(4.5),
+      );
+      expect(
+        _contrast(AppColors.mutedForegroundLight, AppColors.premiumIvory),
+        greaterThan(4.5),
+      );
+      // And on the grey a chip is filled with, which secondary text also
+      // sits on.
+      expect(
+        _contrast(AppColors.mutedForegroundLight, AppColors.mountainGrey),
+        greaterThan(4.5),
+      );
     });
 
     test('white on Trust Blue clears AA', () {
@@ -228,33 +249,54 @@ void main() {
     });
 
     test('the band top is the same blue with the light turned down', () {
-      // The gradient's dark end. Given as a hex rather than derived, so this is
-      // what says it belongs to the palette instead of being a fifth colour --
-      // 192.4 degrees against the brand blue's 192.2 is the same hue.
+      // The gradient's ends. Given as hexes rather than derived, so this is
+      // what says they belong to the palette instead of being fifth and sixth
+      // colours -- both are the brand blue's hue, one darker and one lighter.
       final brand = HSLColor.fromColor(AppColors.trustBlue);
       final top = HSLColor.fromColor(AppColors.brandBandTop);
+      final foot = HSLColor.fromColor(AppColors.brandBandFoot);
 
-      expect(top.hue, closeTo(brand.hue, 1.0));
+      expect(top.hue, closeTo(brand.hue, 4.0));
       expect(top.lightness, lessThan(brand.lightness));
+      expect(foot.hue, closeTo(brand.hue, 4.0));
+      expect(foot.lightness, greaterThan(brand.lightness));
     });
 
-    test('the band runs from that dark end to the brand blue itself', () {
-      // Top to bottom, and nothing in between. Two stops is what makes the
-      // transition a ramp rather than a set of steps.
+    test('the band runs from its head to a deeper foot, in two stops', () {
+      // Top to bottom, and given as exact hexes by the design rather than
+      // derived from the palette: #1A4A5E to #0D2B3E.
+      //
+      // It was three stops, with Trust Blue held through the middle and a foot
+      // *lighter* than the brand blue, so the band lifted off the page. It
+      // sinks into the page now -- which is what lets the arched foot read as
+      // the header sitting on the storefront rather than hovering over it.
       expect(AppColors.brandBand.begin, Alignment.topCenter);
       expect(AppColors.brandBand.end, Alignment.bottomCenter);
       expect(AppColors.brandBand.colors, [
-        AppColors.brandBandTop,
-        AppColors.trustBlue,
+        AppColors.brandBandHead,
+        AppColors.brandBandDeep,
       ]);
+      // And it runs that way round: the direction is the half of this a pair of
+      // hexes alone would not catch if the two were ever swapped.
+      expect(
+        _luminance(AppColors.brandBandDeep),
+        lessThan(_luminance(AppColors.brandBandHead)),
+      );
     });
 
     test('white clears AA at both ends of the band', () {
       // Everything drawn on it is white: the mark, the three icons, the
-      // delivery line, the department labels. A ramp has to hold that at the
-      // light end as well as the dark one, and the light end is the brand blue.
+      // delivery line, the coin figure, the greeting. Both ends of the header's
+      // own ramp have to hold that.
+      expect(_contrast(_white, AppColors.brandBandHead), greaterThan(4.5));
+      expect(_contrast(_white, AppColors.brandBandDeep), greaterThan(4.5));
+
+      // The older pair is still in use -- the scrim over the artwork and the
+      // brand lockup -- so white still has to clear those too. The foot is the
+      // lightest of them, which makes it the one that decides it.
       expect(_contrast(_white, AppColors.brandBandTop), greaterThan(4.5));
       expect(_contrast(_white, AppColors.trustBlue), greaterThan(4.5));
+      expect(_contrast(_white, AppColors.brandBandFoot), greaterThan(4.5));
     });
 
     test('and the ramp is subtle rather than a two-tone split', () {
@@ -263,6 +305,10 @@ void main() {
       // gradient instead of as an edge.
       expect(
         _contrast(AppColors.brandBandTop, AppColors.trustBlue),
+        lessThan(2.2),
+      );
+      expect(
+        _contrast(AppColors.trustBlue, AppColors.brandBandFoot),
         lessThan(2.2),
       );
     });
