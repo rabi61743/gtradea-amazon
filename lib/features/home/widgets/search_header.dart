@@ -44,7 +44,7 @@ class SearchHeader extends StatelessWidget {
     super.key,
     // The fixed lead of the placeholder. The example after it is animated --
     // see [AnimatedSearchHint] -- so this is the half that stays put.
-    this.hintText = 'Search ',
+    this.hintText = 'Search for ',
     this.onTap,
     this.onImageSearch,
     this.onVoiceResult,

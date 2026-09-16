@@ -13,28 +13,49 @@ Widget _wrap(Widget child, {bool reducedMotion = false}) => MaterialApp(
 );
 
 /// The text of the one hint on screen.
-String _hint(WidgetTester tester) {
-  final widget = tester.widget<Text>(
-    find.descendant(
-      of: find.byType(AnimatedSearchHint),
-      matching: find.byType(Text),
-    ),
-  );
-  return widget.textSpan!.toPlainText();
-}
+String _hint(WidgetTester tester) => tester
+    .widgetList<Text>(
+      find.descendant(
+        of: find.byType(AnimatedSearchHint),
+        matching: find.byType(Text),
+      ),
+    )
+    .map((t) => t.data ?? '')
+    .join();
 
 void main() {
+  group('the phrases', () {
+    test('read as the end of "Search for", and none is too long to show', () {
+      for (final phrase in kSearchHintPhrases) {
+        expect(
+          phrase.length,
+          lessThanOrEqualTo(kSearchHintMaxLength),
+          reason: '"$phrase" would end in an ellipsis in the home header',
+        );
+        expect(
+          phrase,
+          phrase.toLowerCase(),
+          reason: 'mid-sentence, lower case',
+        );
+      }
+      expect(kSearchHintPhrases.take(3), [
+        'running shoes',
+        'winter jackets',
+        'gift ideas',
+      ]);
+    });
+  });
+
   group('the animated placeholder', () {
-    testWidgets('types a phrase out one letter at a time', (tester) async {
+    testWidgets('a lone phrase is shown whole, and stays put', (tester) async {
       await tester.pumpWidget(
         _wrap(const AnimatedSearchHint(style: TextStyle(), phrases: ['Lamp'])),
       );
 
-      // A single phrase does not cycle, so it is shown whole and still.
-      expect(_hint(tester), 'Search Lamp');
+      expect(_hint(tester), 'Search for Lamp');
     });
 
-    testWidgets('moves through the phrases, erasing between them', (
+    testWidgets('turns one phrase over for the next, without a blank', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -46,30 +67,91 @@ void main() {
         ),
       );
 
-      // Nothing typed yet beyond the fixed lead.
-      expect(_hint(tester), startsWith('Search '));
+      // Whole from the first frame: a ticker shows a word, it does not build
+      // one letter at a time.
+      expect(_hint(tester), 'Search for Lamp');
 
-      // Part-way through the first phrase.
-      await tester.pump(const Duration(milliseconds: 130));
-      final partial = _hint(tester);
-      expect(partial, startsWith('Search L'));
-      expect(
-        partial.contains('Lamp'),
-        isFalse,
-        reason: 'it is still being typed',
+      // Held long enough to read before anything moves.
+      await tester.pump(const Duration(milliseconds: 1500));
+      expect(_hint(tester), 'Search for Lamp', reason: 'still being read');
+
+      // Mid-turn both are on screen -- one leaving, one arriving -- which is
+      // what makes it a ticker rather than a swap.
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump(const Duration(milliseconds: 120));
+      final turning = _hint(tester);
+      expect(turning, contains('Shoes'));
+      expect(turning, contains('Lamp'), reason: 'the old one is still leaving');
+
+      // And afterwards only the new one.
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(_hint(tester), 'Search for Shoes');
+
+      await tester.pumpWidget(_wrap(const SizedBox()));
+    });
+
+    testWidgets('the arriving word rises into place as it fades in', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          const AnimatedSearchHint(
+            style: TextStyle(),
+            phrases: ['Lamp', 'Shoes'],
+          ),
+        ),
       );
 
-      // Finished, and held long enough to read.
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(_hint(tester), startsWith('Search Lamp'));
+      await tester.pump(const Duration(milliseconds: 2300));
+      await tester.pump(const Duration(milliseconds: 100));
 
-      // Erased, and on to the next one.
-      await tester.pump(const Duration(milliseconds: 1500));
-      await tester.pump(const Duration(milliseconds: 400));
+      final arriving = find.text('Shoes');
+      expect(arriving, findsOneWidget);
+      final slide = tester.widget<SlideTransition>(
+        find
+            .ancestor(of: arriving, matching: find.byType(SlideTransition))
+            .first,
+      );
+      // Still below its resting place, on its way up.
+      expect(slide.position.value.dy, greaterThan(0));
+
+      final fade = tester.widget<FadeTransition>(
+        find
+            .ancestor(of: arriving, matching: find.byType(FadeTransition))
+            .first,
+      );
+      expect(fade.opacity.value, lessThan(1), reason: 'and still fading in');
+
+      await tester.pumpWidget(_wrap(const SizedBox()));
+    });
+
+    testWidgets('pausing holds the phrase it is on, and does not rewind', (
+      tester,
+    ) async {
+      Widget hint({required bool paused}) => _wrap(
+        AnimatedSearchHint(
+          style: const TextStyle(),
+          paused: paused,
+          phrases: const ['Lamp', 'Shoes', 'Toys'],
+        ),
+      );
+
+      await tester.pumpWidget(hint(paused: false));
+      await tester.pump(const Duration(milliseconds: 2300));
       await tester.pump(const Duration(milliseconds: 600));
-      expect(_hint(tester), startsWith('Search S'));
+      expect(_hint(tester), 'Search for Shoes');
 
-      // Left in a settled state, or the pending timer fails the test.
+      // Paused: the clock stops where it is.
+      await tester.pumpWidget(hint(paused: true));
+      await tester.pump(const Duration(seconds: 6));
+      expect(_hint(tester), 'Search for Shoes', reason: 'nothing moved on');
+
+      // Resumed: it carries on from there rather than starting the list again.
+      await tester.pumpWidget(hint(paused: false));
+      await tester.pump(const Duration(milliseconds: 2300));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(_hint(tester), 'Search for Toys');
+
       await tester.pumpWidget(_wrap(const SizedBox()));
     });
 
@@ -89,21 +171,36 @@ void main() {
       final first = _hint(tester);
       await tester.pump(const Duration(seconds: 3));
 
-      expect(first, 'Search Lamp');
+      expect(first, 'Search for Lamp');
       expect(_hint(tester), first, reason: 'nothing moved');
     });
 
-    testWidgets('the caret is only there while it is moving', (tester) async {
+    testWidgets('the cursor is drawn, and keeps its own time', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const AnimatedSearchHint(
-            style: TextStyle(),
+            style: TextStyle(fontSize: 15),
             phrases: ['Lamp', 'Shoes'],
           ),
-          reducedMotion: true,
         ),
       );
+
+      // A bar after the word, not a typed "|" inside the text.
       expect(_hint(tester), isNot(contains('|')));
+      final caret = find.byWidgetPredicate(
+        (w) => w is Container && w.constraints?.maxWidth == 1.5,
+      );
+      expect(caret, findsOneWidget);
+
+      double opacity() => tester
+          .widget<AnimatedOpacity>(find.byKey(const ValueKey('search-caret')))
+          .opacity;
+
+      final first = opacity();
+      await tester.pump(const Duration(milliseconds: 650));
+      expect(opacity(), isNot(closeTo(first, 0.05)), reason: 'it blinks');
+
+      await tester.pumpWidget(_wrap(const SizedBox()));
     });
   });
 
@@ -155,6 +252,79 @@ void main() {
       await tester.enterText(find.byType(TextField), '');
       await tester.pumpAndSettle();
 
+      expect(find.byType(AnimatedSearchHint), findsOneWidget);
+    });
+
+    testWidgets('focusing the empty box fades the hint and stops it', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(_wrap(SearchField(controller: controller)));
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<AnimatedSearchHint>(find.byType(AnimatedSearchHint))
+            .paused,
+        isFalse,
+      );
+
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+
+      final hint = tester.widget<AnimatedSearchHint>(
+        find.byType(AnimatedSearchHint),
+      );
+      expect(hint.paused, isTrue, reason: 'the run holds');
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find
+                  .ancestor(
+                    of: find.byType(AnimatedSearchHint),
+                    matching: find.byType(AnimatedOpacity),
+                  )
+                  .first,
+            )
+            .opacity,
+        0,
+        reason: 'and it is faded out',
+      );
+
+      await tester.pumpWidget(_wrap(const SizedBox()));
+    });
+
+    testWidgets('the clear button appears with the text, and takes it back', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      final typed = <String>[];
+
+      await tester.pumpWidget(
+        _wrap(
+          SearchField(controller: controller, onChanged: typed.add),
+          reducedMotion: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final clear = find.byKey(const ValueKey('search-clear'));
+      expect(clear, findsNothing, reason: 'nothing to clear yet');
+
+      await tester.enterText(find.byType(TextField), 'geyser');
+      await tester.pumpAndSettle();
+      expect(clear, findsOneWidget);
+
+      await tester.tap(clear);
+      await tester.pumpAndSettle();
+
+      expect(controller.text, isEmpty);
+      expect(clear, findsNothing, reason: 'and it goes with the text');
+      expect(typed.last, '', reason: 'suggestions hear about it too');
+      // Emptied, the placeholder is back.
       expect(find.byType(AnimatedSearchHint), findsOneWidget);
     });
 

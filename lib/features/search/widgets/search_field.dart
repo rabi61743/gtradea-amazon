@@ -105,19 +105,38 @@ class _SearchFieldState extends State<SearchField> {
                           child: Stack(
                             alignment: Alignment.centerLeft,
                             children: [
-                              ValueListenableBuilder<TextEditingValue>(
-                                valueListenable: widget.controller,
-                                builder: (context, value, _) =>
-                                    value.text.isEmpty
-                                    ? IgnorePointer(
-                                        child: AnimatedSearchHint(
-                                          style: TextStyle(
-                                            fontSize: 15,
-                                            color: onPill,
-                                          ),
+                              AnimatedBuilder(
+                                animation: Listenable.merge([
+                                  widget.controller,
+                                  _focus,
+                                ]),
+                                builder: (context, _) {
+                                  if (widget.controller.text.isNotEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  // Focused but empty: the hint fades and the
+                                  // run holds where it is, so the box belongs
+                                  // to whoever is about to type in it. Coming
+                                  // back to an untouched box resumes from the
+                                  // phrase it stopped on rather than starting
+                                  // the list again.
+                                  final focused = _focus.hasFocus;
+                                  return IgnorePointer(
+                                    child: AnimatedOpacity(
+                                      opacity: focused ? 0 : 1,
+                                      duration: const Duration(
+                                        milliseconds: 160,
+                                      ),
+                                      child: AnimatedSearchHint(
+                                        paused: focused,
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          color: onPill,
                                         ),
-                                      )
-                                    : const SizedBox.shrink(),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                               TextField(
                                 controller: widget.controller,
@@ -158,6 +177,38 @@ class _SearchFieldState extends State<SearchField> {
                         // Voice first, then image, matching the home header:
                         // a shopper sees both bands within a second of each
                         // other and the pair should not reorder between them.
+                        // Takes back what was typed, without leaving the box:
+                        // shown only while there is something to take back.
+                        AnimatedBuilder(
+                          animation: widget.controller,
+                          builder: (context, _) =>
+                              widget.controller.text.isEmpty
+                              ? const SizedBox.shrink()
+                              : IconButton(
+                                  key: const ValueKey('search-clear'),
+                                  icon: Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: onPill,
+                                  ),
+                                  tooltip: 'Clear',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 30,
+                                    height: 30,
+                                  ),
+                                  onPressed: () {
+                                    widget.controller.clear();
+                                    // The same keystroke path the typing takes,
+                                    // so a screen with suggestions clears them
+                                    // rather than holding the last ones.
+                                    widget.onChanged?.call('');
+                                    // The box stays the shopper's: they cleared
+                                    // it to type something else.
+                                    if (!widget.readOnly) _focus.requestFocus();
+                                  },
+                                ),
+                        ),
                         AnimatedBuilder(
                           animation: Listenable.merge([
                             widget.controller,
