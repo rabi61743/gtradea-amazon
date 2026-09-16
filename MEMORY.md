@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-16 13:55 — The card heart holds its fill until the store catches up
+- **What:** after the flight lands, the card heart stays filled until the card is told what really happened, instead of dropping straight back to what it was last told. A five-second timer lets it go if nothing ever comes, so a failed save cannot leave a heart that claims otherwise.
+- **Why:** found on the Redmi, testing the message removal: the wishlist call, its push and the rebuild that follows take about a second longer than the animation, and in that gap the heart showed an *outline* on a product that was already saved -- which read as "the save did not take". (The store was right all along: tapping again said "Removed from Wishlist" and the count went back down.)
+- **Affected:** `_SaveButton` in `lib/features/search/widgets/product_result_card.dart` (`didUpdateWidget`, a cancelled-on-dispose `Timer`), `test/wishlist_flight_test.dart`.
+- **Impact & risk:** the card's own drawing only. The store still owns the saved state and takes the heart back the moment it speaks.
+- **Verification:** two new tests -- the fill held through the gap, and let go when the save never lands; flight suite 10/10; analyze clean; on the Redmi the heart is still filled 2.5s after the tap, with no message and the real count on the bar.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 13:40 — No more "Added to Wishlist" message
 - **What:** saving a product no longer raises the "Added to Wishlist" status message anywhere -- the card hearts (home rails and grid, department feed, search results, and every screen built on the shared card), the Product History cards, and the Save action on the product page. Removing one still says "Removed from Wishlist".
 - **Why:** User request, straight after the fly-to-wishlist animation went in: the flying heart, the filled card heart and the count moving on the Saved tab already say a product was saved, so the message repeated it.

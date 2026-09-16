@@ -170,21 +170,49 @@ void main() {
     expect(_heartsInFlight(tester), 0);
   });
 
-  testWidgets('the card heart goes back to its outline afterwards', (
+  testWidgets('the fill is held until the store says what happened', (
     tester,
   ) async {
-    // The store is what says whether a product is saved; this only animates
-    // the moment. With the card still told `saved: false`, it must end as it
-    // began.
+    // The wishlist call and the rebuild that follows it outlast the
+    // animation, so the heart stays filled through that gap rather than
+    // blinking back to an outline on a product that is saved.
     await tester.pumpWidget(
       _page(saved: false, onToggle: () {}, savedCount: 0),
     );
     await tester.pump();
 
     await tester.tap(_cardHeart);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 1200));
+    expect(
+      _cardHeart.evaluate(),
+      isEmpty,
+      reason: 'still filled, waiting on the store',
+    );
+
+    // Told the product is saved, the heart is the store's again -- and it is
+    // still filled, because that is what saved looks like.
+    await tester.pumpWidget(
+      _page(saved: true, onToggle: () {}, savedCount: 1),
+    );
+    await tester.pumpAndSettle();
+    expect(_cardHeart.evaluate(), isEmpty);
+  });
+
+  testWidgets('and is let go if the save never lands', (tester) async {
+    await tester.pumpWidget(
+      _page(saved: false, onToggle: () {}, savedCount: 0),
+    );
+    await tester.pump();
+
+    await tester.tap(_cardHeart);
+    // Nothing ever tells this card it was saved, so the hold runs out.
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 6));
     await tester.pumpAndSettle();
 
-    expect(_cardHeart, findsOneWidget);
+    expect(_cardHeart, findsOneWidget, reason: 'back to what it was told');
   });
 
   testWidgets('un-saving is the plain toggle it always was', (tester) async {

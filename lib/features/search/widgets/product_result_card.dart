@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -371,13 +373,32 @@ class _SaveButtonState extends State<_SaveButton>
   /// the sequence ends -- including when the save fails.
   bool _busy = false;
 
-  /// Drawn filled for the length of the animation whatever the store says, so
-  /// the fill and the flight read as one movement. Afterwards the card goes
-  /// back to showing exactly what is saved.
+  /// Drawn filled from the tap until the store catches up.
+  ///
+  /// The wishlist call, its push to the server and the rebuild that follows
+  /// take longer than the animation does, and a heart that fell back to its
+  /// outline in that gap would be saying the product was not saved when it
+  /// was. So the fill is held, and let go the moment the card is told what
+  /// really happened -- [didUpdateWidget] below -- or by [_holdFill] if the
+  /// save failed and nothing ever comes.
   bool _filling = false;
+
+  /// The longest the fill is held on trust.
+  static const _holdFill = Duration(seconds: 5);
+  Timer? _release;
+
+  @override
+  void didUpdateWidget(_SaveButton old) {
+    super.didUpdateWidget(old);
+    // The store has spoken: it owns the heart from here.
+    if (widget.saved != old.saved && _filling) {
+      setState(() => _filling = false);
+    }
+  }
 
   @override
   void dispose() {
+    _release?.cancel();
     _pop.dispose();
     super.dispose();
   }
@@ -413,9 +434,17 @@ class _SaveButtonState extends State<_SaveButton>
     await flight;
 
     if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _filling = false;
+    // The button is free again as soon as its heart has landed. The fill
+    // stays until the store says otherwise, so the heart never blinks back
+    // to an outline on a product that is saved.
+    setState(() => _busy = false);
+
+    // Nothing came back: the save did not take, so the heart goes back to
+    // what the card was told, rather than showing a save that never happened.
+    _release?.cancel();
+    _release = Timer(_holdFill, () {
+      if (!mounted || !_filling) return;
+      setState(() => _filling = false);
     });
   }
 
