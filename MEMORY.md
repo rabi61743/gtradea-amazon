@@ -18,6 +18,23 @@ Entry format:
 
 ---
 
+## 2026-09-17 12:30 — Size recommendation tab
+- **What:** the size guide sheet now has two tabs in its header, "Size guide" and "Size recommendation". The new tab is in `lib/features/product/widgets/size_recommendation.dart` and follows the Temu reference:
+  - "Swipe to add your body information", an orange IN/CM switch, and Bust / Waist rows. Each row has a value box and a horizontal ruler that snaps to ticks under an orange pointer (`RulerPicker`: 1 cm ticks, or ½-inch ticks in inches).
+  - "How to measure?" with a numbered figure (Bust, Waist, Hips, Height), plus a Submit bar.
+  - Submit saves bust/waist in SharedPreferences (`gtradea_size_bust_cm`, `gtradea_size_waist_cm`) and shows "Your standard size: X". The suggestion is the larger of the bust and waist fits, and it explains which size each measurement fits. It is labelled as coming from a general chart, not the product's.
+  - Submit scrolls the result into view. "See X in the size guide ›" switches to the guide tab on that size.
+  - The body figure painter is now shared as `paintBodyFigure` / `dashLine` in `size_guide_sheet.dart`. Tab titles scale down rather than ellipsize.
+- **Why:** the user asked for the Size recommendation tab ("built it"). No backend holds body measurements, so they stay on the device (the tab says so) and the chart is the standard one.
+- **Affected:** `size_guide_sheet.dart` (header tabs, shared painters), new `size_recommendation.dart`, new `test/size_recommendation_test.dart`.
+- **Impact & risk:** the guide tab is unchanged. Two bugs were found and fixed:
+  - switching the unit rebuilt the ruler, which snapped 96 cm to the nearest inch and stored the change. Only a finger drag changes the value now.
+  - a mid-layout notification had scheduled a build during the frame.
+- **Verification:**
+  - 11 new tests plus the 12 size guide tests pass. Analyze is clean. The full suite has only the 3 known `brand_system_test` failures.
+  - On the Redmi: search → polo cart icon → Size guide (pills fine) → Size recommendation → swiped bust to 103 and waist to 94 → IN shows 40.6 / 37.0 in with no drift → Submit → "XL" (bust L, waist XL) scrolled into view → "See XL" opens the guide on XL (106-111). After a reinstall and reopen, the saved values and XL came back, and the full tab title shows.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 23:55 — Size Guide (button + sheet, standard chart)
 - **What:** new `lib/features/product/widgets/size_guide_sheet.dart`:
   - `SizeGuideButton` -- pale rounded pill, ruler icon, "Size guide". Shown beside the **Size** heading in the options popup (replacing the earlier decoration-only `_SizeGuideTag` in `add_to_cart_sheet.dart`) and at the end of the "Choose Size: …" line in the Product Detail page's `VariantPicker` (only when the axis name contains "size").

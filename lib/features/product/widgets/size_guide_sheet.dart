@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'size_recommendation.dart';
+
 /// One size in the general chart: body measurements to fit, and the garment's
 /// own measurements, both in centimetres.
 @immutable
@@ -218,6 +220,9 @@ class _SizeGuideSheetState extends State<SizeGuideSheet> {
   _Chart _chart = _Chart.product;
   late int _size = SizeGuideSheet.indexFor(widget.initialSize);
 
+  /// 0 for the size guide, 1 for the size recommendation.
+  int _tab = 0;
+
   String _n(double cm) {
     if (_unit == _Unit.cm) {
       return cm == cm.roundToDouble() ? cm.toStringAsFixed(0) : '$cm';
@@ -236,84 +241,99 @@ class _SizeGuideSheetState extends State<SizeGuideSheet> {
       color: theme.colorScheme.surface,
       child: Column(
         children: [
-          _Header(onClose: () => Navigator.of(context).maybePop()),
-          const Divider(height: 1),
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                _Band(
-                  child: Row(
-                    children: [
-                      Text('Switch to', style: theme.textTheme.titleMedium),
-                      const Spacer(),
-                      _UnitToggle(
-                        unit: _unit,
-                        onChanged: (u) => setState(() => _unit = u),
-                      ),
-                    ],
-                  ),
-                ),
-                const _Gap(),
-                _Band(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Size displayed: Standard size',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          for (var i = 0; i < kStandardSizes.length; i++)
-                            _SizeChip(
-                              label: kStandardSizes[i].label,
-                              selected: i == _size,
-                              onTap: () => setState(() => _size = i),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _Figures(
-                        chest: _range(size.chest),
-                        waist: _range(size.waist),
-                        height: _range(size.height),
-                        shoulder: _n(size.shoulder),
-                        garmentChest: _n(size.garmentChest),
-                        length: _n(size.length),
-                        sleeve: _n(size.sleeve),
-                      ),
-                      const SizedBox(height: 12),
-                      _Notice(),
-                    ],
-                  ),
-                ),
-                const _Gap(),
-                _Band(
-                  child: Column(
-                    children: [
-                      _ChartTabs(
-                        chart: _chart,
-                        onChanged: (c) => setState(() => _chart = c),
-                      ),
-                      const SizedBox(height: 12),
-                      _Table(
-                        chart: _chart,
-                        selected: _size,
-                        cell: _n,
-                        range: _range,
-                        unit: _unit == _Unit.cm ? 'cm' : 'in',
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-              ],
-            ),
+          _Header(
+            onClose: () => Navigator.of(context).maybePop(),
+            tab: _tab,
+            onTab: (t) => setState(() => _tab = t),
           ),
+          const Divider(height: 1),
+          if (_tab == 1)
+            Expanded(
+              child: SizeRecommendationTab(
+                // From the suggestion to the guide, on that size.
+                onViewSize: (i) => setState(() {
+                  _size = i;
+                  _tab = 0;
+                }),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  _Band(
+                    child: Row(
+                      children: [
+                        Text('Switch to', style: theme.textTheme.titleMedium),
+                        const Spacer(),
+                        _UnitToggle(
+                          unit: _unit,
+                          onChanged: (u) => setState(() => _unit = u),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const _Gap(),
+                  _Band(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Size displayed: Standard size',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            for (var i = 0; i < kStandardSizes.length; i++)
+                              _SizeChip(
+                                label: kStandardSizes[i].label,
+                                selected: i == _size,
+                                onTap: () => setState(() => _size = i),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _Figures(
+                          chest: _range(size.chest),
+                          waist: _range(size.waist),
+                          height: _range(size.height),
+                          shoulder: _n(size.shoulder),
+                          garmentChest: _n(size.garmentChest),
+                          length: _n(size.length),
+                          sleeve: _n(size.sleeve),
+                        ),
+                        const SizedBox(height: 12),
+                        _Notice(),
+                      ],
+                    ),
+                  ),
+                  const _Gap(),
+                  _Band(
+                    child: Column(
+                      children: [
+                        _ChartTabs(
+                          chart: _chart,
+                          onChanged: (c) => setState(() => _chart = c),
+                        ),
+                        const SizedBox(height: 12),
+                        _Table(
+                          chart: _chart,
+                          selected: _size,
+                          cell: _n,
+                          range: _range,
+                          unit: _unit == _Unit.cm ? 'cm' : 'in',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -321,37 +341,43 @@ class _SizeGuideSheetState extends State<SizeGuideSheet> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onClose});
+  const _Header({
+    required this.onClose,
+    required this.tab,
+    required this.onTab,
+  });
 
   final VoidCallback onClose;
+  final int tab;
+  final ValueChanged<int> onTab;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // The full width, or the stack shrinks to the title and the back arrow
-    // lands on top of it, in the middle, where the title takes its taps.
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned(
-            left: 4,
-            child: IconButton(
-              key: const ValueKey('size-guide-close'),
-              icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-              tooltip: 'Close',
-              onPressed: onClose,
-            ),
-          ),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+
+    Widget label(String text, int index) {
+      final on = tab == index;
+      return InkWell(
+        key: ValueKey('size-tab-$index'),
+        onTap: () => onTab(index),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'Size guide',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+              // Shrinks a little rather than cut "Size recommendation" short
+              // on a phone.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+                    color: on
+                        ? theme.colorScheme.onSurface
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               const SizedBox(height: 6),
@@ -359,12 +385,37 @@ class _Header extends StatelessWidget {
                 width: 24,
                 height: 3,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface,
+                  color: on ? theme.colorScheme.onSurface : Colors.transparent,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ],
           ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 60,
+      child: Row(
+        children: [
+          IconButton(
+            key: const ValueKey('size-guide-close'),
+            icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+            tooltip: 'Close',
+            onPressed: onClose,
+          ),
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Flexible(child: label('Size guide', 0)),
+                Flexible(child: label('Size recommendation', 1)),
+              ],
+            ),
+          ),
+          // Balances the back arrow, so the tabs sit in the middle.
+          const SizedBox(width: 48),
         ],
       ),
     );
@@ -579,61 +630,7 @@ class _FiguresPainter extends CustomPainter {
       ..strokeWidth = 1.2;
 
     // --- The body, on the left third. -------------------------------------
-    final cx = w * 0.215;
-    final head = Rect.fromCenter(
-      center: Offset(cx, h * 0.07),
-      width: w * 0.075,
-      height: h * 0.1,
-    );
-    canvas.drawOval(head, outline);
-
-    final body = Path()
-      // Neck and shoulders.
-      ..moveTo(cx - w * 0.02, h * 0.12)
-      ..lineTo(cx - w * 0.025, h * 0.155)
-      ..quadraticBezierTo(cx - w * 0.13, h * 0.17, cx - w * 0.14, h * 0.24)
-      // Left arm.
-      ..lineTo(cx - w * 0.165, h * 0.47)
-      ..lineTo(cx - w * 0.17, h * 0.56)
-      ..lineTo(cx - w * 0.145, h * 0.56)
-      ..lineTo(cx - w * 0.12, h * 0.34)
-      // Left side down to the hip and leg.
-      ..lineTo(cx - w * 0.09, h * 0.47)
-      ..lineTo(cx - w * 0.105, h * 0.62)
-      ..lineTo(cx - w * 0.085, h * 0.97)
-      ..lineTo(cx - w * 0.035, h * 0.97)
-      ..lineTo(cx, h * 0.66)
-      // Right leg and side, mirrored.
-      ..lineTo(cx + w * 0.035, h * 0.97)
-      ..lineTo(cx + w * 0.085, h * 0.97)
-      ..lineTo(cx + w * 0.105, h * 0.62)
-      ..lineTo(cx + w * 0.09, h * 0.47)
-      ..lineTo(cx + w * 0.12, h * 0.34)
-      ..lineTo(cx + w * 0.145, h * 0.56)
-      ..lineTo(cx + w * 0.17, h * 0.56)
-      ..lineTo(cx + w * 0.165, h * 0.47)
-      ..lineTo(cx + w * 0.14, h * 0.24)
-      ..quadraticBezierTo(cx + w * 0.13, h * 0.17, cx + w * 0.025, h * 0.155)
-      ..lineTo(cx + w * 0.02, h * 0.12);
-    canvas.drawPath(body, outline);
-
-    // Chest, waist and hip rings.
-    for (final (y, half) in [(0.33, 0.115), (0.46, 0.095), (0.58, 0.108)]) {
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: Offset(cx, h * y),
-          width: w * half * 2,
-          height: h * 0.035,
-        ),
-        orange,
-      );
-    }
-
-    // The height rule, with dashed ties to the crown and the floor.
-    final ruleX = w * 0.42;
-    canvas.drawLine(Offset(ruleX, h * 0.02), Offset(ruleX, h * 0.97), orange);
-    _dash(canvas, Offset(cx, h * 0.02), Offset(ruleX, h * 0.02), dashed);
-    _dash(canvas, Offset(cx, h * 0.97), Offset(ruleX, h * 0.97), dashed);
+    paintBodyFigure(canvas, w: w, h: h, cx: w * 0.215, ruleX: w * 0.42);
 
     // --- The garment, on the right. ----------------------------------------
     // Drawn a little under full size and with its sleeves hanging close, so
@@ -679,22 +676,16 @@ class _FiguresPainter extends CustomPainter {
       Offset(w * lengthRuleX, top + h * 0.33),
       orange,
     );
-    _dash(canvas, Offset(g(0.07), top), Offset(w * lengthRuleX, top), dashed);
+    dashLine(
+      canvas,
+      Offset(g(0.07), top),
+      Offset(w * lengthRuleX, top),
+      dashed,
+    );
   }
 
   /// Where the garment's length rule stands, clear of its right sleeve.
   static const lengthRuleX = 0.94;
-
-  void _dash(Canvas canvas, Offset from, Offset to, Paint paint) {
-    const dash = 4.0;
-    const gap = 3.0;
-    final length = (to - from).distance;
-    final dir = (to - from) / length;
-    for (var d = 0.0; d < length; d += dash + gap) {
-      final end = (d + dash).clamp(0.0, length);
-      canvas.drawLine(from + dir * d, from + dir * end, paint);
-    }
-  }
 
   @override
   bool shouldRepaint(_FiguresPainter old) => false;
@@ -871,4 +862,147 @@ class _Table extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The outline figure with its chest, waist and hip rings and a height rule.
+///
+/// Shared by the size guide's figure and the recommendation tab's
+/// "How to measure" drawing, so the two are the same person. [w] scales the
+/// figure's width -- it spans about 0.35 of it -- and [cx] and [ruleX] place
+/// the figure's centre line and the height rule.
+void paintBodyFigure(
+  Canvas canvas, {
+  required double w,
+  required double h,
+  required double cx,
+  required double ruleX,
+}) {
+  final outline = Paint()
+    ..color = const Color(0xFF9E9E9E)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.4;
+  final orange = Paint()
+    ..color = SizeGuideSheet.accent
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 3;
+  final dashed = Paint()
+    ..color = SizeGuideSheet.accent
+    ..strokeWidth = 1.2;
+
+  final head = Rect.fromCenter(
+    center: Offset(cx, h * 0.07),
+    width: w * 0.075,
+    height: h * 0.1,
+  );
+  canvas.drawOval(head, outline);
+
+  final body = Path()
+    // Neck and shoulders.
+    ..moveTo(cx - w * 0.02, h * 0.12)
+    ..lineTo(cx - w * 0.025, h * 0.155)
+    ..quadraticBezierTo(cx - w * 0.13, h * 0.17, cx - w * 0.14, h * 0.24)
+    // Left arm.
+    ..lineTo(cx - w * 0.165, h * 0.47)
+    ..lineTo(cx - w * 0.17, h * 0.56)
+    ..lineTo(cx - w * 0.145, h * 0.56)
+    ..lineTo(cx - w * 0.12, h * 0.34)
+    // Left side down to the hip and leg.
+    ..lineTo(cx - w * 0.09, h * 0.47)
+    ..lineTo(cx - w * 0.105, h * 0.62)
+    ..lineTo(cx - w * 0.085, h * 0.97)
+    ..lineTo(cx - w * 0.035, h * 0.97)
+    ..lineTo(cx, h * 0.66)
+    // Right leg and side, mirrored.
+    ..lineTo(cx + w * 0.035, h * 0.97)
+    ..lineTo(cx + w * 0.085, h * 0.97)
+    ..lineTo(cx + w * 0.105, h * 0.62)
+    ..lineTo(cx + w * 0.09, h * 0.47)
+    ..lineTo(cx + w * 0.12, h * 0.34)
+    ..lineTo(cx + w * 0.145, h * 0.56)
+    ..lineTo(cx + w * 0.17, h * 0.56)
+    ..lineTo(cx + w * 0.165, h * 0.47)
+    ..lineTo(cx + w * 0.14, h * 0.24)
+    ..quadraticBezierTo(cx + w * 0.13, h * 0.17, cx + w * 0.025, h * 0.155)
+    ..lineTo(cx + w * 0.02, h * 0.12);
+  canvas.drawPath(body, outline);
+
+  // Chest, waist and hip rings.
+  for (final (y, half) in [(0.33, 0.115), (0.46, 0.095), (0.58, 0.108)]) {
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(cx, h * y),
+        width: w * half * 2,
+        height: h * 0.035,
+      ),
+      orange,
+    );
+  }
+
+  // The height rule, with dashed ties to the crown and the floor.
+  canvas.drawLine(Offset(ruleX, h * 0.02), Offset(ruleX, h * 0.97), orange);
+  dashLine(canvas, Offset(cx, h * 0.02), Offset(ruleX, h * 0.02), dashed);
+  dashLine(canvas, Offset(cx, h * 0.97), Offset(ruleX, h * 0.97), dashed);
+}
+
+/// A dashed line, for the ties from a figure to its measurement rule.
+void dashLine(Canvas canvas, Offset from, Offset to, Paint paint) {
+  const dash = 4.0;
+  const gap = 3.0;
+  final length = (to - from).distance;
+  if (length == 0) return;
+  final dir = (to - from) / length;
+  for (var d = 0.0; d < length; d += dash + gap) {
+    final end = (d + dash).clamp(0.0, length);
+    canvas.drawLine(from + dir * d, from + dir * end, paint);
+  }
+}
+
+/// The "How to measure" figure: the same person, with numbered marks for
+/// bust (1), waist (2), hips (3) and height (4).
+class MeasureFigure extends StatelessWidget {
+  const MeasureFigure({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 0.62,
+      child: CustomPaint(painter: _MeasurePainter()),
+    );
+  }
+}
+
+class _MeasurePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final wide = size.width;
+    final h = size.height;
+    // The shared figure spans about 0.35 of its w; this fills the box.
+    final w = wide * 2.6;
+    final cx = wide * 0.56;
+    paintBodyFigure(canvas, w: w, h: h, cx: cx, ruleX: wide * 0.06);
+
+    void mark(Offset at, String n) {
+      canvas.drawCircle(at, 9, Paint()..color = const Color(0xFF222222));
+      final text = TextPainter(
+        text: TextSpan(
+          text: n,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      text.paint(canvas, at - Offset(text.width / 2, text.height / 2));
+    }
+
+    mark(Offset(cx - w * 0.13, h * 0.33), '1');
+    mark(Offset(cx + w * 0.115, h * 0.46), '2');
+    mark(Offset(cx + w * 0.125, h * 0.58), '3');
+    mark(Offset(wide * 0.06, h * 0.5), '4');
+  }
+
+  @override
+  bool shouldRepaint(_MeasurePainter old) => false;
 }
