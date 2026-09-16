@@ -72,31 +72,68 @@ class AnimatedSearchHint extends StatefulWidget {
   /// Holds the run where it is -- the field has the shopper's attention.
   final bool paused;
 
+  /// Whether the cursor blinks.
+  ///
+  /// The blink is a fade that never ends, which is right on a phone and wrong
+  /// in a widget test: a page with one on it never settles. Tests turn it off
+  /// in `flutter_test_config.dart`, as they do the hero banner's autoplay, and
+  /// the cursor is then drawn lit and still.
+  static bool blinkEnabled = true;
+
   @override
   State<AnimatedSearchHint> createState() => _AnimatedSearchHintState();
 }
 
-class _AnimatedSearchHintState extends State<AnimatedSearchHint> {
-  /// Long enough to actually read the word before it goes.
-  static const _hold = Duration(milliseconds: 2200);
+class _AnimatedSearchHintState extends State<AnimatedSearchHint>
+    with TickerProviderStateMixin {
+  /// How long a phrase stays on screen before it turns over.
+  static const _hold = Duration(milliseconds: 2600);
 
-  /// The turn itself: one word up and out as the next comes up from below.
-  static const _turn = Duration(milliseconds: 420);
+  /// The whole turn: the outgoing phrase takes 400 ms, and the incoming one
+  /// takes 450 ms starting 50 ms in. Driven as one timeline so the overlap is
+  /// exact rather than two animations that happen to line up.
+  static const _turn = Duration(milliseconds: 500);
+  static const _outMs = 400.0;
+  static const _inDelayMs = 50.0;
+  static const _inMs = 450.0;
 
-  /// How long the cursor stays in each state -- a heartbeat, not a flicker.
-  static const _blink = Duration(milliseconds: 600);
+  /// How far each travels, in logical pixels.
+  static const _outRise = 16.0;
+  static const _inDrop = 18.0;
 
-  /// How long it takes to fade between them. Shorter than [_blink], so there
-  /// is a still moment in every beat: the cursor is a timer and a fade, not an
-  /// animation running for as long as the page is open, which would repaint
-  /// the header every frame just to move one line of pixels.
-  static const _caretFade = Duration(milliseconds: 280);
+  /// The container follows the arriving phrase's width over the same 450 ms.
+  static const _resize = Duration(milliseconds: 450);
+
+  /// Each half of the blink: full to nothing, or nothing to full.
+  static const _blinkHalf = Duration(milliseconds: 550);
 
   Timer? _timer;
-  Timer? _caretTimer;
-  bool _caretOn = true;
   int _phrase = 0;
+
+  /// The phrase leaving, for the length of a turn. Null when none is.
+  String? _leaving;
+
   bool _reducedMotion = false;
+
+  late final AnimationController _turnClock =
+      AnimationController(vsync: this, duration: _turn, value: 1)
+        ..addStatusListener((status) {
+          if (status == AnimationStatus.completed && _leaving != null) {
+            setState(() => _leaving = null);
+          }
+        });
+
+  late final AnimationController _blink = AnimationController(
+    vsync: this,
+    duration: _blinkHalf,
+    value: 1,
+  );
+
+  /// Eased both ways, so the blink is a breath rather than a flicker.
+  late final Animation<double> _blinkCurve = CurvedAnimation(
+    parent: _blink,
+    curve: Curves.easeInOut,
+  );
 
   @override
   void initState() {
@@ -126,19 +163,20 @@ class _AnimatedSearchHintState extends State<AnimatedSearchHint> {
     }
   }
 
-  /// Starts or stops the run to match the state it should be in.
+  /// Starts or stops the run, and the blink, to match what they should be.
   void _sync() {
     _timer?.cancel();
-    _caretTimer?.cancel();
-    if (_still) {
-      // Held: the cursor stays lit rather than blinking at nothing. Set
-      // directly -- this runs from the lifecycle hooks, and a build follows.
-      _caretOn = true;
-      return;
+
+    // The cursor keeps its own time, not the phrases': it blinks whenever the
+    // hint is drawn and motion is allowed.
+    if (AnimatedSearchHint.blinkEnabled && !_reducedMotion) {
+      if (!_blink.isAnimating) _blink.repeat(reverse: true);
+    } else {
+      _blink.stop();
+      _blink.value = 1;
     }
-    _caretTimer = Timer.periodic(_blink, (_) {
-      if (mounted) setState(() => _caretOn = !_caretOn);
-    });
+
+    if (_still) return;
     _timer = Timer(_hold, _next);
   }
 
@@ -152,16 +190,40 @@ class _AnimatedSearchHintState extends State<AnimatedSearchHint> {
 
   void _next() {
     if (!mounted || _still) return;
-    setState(() => _phrase = (_phrase + 1) % widget.phrases.length);
-    _timer = Timer(_hold, _next);
+    setState(() {
+      _leaving = _current;
+      _phrase = (_phrase + 1) % widget.phrases.length;
+    });
+    _turnClock.forward(from: 0);
+    // The next hold starts once this turn is over, so every phrase gets its
+    // full 2.6 seconds fully on screen.
+    _timer = Timer(_hold + _turn, _next);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _caretTimer?.cancel();
+    _turnClock.dispose();
+    _blink.dispose();
     super.dispose();
   }
+
+  /// 0 to 1 across [durationMs], starting [delayMs] into the turn.
+  double _phase(double delayMs, double durationMs) {
+    final elapsed = _turnClock.value * _turn.inMilliseconds;
+    return ((elapsed - delayMs) / durationMs).clamp(0.0, 1.0);
+  }
+
+  Widget _word(String text, TextStyle? style) => Text(
+    text,
+    key: ValueKey(text),
+    style: style,
+    maxLines: 1,
+    // Long phrases on a narrow phone shorten rather than push the icons off
+    // the end of the pill.
+    overflow: TextOverflow.ellipsis,
+    softWrap: false,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -187,60 +249,65 @@ class _AnimatedSearchHintState extends State<AnimatedSearchHint> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              // The example, and only the example, turns over. Sized to what
-              // is in it so the cursor after it moves with the word rather
-              // than sitting at a fixed distance -- and animated, so a longer
-              // phrase widens the run instead of jumping to it.
+              // The example, and only the example, turns over. The container
+              // is sized to the arriving phrase and follows it over 450 ms, so
+              // the cursor after it moves at the pace of the text change.
               Flexible(
                 child: AnimatedSize(
-                  duration: _turn,
-                  curve: Curves.easeOutCubic,
+                  duration: _resize,
+                  curve: Curves.easeInOut,
                   alignment: Alignment.centerLeft,
                   child: ClipRect(
-                    child: AnimatedSwitcher(
-                      duration: _turn,
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      // Both words are on screen at once during the turn, and
-                      // laid out on top of each other they would fight for the
-                      // width. The outgoing one is taken out of the layout.
-                      layoutBuilder: (current, previous) => Stack(
-                        alignment: Alignment.centerLeft,
-                        children: [
-                          ...previous.map(
-                            (child) => Positioned(left: 0, child: child),
-                          ),
-                          ?current,
-                        ],
-                      ),
-                      transitionBuilder: (child, animation) {
-                        // Reduced motion keeps the change without the travel:
-                        // the word fades rather than riding up the pill.
-                        if (_reducedMotion) {
-                          return FadeTransition(
-                            opacity: animation,
-                            child: child,
-                          );
-                        }
-                        final slide = Tween<Offset>(
-                          begin: const Offset(0, 0.9),
-                          end: Offset.zero,
-                        ).animate(animation);
-                        return FadeTransition(
-                          opacity: animation,
-                          child: SlideTransition(position: slide, child: child),
+                    child: AnimatedBuilder(
+                      animation: _turnClock,
+                      builder: (context, _) {
+                        final leaving = _leaving;
+                        // Out: up 16 while fading to nothing, over 400 ms,
+                        // slow to start and quick to finish.
+                        final out = Curves.easeIn.transform(_phase(0, _outMs));
+                        // In: from 18 below while fading in, over 450 ms from
+                        // 50 ms after the out began, quick to start and slow
+                        // to settle.
+                        final into = Curves.easeOut.transform(
+                          _phase(_inDelayMs, _inMs),
+                        );
+                        // Reduced motion keeps the fades and drops the travel.
+                        final travel = !_reducedMotion;
+
+                        return Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [
+                            if (leaving != null)
+                              // Out of the layout, so the container is the
+                              // arriving phrase's width alone.
+                              Positioned(
+                                left: 0,
+                                child: Opacity(
+                                  opacity: 1 - out,
+                                  child: Transform.translate(
+                                    offset: Offset(
+                                      0,
+                                      travel ? -_outRise * out : 0,
+                                    ),
+                                    child: _word(leaving, style),
+                                  ),
+                                ),
+                              ),
+                            Opacity(
+                              opacity: leaving == null ? 1 : into,
+                              child: Transform.translate(
+                                offset: Offset(
+                                  0,
+                                  travel && leaving != null
+                                      ? _inDrop * (1 - into)
+                                      : 0,
+                                ),
+                                child: _word(_current, style),
+                              ),
+                            ),
+                          ],
                         );
                       },
-                      child: Text(
-                        _current,
-                        key: ValueKey(_current),
-                        style: style,
-                        maxLines: 1,
-                        // Long phrases on a narrow phone shorten rather than
-                        // push the icons off the end of the pill.
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: false,
-                      ),
                     ),
                   ),
                 ),
@@ -250,20 +317,22 @@ class _AnimatedSearchHintState extends State<AnimatedSearchHint> {
         ),
         // A caret, so the changing word reads as something being typed rather
         // than as text failing to render. It keeps its own time: the blink is
-        // not tied to the turn, the way a real one is not.
+        // not tied to the turn, the way a real one is not. Behind its own
+        // repaint boundary, so a fade that never stops repaints one thin line
+        // and not the header around it.
         Padding(
           padding: const EdgeInsets.only(left: 2),
-          child: AnimatedOpacity(
-            key: const ValueKey('search-caret'),
-            opacity: _caretOn ? 0.7 : 0.15,
-            duration: _caretFade,
-            curve: Curves.easeInOut,
-            child: Container(
-              width: 1.5,
-              height: caretHeight,
-              decoration: BoxDecoration(
-                color: style?.color,
-                borderRadius: BorderRadius.circular(1),
+          child: RepaintBoundary(
+            child: FadeTransition(
+              key: const ValueKey('search-caret'),
+              opacity: _blinkCurve,
+              child: Container(
+                width: 1.5,
+                height: caretHeight,
+                decoration: BoxDecoration(
+                  color: style?.color,
+                  borderRadius: BorderRadius.circular(1),
+                ),
               ),
             ),
           ),

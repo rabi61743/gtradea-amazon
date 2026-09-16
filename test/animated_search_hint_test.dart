@@ -47,82 +47,112 @@ void main() {
   });
 
   group('the animated placeholder', () {
+    const two = AnimatedSearchHint(
+      style: TextStyle(),
+      phrases: ['lamp', 'shoes'],
+    );
+
+    /// The rendered vertical offset and opacity of [word], as drawn.
+    ({double dy, double opacity}) drawn(WidgetTester tester, String word) {
+      final text = find.text(word);
+      final translate = tester.widget<Transform>(
+        find.ancestor(of: text, matching: find.byType(Transform)).first,
+      );
+      final opacity = tester.widget<Opacity>(
+        find.ancestor(of: text, matching: find.byType(Opacity)).first,
+      );
+      return (
+        dy: translate.transform.getTranslation().y,
+        opacity: opacity.opacity,
+      );
+    }
+
     testWidgets('a lone phrase is shown whole, and stays put', (tester) async {
       await tester.pumpWidget(
-        _wrap(const AnimatedSearchHint(style: TextStyle(), phrases: ['Lamp'])),
+        _wrap(const AnimatedSearchHint(style: TextStyle(), phrases: ['lamp'])),
       );
 
-      expect(_hint(tester), 'Search for Lamp');
+      expect(_hint(tester), 'Search for lamp');
     });
 
-    testWidgets('turns one phrase over for the next, without a blank', (
+    testWidgets('each phrase holds for 2.6 seconds before it turns', (
       tester,
     ) async {
-      await tester.pumpWidget(
-        _wrap(
-          const AnimatedSearchHint(
-            style: TextStyle(),
-            phrases: ['Lamp', 'Shoes'],
-          ),
-        ),
-      );
+      await tester.pumpWidget(_wrap(two));
+      expect(_hint(tester), 'Search for lamp');
 
-      // Whole from the first frame: a ticker shows a word, it does not build
-      // one letter at a time.
-      expect(_hint(tester), 'Search for Lamp');
+      await tester.pump(const Duration(milliseconds: 2550));
+      expect(_hint(tester), 'Search for lamp', reason: 'still being read');
+      expect(find.text('shoes'), findsNothing);
 
-      // Held long enough to read before anything moves.
-      await tester.pump(const Duration(milliseconds: 1500));
-      expect(_hint(tester), 'Search for Lamp', reason: 'still being read');
-
-      // Mid-turn both are on screen -- one leaving, one arriving -- which is
-      // what makes it a ticker rather than a swap.
-      await tester.pump(const Duration(milliseconds: 900));
-      await tester.pump(const Duration(milliseconds: 120));
-      final turning = _hint(tester);
-      expect(turning, contains('Shoes'));
-      expect(turning, contains('Lamp'), reason: 'the old one is still leaving');
-
-      // And afterwards only the new one.
-      await tester.pump(const Duration(milliseconds: 600));
-      expect(_hint(tester), 'Search for Shoes');
-
-      await tester.pumpWidget(_wrap(const SizedBox()));
-    });
-
-    testWidgets('the arriving word rises into place as it fades in', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(
-          const AnimatedSearchHint(
-            style: TextStyle(),
-            phrases: ['Lamp', 'Shoes'],
-          ),
-        ),
-      );
-
-      await tester.pump(const Duration(milliseconds: 2300));
       await tester.pump(const Duration(milliseconds: 100));
-
-      final arriving = find.text('Shoes');
-      expect(arriving, findsOneWidget);
-      final slide = tester.widget<SlideTransition>(
-        find
-            .ancestor(of: arriving, matching: find.byType(SlideTransition))
-            .first,
-      );
-      // Still below its resting place, on its way up.
-      expect(slide.position.value.dy, greaterThan(0));
-
-      final fade = tester.widget<FadeTransition>(
-        find
-            .ancestor(of: arriving, matching: find.byType(FadeTransition))
-            .first,
-      );
-      expect(fade.opacity.value, lessThan(1), reason: 'and still fading in');
+      expect(find.text('shoes'), findsOneWidget, reason: 'turning at 2.6 s');
 
       await tester.pumpWidget(_wrap(const SizedBox()));
+    });
+
+    testWidgets('the outgoing phrase rises 16 and fades over 400 ms, ease-in', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(two));
+      await tester.pump(const Duration(milliseconds: 2600));
+
+      // Half-way through its 400 ms, on an ease-in: well under half-way.
+      await tester.pump(const Duration(milliseconds: 200));
+      final mid = drawn(tester, 'lamp');
+      final eased = Curves.easeIn.transform(0.5);
+      expect(mid.dy, closeTo(-16 * eased, 0.5));
+      expect(mid.opacity, closeTo(1 - eased, 0.02));
+      expect(-mid.dy, lessThan(8), reason: 'slow to start');
+
+      // At 400 ms it has gone the whole way.
+      await tester.pump(const Duration(milliseconds: 200));
+      final end = drawn(tester, 'lamp');
+      expect(end.dy, closeTo(-16, 0.5));
+      expect(end.opacity, closeTo(0, 0.01));
+
+      await tester.pumpWidget(_wrap(const SizedBox()));
+    });
+
+    testWidgets('the incoming one waits 50 ms, then rises 18 over 450 ms', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(two));
+      await tester.pump(const Duration(milliseconds: 2600));
+
+      // 40 ms in: the outgoing one has begun, the incoming one has not.
+      await tester.pump(const Duration(milliseconds: 40));
+      final waiting = drawn(tester, 'shoes');
+      expect(waiting.dy, closeTo(18, 0.01), reason: 'still 18 below');
+      expect(waiting.opacity, 0, reason: 'and not yet showing');
+      expect(drawn(tester, 'lamp').opacity, lessThan(1), reason: 'overlap');
+
+      // Half-way through its own 450 ms (50 + 225 = 275 ms in), on an
+      // ease-out: well past half-way.
+      await tester.pump(const Duration(milliseconds: 235));
+      final mid = drawn(tester, 'shoes');
+      final eased = Curves.easeOut.transform(0.5);
+      expect(mid.dy, closeTo(18 * (1 - eased), 0.5));
+      expect(mid.opacity, closeTo(eased, 0.02));
+      expect(mid.dy, lessThan(9), reason: 'quick to start');
+
+      // Settled at 500 ms.
+      await tester.pump(const Duration(milliseconds: 230));
+      expect(find.text('lamp'), findsNothing, reason: 'the old one is gone');
+      final settled = drawn(tester, 'shoes');
+      expect(settled.dy, 0);
+      expect(settled.opacity, 1);
+
+      await tester.pumpWidget(_wrap(const SizedBox()));
+    });
+
+    testWidgets('the width follows the phrase over 450 ms, eased both ways', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(two));
+      final size = tester.widget<AnimatedSize>(find.byType(AnimatedSize));
+      expect(size.duration, const Duration(milliseconds: 450));
+      expect(size.curve, Curves.easeInOut);
     });
 
     testWidgets('pausing holds the phrase it is on, and does not rewind', (
@@ -132,25 +162,25 @@ void main() {
         AnimatedSearchHint(
           style: const TextStyle(),
           paused: paused,
-          phrases: const ['Lamp', 'Shoes', 'Toys'],
+          phrases: const ['lamp', 'shoes', 'toys'],
         ),
       );
 
       await tester.pumpWidget(hint(paused: false));
-      await tester.pump(const Duration(milliseconds: 2300));
+      await tester.pump(const Duration(milliseconds: 2600));
       await tester.pump(const Duration(milliseconds: 600));
-      expect(_hint(tester), 'Search for Shoes');
+      expect(_hint(tester), 'Search for shoes');
 
       // Paused: the clock stops where it is.
       await tester.pumpWidget(hint(paused: true));
       await tester.pump(const Duration(seconds: 6));
-      expect(_hint(tester), 'Search for Shoes', reason: 'nothing moved on');
+      expect(_hint(tester), 'Search for shoes', reason: 'nothing moved on');
 
       // Resumed: it carries on from there rather than starting the list again.
       await tester.pumpWidget(hint(paused: false));
-      await tester.pump(const Duration(milliseconds: 2300));
+      await tester.pump(const Duration(milliseconds: 2600));
       await tester.pump(const Duration(milliseconds: 600));
-      expect(_hint(tester), 'Search for Toys');
+      expect(_hint(tester), 'Search for toys');
 
       await tester.pumpWidget(_wrap(const SizedBox()));
     });
@@ -158,47 +188,49 @@ void main() {
     testWidgets('holds still when the reader asked for less motion', (
       tester,
     ) async {
-      await tester.pumpWidget(
-        _wrap(
-          const AnimatedSearchHint(
-            style: TextStyle(),
-            phrases: ['Lamp', 'Shoes'],
-          ),
-          reducedMotion: true,
-        ),
-      );
+      await tester.pumpWidget(_wrap(two, reducedMotion: true));
 
       final first = _hint(tester);
-      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(seconds: 4));
 
-      expect(first, 'Search for Lamp');
+      expect(first, 'Search for lamp');
       expect(_hint(tester), first, reason: 'nothing moved');
     });
 
-    testWidgets('the cursor is drawn, and keeps its own time', (tester) async {
+    testWidgets('the cursor fades full to nothing and back, 550 ms a half', (
+      tester,
+    ) async {
+      // Off for the rest of the suite so pages can settle; on for this one.
+      AnimatedSearchHint.blinkEnabled = true;
+      addTearDown(() => AnimatedSearchHint.blinkEnabled = false);
+
       await tester.pumpWidget(
         _wrap(
           const AnimatedSearchHint(
             style: TextStyle(fontSize: 15),
-            phrases: ['Lamp', 'Shoes'],
+            phrases: ['lamp', 'shoes'],
           ),
         ),
       );
 
       // A bar after the word, not a typed "|" inside the text.
       expect(_hint(tester), isNot(contains('|')));
-      final caret = find.byWidgetPredicate(
-        (w) => w is Container && w.constraints?.maxWidth == 1.5,
-      );
-      expect(caret, findsOneWidget);
 
       double opacity() => tester
-          .widget<AnimatedOpacity>(find.byKey(const ValueKey('search-caret')))
-          .opacity;
+          .widget<FadeTransition>(find.byKey(const ValueKey('search-caret')))
+          .opacity
+          .value;
 
-      final first = opacity();
-      await tester.pump(const Duration(milliseconds: 650));
-      expect(opacity(), isNot(closeTo(first, 0.05)), reason: 'it blinks');
+      // One half down: from full to nothing over 550 ms, eased.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 275));
+      expect(opacity(), closeTo(0.5, 0.05), reason: 'eased, symmetric');
+      await tester.pump(const Duration(milliseconds: 275));
+      expect(opacity(), closeTo(0, 0.02), reason: 'gone at 550 ms');
+
+      // And back up over the next 550 ms.
+      await tester.pump(const Duration(milliseconds: 550));
+      expect(opacity(), closeTo(1, 0.02), reason: 'full again at 1.1 s');
 
       await tester.pumpWidget(_wrap(const SizedBox()));
     });

@@ -18,6 +18,23 @@ Entry format:
 
 ---
 
+## 2026-09-16 18:35 — Search placeholder timings, to the user's exact specification
+- **What:** `AnimatedSearchHint` now runs these numbers exactly, and a test pins each one:
+  - **Hold:** each phrase fully on screen 2.6 s (`_hold`); the next hold starts after the turn ends, so the whole 2.6 s is on the settled phrase.
+  - **Out:** up 16 px, opacity 1 → 0, 400 ms, `Curves.easeIn`.
+  - **In:** starts 18 px below at opacity 0, rises and fades in over 450 ms, `Curves.easeOut`, beginning 50 ms after the out.
+  - **Width:** `AnimatedSize` 450 ms, `Curves.easeInOut`.
+  - **Cursor:** full → 0 → full, 550 ms each half, `Curves.easeInOut`, continuous and independent of the phrases.
+- **How:** `AnimatedSwitcher` has one duration and one curve per direction and no start offset, so the turn is a single 500 ms `AnimationController` and the build reads two phases off it -- out over 0–400 ms, in over 50–500 ms -- through `Transform.translate` (pixel offsets) and `Opacity`. The outgoing word is `Positioned` out of the layout, so the width is the arriving phrase's alone.
+- **The cursor is a repeating fade again**, as specified (the previous entry's timer version held it still between blinks). Two things make that acceptable:
+  - it sits behind its own `RepaintBoundary`, so the endless fade repaints one 1.5 pt line, not the header;
+  - a static `AnimatedSearchHint.blinkEnabled` is switched **off** in `test/flutter_test_config.dart` (the `HeroBanner.autoplayEnabled` pattern), because a page with a never-ending animation never settles; the blink test turns it back on and restores it in `addTearDown`.
+  - Reduced motion: fades kept, no travel, cursor lit and still.
+- **Why:** User supplied the exact cycle, curves, offsets, overlap and blink timing.
+- **Affected:** `lib/shared/widgets/animated_search_hint.dart`, `test/animated_search_hint_test.dart`, `test/flutter_test_config.dart`.
+- **Verification:** hint suite 15 tests -- among them the 2.6 s hold (nothing new at 2.55 s, the next phrase present at 2.65 s), the outgoing word at exactly `-16 × easeIn(0.5)` and `1 − easeIn(0.5)` opacity halfway and at −16/0 at 400 ms, the incoming word still at +18/0 at 40 ms while the outgoing one has already begun, `18 × (1 − easeOut(0.5))` halfway through its own 450 ms and settled at 500 ms, `AnimatedSize` 450 ms `easeInOut`, and the cursor at 0.5 at 275 ms, 0 at 550 ms and 1 at 1.1 s. Full suite 2427 pass with only the three known `brand_system_test` colour failures; analyze clean. On the Redmi, a frame caught mid-turn shows "backpacks" arriving just below its line while the outgoing word has risen and faded to a sliver above it.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 18:15 — Search placeholder: a ticker with a blinking cursor, "Search for …"
 - **What:** `AnimatedSearchHint` (`lib/shared/widgets/animated_search_hint.dart`) is rewritten, same constructor plus a `paused` flag, so the home header and the search screen both keep using it.
   - **Ticker, not typewriter.** It used to type each phrase out letter by letter and erase it. Now the example slides up and fades while the next rises from below and fades in (`AnimatedSwitcher`, 420 ms, easeOutCubic in / easeInCubic out, 2.2 s hold). The outgoing word is `Positioned` out of the layout so the two never fight for width.

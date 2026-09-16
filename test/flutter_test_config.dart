@@ -5,6 +5,7 @@ import 'package:gtradea_amazon/core/images/app_images.dart';
 import 'package:gtradea_amazon/features/account/presentation/recent_views_section.dart';
 import 'package:gtradea_amazon/features/home/widgets/hero_banner.dart';
 import 'package:gtradea_amazon/features/tour/data/tour_store.dart';
+import 'package:gtradea_amazon/shared/widgets/animated_search_hint.dart';
 
 /// Runs once per test file, before anything in it.
 ///
@@ -31,6 +32,11 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // carousel. Nothing is mocked by this: those tests get the real clock at the
   // real interval, and the app is untouched.
   HeroBanner.autoplayEnabled = false;
+
+  // The search placeholder's cursor blinks on a fade that never ends, so any
+  // page carrying the search bar would never settle. Off here, back on in the
+  // test that is about the blink; the cursor is still drawn, lit and still.
+  AnimatedSearchHint.blinkEnabled = false;
 
   // A Product History card waits for its picture as well as its details, and
   // an image decode begun inside the test clock never finishes -- so every
