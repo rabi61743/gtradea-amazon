@@ -5,6 +5,7 @@ import 'package:gtradea_amazon/core/images/app_images.dart';
 import 'package:gtradea_amazon/features/account/presentation/recent_views_section.dart';
 import 'package:gtradea_amazon/features/home/widgets/hero_banner.dart';
 import 'package:gtradea_amazon/features/tour/data/tour_store.dart';
+import 'package:gtradea_amazon/features/wallet/presentation/coins_to_wallet_animation.dart';
 import 'package:gtradea_amazon/shared/widgets/animated_search_hint.dart';
 
 /// Runs once per test file, before anything in it.
@@ -37,6 +38,9 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // page carrying the search bar would never settle. Off here, back on in the
   // test that is about the blink; the cursor is still drawn, lit and still.
   AnimatedSearchHint.blinkEnabled = false;
+
+  // The coins-into-wallet scene's idle shimmer, likewise endless.
+  CoinsToWalletAnimation.idleShimmerEnabled = false;
 
   // A Product History card waits for its picture as well as its details, and
   // an image decode begun inside the test clock never finishes -- so every

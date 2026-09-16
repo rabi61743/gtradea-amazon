@@ -18,6 +18,24 @@ Entry format:
 
 ---
 
+## 2026-09-16 21:50 — "Coins into your wallet" reward scene (frontend only)
+- **What:** new self-contained `CoinsToWalletAnimation` (`lib/features/wallet/presentation/coins_to_wallet_animation.dart`). Exactly 1.0 s on one `AnimationController`; everything but the number is painted by one `_ScenePainter`, so particles, trails and coins leave nothing behind.
+  - **0.0 s spark:** centre coin fades in over 180 ms, spinning on its vertical axis (face width `|cos|`), embossed star, shine; radial gold glow behind, easing to an ambient 30% by 1.0 s. Navy `#0B1B3A` → charcoal `#1C1F26` background.
+  - **0.2 s cascade:** four coins pop in at 200/255/310/365 ms over 150 ms on `backOut3`, varied size (0.74–0.92) and spin phase, each throwing 6 sparkles; loose arc above the wallet.
+  - **0.5 s flight:** coin i leaves at 500 + 35i ms and flies 160 ms on a parabola (`easeIn` progress), 3-ghost trail, shrinks over its last 28%, then dissolves into 5 light particles drawn down into the glass over 140 ms. Staggered, so the last lands at 0.8 s.
+  - **0.8 s reveal:** the total rises from 80% scale / 60% opacity to full by 950 ms (`easeOutCubic`) with a single breath, bold rounded warm gold; the wallet border lights amber with a blurred gold glow.
+  - **1.0 s settle:** a 12-sparkle ring expands and fades by 1.0 s; afterwards an idle shimmer sweeps the glass every 2.4 s.
+  - Glassmorphic wallet: translucent gradient fill, flap line, soft blurred shadow. Proportional layout (`_Layout`), shown by `show()` at `min(86% width, 380)`; closes itself 1.4 s after the settle, or on a tap.
+- **API-ready, no API:** the number is the `value` input -- `CoinsToWalletAnimation.show(context, value: realBalance)` later, nothing rebuilt. No store read or write, no network, no reward logic. `demoValue` = 1000.
+- **Demo trigger:** long-pressing the Points half (debug/profile only, `PointsCelebration.previewEnabled`) now opens this scene with `preview: true` -- a "Preview" tag and a screen-reader label ending "No points were added." **This replaced the "+50 preview" chip demo on that gesture**; `PointsCelebration.preview` and `play` are unchanged and still tested, just not bound to a gesture.
+- **Reduced motion:** no coins, flights or particles; the wallet lights and the total fades in over the second.
+- **Sound:** not added. `AppSounds` exists, but a land/chime/ding sequence would need new audio assets.
+- **Test switch:** `CoinsToWalletAnimation.idleShimmerEnabled = false` in `test/flutter_test_config.dart` (endless shimmer).
+- **Why:** User supplied a detailed 1-second fintech-style reward animation spec, frontend only.
+- **Affected:** the new file, `delivery_points_card.dart` (long-press now opens the scene), `test/flutter_test_config.dart`, new `test/coins_to_wallet_animation_test.dart`.
+- **Verification:** 11 tests -- duration is exactly 1 s; no total before ~0.8 s; at 805 ms it is at ~0.6 opacity and ~0.8 scale, full and 1.0 by 1 s; `onFinished` fires at 1 s not 990 ms; any `value` is revealed (2,450); preview tag and semantics present only in preview; reduced motion still reveals; `show` self-closes after the linger and closes on tap; text has no warning underline (the dialog route is wrapped in `Material`). Test note: `Matrix4.getMaxScaleOnAxis` counts z (always 1), so scale is read from `storage[0]`. Full suite 2448 pass with only the three known `brand_system_test` colour failures; analyze clean. On the Redmi: a cascade frame (glow, five spinning coins in an arc, sparkles, glass wallet, Preview tag) and the settled frame (gold-lit wallet, "1,000", shimmer band), header still 1,000 Points.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 19:45 — Points coin animation (frontend only, API-ready)
 - **What:** new `lib/features/wallet/presentation/points_celebration.dart`, wrapped around the existing gold "P" coin and figure in `_PointsHalf` (`lib/features/home/widgets/delivery_points_card.dart`). At rest nothing is added -- same coin, colours, type, spacing and layout.
   - **App-open arrival** (`AnimatedPointsCoin`): 320 ms after the coin is first built -- past `LoadingGate`'s 220 ms cross-fade, since the home content only mounts once loading ends -- it pops from 0.55 to 1.18 on `backOut3` while fading in, wobbles (decaying sine), settles on `elasticOutSoft`, with a radial gold glow blooming behind and 8 gold sparkles radiating, shrinking and fading (a `CustomPainter` that exists only while it runs). 1.1 s. Once per app process: `PointsCelebration._arrived` is static, so rebuilds, tab switches and scrolling never replay it.

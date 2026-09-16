@@ -6,6 +6,7 @@ import '../../address/data/address_store.dart';
 import '../../address/presentation/address_picker_sheet.dart';
 import '../../tour/data/tour_step.dart';
 import '../../wallet/data/coin_balance_store.dart';
+import '../../wallet/presentation/coins_to_wallet_animation.dart';
 import '../../wallet/presentation/points_celebration.dart';
 import '../../wallet/presentation/wallet_screen.dart';
 import 'product_rail.dart' show formatGrouped;
@@ -342,13 +343,15 @@ class _PointsHalf extends StatelessWidget {
       excludeSemantics: true,
       child: InkWell(
         onTap: onTap,
-        // A way to watch the balance animation before the points API that
-        // will drive it exists. Debug and profile builds only; it rolls the
-        // figure up, labels the badge "preview", and rolls it back. Nothing
-        // is credited, stored or sent.
+        // A way to watch the coins-into-wallet reward animation before the
+        // points API that will drive it exists. Debug and profile builds only;
+        // the scene is labelled Preview and reveals a demonstration total.
+        // Nothing is credited, stored or sent.
         onLongPress: PointsCelebration.previewEnabled
-            ? () => PointsCelebration.preview(
-                balance: CoinBalanceStore.instance.balance.round(),
+            ? () => CoinsToWalletAnimation.show(
+                context,
+                value: CoinsToWalletAnimation.demoValue,
+                preview: true,
               )
             : null,
         borderRadius: const BorderRadius.horizontal(
