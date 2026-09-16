@@ -129,10 +129,12 @@ void toggleSavedProduct(BuildContext context, Product product) {
       minOrder: product.minOrder,
     ),
   );
-  ActionStatus.show(
-    context,
-    saved ? ActionStatus.addedToWishlist : ActionStatus.removedFromWishlist,
-  );
+  // Only the removal is said out loud. Saving has its own animation now --
+  // the heart flies to the Saved tab and the count moves with it -- so a
+  // message repeating it in words was one confirmation too many.
+  if (!saved) {
+    ActionStatus.show(context, ActionStatus.removedFromWishlist);
+  }
 }
 
 /// A rail of card-shaped bones, at exactly the height the real rail will be.

@@ -925,12 +925,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       final nowSaved = WishlistStore.instance.toggle(
                         _savedProduct,
                       );
-                      ActionStatus.show(
-                        context,
-                        nowSaved
-                            ? ActionStatus.addedToWishlist
-                            : ActionStatus.removedFromWishlist,
-                      );
+                      // Only the removal is said out loud: the filled heart
+                      // is what says it was saved.
+                      if (!nowSaved) {
+                        ActionStatus.show(
+                          context,
+                          ActionStatus.removedFromWishlist,
+                        );
+                      }
                     },
                   );
                 },

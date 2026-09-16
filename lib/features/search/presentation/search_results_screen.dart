@@ -590,10 +590,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         minOrder: product.minOrder,
       ),
     );
-    ActionStatus.show(
-      context,
-      saved ? ActionStatus.addedToWishlist : ActionStatus.removedFromWishlist,
-    );
+    // Only the removal is said out loud; saving has its own animation now.
+    if (!saved) {
+      ActionStatus.show(context, ActionStatus.removedFromWishlist);
+    }
   }
 
   void _addToCart(Product product) {

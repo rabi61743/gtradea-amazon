@@ -62,15 +62,17 @@ void main() {
   });
 
   group('the wishlist says what happened', () {
-    testWidgets('saving one says Added to Wishlist, and sounds', (
+    testWidgets('saving one saves it and sounds, and says nothing', (
       tester,
     ) async {
       await tester.pumpWidget(_page((c) => toggleSavedProduct(c, _product)));
 
       await _tap(tester);
 
-      expect(find.text(ActionStatus.addedToWishlist), findsOneWidget);
-      expect(find.text('Added to Wishlist'), findsOneWidget);
+      // The message was removed by request: the heart flying to the Saved
+      // tab, and the count moving with it, already say this happened. The
+      // save itself and its chime are untouched.
+      expect(find.text(ActionStatus.addedToWishlist), findsNothing);
       expect(WishlistStore.instance.contains('p-1'), isTrue);
       expect(AppSounds.wishlist.plays, 1);
     });
@@ -151,11 +153,15 @@ void main() {
       await SoundSettings.instance.setEnabled(false);
       await tester.pumpWidget(_page((c) => toggleSavedProduct(c, _product)));
 
+      // Saving says nothing now, so the removal is what this asks about: a
+      // message and a sound are separate things, and turning one off must
+      // not take the other with it.
+      await _tap(tester);
       await _tap(tester);
 
-      expect(find.text('Added to Wishlist'), findsOneWidget);
+      expect(find.text('Removed from Wishlist'), findsOneWidget);
       expect(AppSounds.wishlist.plays, 0);
-      expect(WishlistStore.instance.contains('p-1'), isTrue);
+      expect(WishlistStore.instance.contains('p-1'), isFalse);
     });
   });
 }

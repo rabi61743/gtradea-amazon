@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-16 13:40 — No more "Added to Wishlist" message
+- **What:** saving a product no longer raises the "Added to Wishlist" status message anywhere -- the card hearts (home rails and grid, department feed, search results, and every screen built on the shared card), the Product History cards, and the Save action on the product page. Removing one still says "Removed from Wishlist".
+- **Why:** User request, straight after the fly-to-wishlist animation went in: the flying heart, the filled card heart and the count moving on the Saved tab already say a product was saved, so the message repeated it.
+- **Affected:** `product_carousel.dart` (`toggleSavedProduct`, the shared helper), `department_feed.dart`, `search_results_screen.dart`, `recent_views_section.dart`, `product_detail_screen.dart`, `test/action_status_test.dart`. `ActionStatus.addedToWishlist` itself is kept: the cart's "Move to wishlist" is a different action, with nothing else to show for it, and still uses it.
+- **Impact & risk:** Message only. The save, its chime, the store, the badge and the removal message are untouched.
+- **Verification:** the two tests that asserted the message now assert its absence and the save still happening; action status, sounds, wishlist, flight and history suites 73/73; analyze clean; checked on the Redmi.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 13:20 — Fly-to-wishlist animation on the product cards
 - **What:** tapping the heart on a product card now dips it to 0.85, pops it past size on `back.out(3)` and fills it pink; at the peak a copy of the heart leaves the card, arcs ~70 above the higher end (`power2.out` up, `power2.in` down), rotates 20-25 degrees, shrinks to 0.35 and fades over the last 15%; the destination heart squashes, pops, fills pink behind a glow that fades on `power1.out`, and settles on `elastic.out(1, 0.55)`; the badge pops in on `back.out(3)`; the card heart returns to its outline.
   - New `lib/shared/motion/motion_curves.dart`: `BackOutCurve(s)` and `ElasticOutCurve(amplitude, period)`, because Flutter's own `easeOutBack` (1.70158) and `elasticOut` (period 0.4) are fixed at the wrong strengths. Also names `power2Out/power2In/power1Out` so call sites read as the spec does.

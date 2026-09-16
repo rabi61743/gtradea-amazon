@@ -190,10 +190,12 @@ class _RecentViewsSectionState extends State<RecentViewsSection> {
 
   void _toggleSaved(ProductView view) {
     final saved = WishlistStore.instance.toggle(_savedOf(view));
-    ActionStatus.show(
-      context,
-      saved ? ActionStatus.addedToWishlist : ActionStatus.removedFromWishlist,
-    );
+    // Only the removal is said out loud. Saving has its own animation now --
+    // the heart flies to the Saved tab and the count moves with it -- so a
+    // message repeating it in words was one confirmation too many.
+    if (!saved) {
+      ActionStatus.show(context, ActionStatus.removedFromWishlist);
+    }
     setState(() {});
   }
 
