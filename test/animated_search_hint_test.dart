@@ -54,7 +54,7 @@ void main() {
 
     /// The rendered vertical offset and opacity of [word], as drawn.
     ({double dy, double opacity}) drawn(WidgetTester tester, String word) {
-      final text = find.text(word);
+      final text = find.text('Search for "$word"');
       final translate = tester.widget<Transform>(
         find.ancestor(of: text, matching: find.byType(Transform)).first,
       );
@@ -72,21 +72,78 @@ void main() {
         _wrap(const AnimatedSearchHint(style: TextStyle(), phrases: ['lamp'])),
       );
 
-      expect(_hint(tester), 'Search for lamp');
+      expect(_hint(tester), 'Search for "lamp"');
+    });
+
+    testWidgets('the whole phrase moves as one, lead and quoted keyword', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          const AnimatedSearchHint(
+            style: TextStyle(),
+            phrases: ['running shoes', 'winter jackets', 'gift ideas'],
+          ),
+        ),
+      );
+
+      // Exactly the format asked for, quotes and all -- and no "Search for"
+      // drawn on its own anywhere, which is what would stay still.
+      expect(find.text('Search for "running shoes"'), findsOneWidget);
+      expect(find.text('Search for '), findsNothing);
+      expect(find.text('running shoes'), findsNothing);
+
+      // Mid-turn, both whole phrases are moving: the lead goes up with its
+      // keyword and comes in with the next one.
+      await tester.pump(const Duration(milliseconds: 2600));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(drawn(tester, 'running shoes').dy, lessThan(0), reason: 'rising');
+      expect(drawn(tester, 'winter jackets').dy, greaterThan(0));
+
+      // And on through the list in order.
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(_hint(tester), 'Search for "winter jackets"');
+      await tester.pump(const Duration(milliseconds: 2600));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(_hint(tester), 'Search for "gift ideas"');
+
+      await tester.pumpWidget(_wrap(const SizedBox()));
+    });
+
+    testWidgets('the cursor sits after the closing quote', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const AnimatedSearchHint(
+            style: TextStyle(fontSize: 15),
+            phrases: ['gift ideas', 'toys'],
+          ),
+        ),
+      );
+
+      final phrase = tester.getRect(find.text('Search for "gift ideas"'));
+      final caret = tester.getRect(find.byKey(const ValueKey('search-caret')));
+      expect(caret.left, greaterThanOrEqualTo(phrase.right));
+      expect(caret.left - phrase.right, lessThan(4), reason: 'right after it');
+
+      await tester.pumpWidget(_wrap(const SizedBox()));
     });
 
     testWidgets('each phrase holds for 2.6 seconds before it turns', (
       tester,
     ) async {
       await tester.pumpWidget(_wrap(two));
-      expect(_hint(tester), 'Search for lamp');
+      expect(_hint(tester), 'Search for "lamp"');
 
       await tester.pump(const Duration(milliseconds: 2550));
-      expect(_hint(tester), 'Search for lamp', reason: 'still being read');
-      expect(find.text('shoes'), findsNothing);
+      expect(_hint(tester), 'Search for "lamp"', reason: 'still being read');
+      expect(find.text('Search for "shoes"'), findsNothing);
 
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.text('shoes'), findsOneWidget, reason: 'turning at 2.6 s');
+      expect(
+        find.text('Search for "shoes"'),
+        findsOneWidget,
+        reason: 'turning at 2.6 s',
+      );
 
       await tester.pumpWidget(_wrap(const SizedBox()));
     });
@@ -138,7 +195,11 @@ void main() {
 
       // Settled at 500 ms.
       await tester.pump(const Duration(milliseconds: 230));
-      expect(find.text('lamp'), findsNothing, reason: 'the old one is gone');
+      expect(
+        find.text('Search for "lamp"'),
+        findsNothing,
+        reason: 'the old one is gone',
+      );
       final settled = drawn(tester, 'shoes');
       expect(settled.dy, 0);
       expect(settled.opacity, 1);
@@ -169,18 +230,18 @@ void main() {
       await tester.pumpWidget(hint(paused: false));
       await tester.pump(const Duration(milliseconds: 2600));
       await tester.pump(const Duration(milliseconds: 600));
-      expect(_hint(tester), 'Search for shoes');
+      expect(_hint(tester), 'Search for "shoes"');
 
       // Paused: the clock stops where it is.
       await tester.pumpWidget(hint(paused: true));
       await tester.pump(const Duration(seconds: 6));
-      expect(_hint(tester), 'Search for shoes', reason: 'nothing moved on');
+      expect(_hint(tester), 'Search for "shoes"', reason: 'nothing moved on');
 
       // Resumed: it carries on from there rather than starting the list again.
       await tester.pumpWidget(hint(paused: false));
       await tester.pump(const Duration(milliseconds: 2600));
       await tester.pump(const Duration(milliseconds: 600));
-      expect(_hint(tester), 'Search for toys');
+      expect(_hint(tester), 'Search for "toys"');
 
       await tester.pumpWidget(_wrap(const SizedBox()));
     });
@@ -193,7 +254,7 @@ void main() {
       final first = _hint(tester);
       await tester.pump(const Duration(seconds: 4));
 
-      expect(first, 'Search for lamp');
+      expect(first, 'Search for "lamp"');
       expect(_hint(tester), first, reason: 'nothing moved');
     });
 

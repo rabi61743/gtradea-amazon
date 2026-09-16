@@ -41,12 +41,12 @@ const List<String> kSearchHintPhrases = <String>[
 /// The longest example that still reads whole in the home header on a phone.
 const int kSearchHintMaxLength = 14;
 
-/// A placeholder whose example rises into place, holds long enough to be read,
+/// A placeholder whose phrase rises into place, holds long enough to be read,
 /// and leaves upward as the next one arrives.
 ///
-/// The lead word is fixed and only the example moves: a whole line changing
-/// every few seconds pulls the eye off the page, where one word turning over
-/// under a steady "Search" reads as a suggestion.
+/// Each phrase is shown whole -- `Search for "running shoes"` -- and turns
+/// over whole: the lead and the quoted keyword move together, with the cursor
+/// after the closing quote.
 ///
 /// It stops for the three cases where an animated hint is wrong: when the
 /// reader has asked the system for less movement, when the shopper is typing
@@ -66,7 +66,7 @@ class AnimatedSearchHint extends StatefulWidget {
   final TextStyle? style;
   final List<String> phrases;
 
-  /// The part that does not move.
+  /// What comes before the quoted keyword. It turns over with the keyword.
   final String prefix;
 
   /// Holds the run where it is -- the field has the shopper's attention.
@@ -214,9 +214,14 @@ class _AnimatedSearchHintState extends State<AnimatedSearchHint>
     return ((elapsed - delayMs) / durationMs).clamp(0.0, 1.0);
   }
 
-  Widget _word(String text, TextStyle? style) => Text(
-    text,
-    key: ValueKey(text),
+  /// The whole placeholder for [keyword], exactly as it is shown:
+  /// `Search for "running shoes"`. The lead is part of the phrase, so the two
+  /// turn over together rather than the keyword moving under a fixed lead.
+  String _phraseFor(String keyword) => '${widget.prefix}"$keyword"';
+
+  Widget _word(String keyword, TextStyle? style) => Text(
+    _phraseFor(keyword),
+    key: ValueKey(keyword),
     style: style,
     maxLines: 1,
     // Long phrases on a narrow phone shorten rather than push the icons off
@@ -233,86 +238,66 @@ class _AnimatedSearchHintState extends State<AnimatedSearchHint>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // The whole phrase turns over -- "Search for" with its quoted keyword --
+        // in one piece. The container is sized to the arriving phrase and
+        // follows it over 450 ms, so the cursor after the closing quote moves
+        // at the pace of the text change. Flexible, so at a large text size
+        // the phrase shortens rather than pushing the buttons off the pill.
         Flexible(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Allowed to shorten too. At a large accessibility text size the
-              // lead alone can be wider than the pill, and a fixed-width lead
-              // would push the voice and camera buttons off the end of it.
-              Flexible(
-                child: Text(
-                  widget.prefix,
-                  style: style,
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              // The example, and only the example, turns over. The container
-              // is sized to the arriving phrase and follows it over 450 ms, so
-              // the cursor after it moves at the pace of the text change.
-              Flexible(
-                child: AnimatedSize(
-                  duration: _resize,
-                  curve: Curves.easeInOut,
-                  alignment: Alignment.centerLeft,
-                  child: ClipRect(
-                    child: AnimatedBuilder(
-                      animation: _turnClock,
-                      builder: (context, _) {
-                        final leaving = _leaving;
-                        // Out: up 16 while fading to nothing, over 400 ms,
-                        // slow to start and quick to finish.
-                        final out = Curves.easeIn.transform(_phase(0, _outMs));
-                        // In: from 18 below while fading in, over 450 ms from
-                        // 50 ms after the out began, quick to start and slow
-                        // to settle.
-                        final into = Curves.easeOut.transform(
-                          _phase(_inDelayMs, _inMs),
-                        );
-                        // Reduced motion keeps the fades and drops the travel.
-                        final travel = !_reducedMotion;
+          child: AnimatedSize(
+            duration: _resize,
+            curve: Curves.easeInOut,
+            alignment: Alignment.centerLeft,
+            child: ClipRect(
+              child: AnimatedBuilder(
+                animation: _turnClock,
+                builder: (context, _) {
+                  final leaving = _leaving;
+                  // Out: up 16 while fading to nothing, over 400 ms,
+                  // slow to start and quick to finish.
+                  final out = Curves.easeIn.transform(_phase(0, _outMs));
+                  // In: from 18 below while fading in, over 450 ms from
+                  // 50 ms after the out began, quick to start and slow
+                  // to settle.
+                  final into = Curves.easeOut.transform(
+                    _phase(_inDelayMs, _inMs),
+                  );
+                  // Reduced motion keeps the fades and drops the travel.
+                  final travel = !_reducedMotion;
 
-                        return Stack(
-                          alignment: Alignment.centerLeft,
-                          children: [
-                            if (leaving != null)
-                              // Out of the layout, so the container is the
-                              // arriving phrase's width alone.
-                              Positioned(
-                                left: 0,
-                                child: Opacity(
-                                  opacity: 1 - out,
-                                  child: Transform.translate(
-                                    offset: Offset(
-                                      0,
-                                      travel ? -_outRise * out : 0,
-                                    ),
-                                    child: _word(leaving, style),
-                                  ),
-                                ),
-                              ),
-                            Opacity(
-                              opacity: leaving == null ? 1 : into,
-                              child: Transform.translate(
-                                offset: Offset(
-                                  0,
-                                  travel && leaving != null
-                                      ? _inDrop * (1 - into)
-                                      : 0,
-                                ),
-                                child: _word(_current, style),
-                              ),
+                  return Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      if (leaving != null)
+                        // Out of the layout, so the container is the
+                        // arriving phrase's width alone.
+                        Positioned(
+                          left: 0,
+                          child: Opacity(
+                            opacity: 1 - out,
+                            child: Transform.translate(
+                              offset: Offset(0, travel ? -_outRise * out : 0),
+                              child: _word(leaving, style),
                             ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ),
+                          ),
+                        ),
+                      Opacity(
+                        opacity: leaving == null ? 1 : into,
+                        child: Transform.translate(
+                          offset: Offset(
+                            0,
+                            travel && leaving != null
+                                ? _inDrop * (1 - into)
+                                : 0,
+                          ),
+                          child: _word(_current, style),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
-            ],
+            ),
           ),
         ),
         // A caret, so the changing word reads as something being typed rather

@@ -18,6 +18,14 @@ Entry format:
 
 ---
 
+## 2026-09-16 19:00 — Search placeholder: the whole quoted phrase turns over
+- **What:** the placeholder is now shown and animated as one complete phrase in exactly the requested format -- `Search for "running shoes"`, `Search for "winter jackets"`, `Search for "gift ideas"` -- with the cursor after the closing quote. "Search for" is no longer a separate, static `Text`: `_phraseFor(keyword)` builds `'${prefix}"$keyword"'`, and that whole string slides and fades on the timings from the previous entry (2.6 s hold; out −16 px / 400 ms / easeIn; in +18 px / 450 ms / easeOut from 50 ms; width `AnimatedSize` 450 ms easeInOut; cursor 550 ms a half). The `AnimatedSize` now wraps the whole phrase, so the width follows lead and keyword together.
+- **Why:** User asked for the entire phrase, quotes included, to move together, explicitly ruling out a static lead.
+- **Affected:** `lib/shared/widgets/animated_search_hint.dart`, `test/animated_search_hint_test.dart`. `SearchField`, the header, search behaviour, suggestions, the clear button and the focus/pause/resume flow are unchanged.
+- **Impact & risk:** phrases are ~4 characters longer with the quotes. Measured on the Redmi, `Search for "gift ideas"` spans ~323 px (≈14 px a character), so the longest, `Search for "winter jackets"`, is ≈380 px and ends clear of the mic icon; narrower phones fall back to the ellipsis. The single phrase `Text` is `Flexible` with an ellipsis, so large text sizes still cannot overflow the header (`order_tracker_test` green).
+- **Verification:** hint suite 17 tests -- new: the exact quoted format with no standalone "Search for" or bare keyword drawn anywhere, both whole phrases moving mid-turn (outgoing above its line, incoming below) and the list advancing in order to "gift ideas", and the cursor's left edge within 4 px after the phrase's right edge; the timing tests re-pointed at the full phrases. Full suite 2429 pass with only the three known `brand_system_test` colour failures; analyze clean. On the Redmi: `Search for "gift ideas" |`.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 18:35 — Search placeholder timings, to the user's exact specification
 - **What:** `AnimatedSearchHint` now runs these numbers exactly, and a test pins each one:
   - **Hold:** each phrase fully on screen 2.6 s (`_hold`); the next hold starts after the turn ends, so the whole 2.6 s is on the settled phrase.
