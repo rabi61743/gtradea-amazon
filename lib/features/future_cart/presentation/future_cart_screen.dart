@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../../../core/network/api_error.dart';
 import '../../../core/theme/colors.dart';
-import '../../../core/ui/action_status.dart';
 import '../../../shared/widgets/loadable_view.dart' show LoadFailed;
 import '../../auth/data/auth_store.dart';
 import '../../auth/presentation/auth_screen.dart' show AuthMode, AuthScreen;
@@ -172,7 +171,7 @@ class _FutureCartScreenState extends State<FutureCartScreen> {
 
   void _add(Product product) {
     if (!product.hasPrice) return;
-    final inCart = CartStore.instance.add(
+    CartStore.instance.add(
       CartLine(
         productId: product.numIid,
         title: product.title,
@@ -186,12 +185,6 @@ class _FutureCartScreenState extends State<FutureCartScreen> {
         categoryCid: product.categoryCid,
         source: '1688',
       ),
-    );
-    ActionStatus.addedToCart(
-      context,
-      title: product.title,
-      inCart: inCart,
-      onViewCart: _backToCart,
     );
   }
 

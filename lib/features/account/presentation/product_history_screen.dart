@@ -2,8 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../cart/presentation/cart_screen.dart';
-import '../../../core/ui/action_status.dart';
 import '../../../../core/network/api_error.dart';
 import '../../../core/time_format.dart';
 import '../../../shared/widgets/artwork_panel.dart';
@@ -318,7 +316,7 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
       _open(entry);
       return;
     }
-    final inCart = CartStore.instance.add(
+    CartStore.instance.add(
       CartLine(
         productId: entry.productId,
         title: entry.title,
@@ -328,15 +326,6 @@ class _ProductHistoryScreenState extends State<ProductHistoryScreen>
         category: entry.subtitle,
         source: '1688',
       ),
-    );
-    ActionStatus.addedToCart(
-      context,
-      title: entry.title,
-      variant: entry.variant,
-      inCart: inCart,
-      onViewCart: () =>
-          Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const CartScreen())),
     );
   }
 

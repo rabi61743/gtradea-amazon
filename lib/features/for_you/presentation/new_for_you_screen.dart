@@ -3,12 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/l10n/app_strings.dart';
-import '../../../core/ui/action_status.dart';
 import '../../../shared/widgets/loadable_view.dart' show LoadFailed;
 import '../../../shared/widgets/page_width.dart';
 import '../../auth/data/auth_store.dart';
 import '../../cart/data/cart_store.dart';
-import '../../cart/presentation/cart_screen.dart';
 import '../../catalog/data/product.dart';
 import '../../catalog/presentation/catalog_visuals.dart';
 import '../../home/widgets/product_carousel.dart' show toggleSavedProduct;
@@ -202,7 +200,7 @@ class _NewForYouScreenState extends State<NewForYouScreen> {
 
   void _add(Product product) {
     if (!product.hasPrice) return;
-    final inCart = CartStore.instance.add(
+    CartStore.instance.add(
       CartLine(
         productId: product.numIid,
         title: product.title,
@@ -213,14 +211,6 @@ class _NewForYouScreenState extends State<NewForYouScreen> {
         category: product.categoryName,
         source: '1688',
       ),
-    );
-    ActionStatus.addedToCart(
-      context,
-      title: product.title,
-      inCart: inCart,
-      onViewCart: () =>
-          Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const CartScreen())),
     );
   }
 

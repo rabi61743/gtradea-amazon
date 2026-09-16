@@ -814,10 +814,6 @@ void main() {
       expect(line.variantLabel, 'Red', reason: 'the default variant');
       // The listing has a minimum order of two, and the page opens there.
       expect(line.quantity, 2);
-      // The confirmation names the variant, which is the mistake worth
-      // catching on the page where one was chosen.
-      expect(find.textContaining('Added to Cart'), findsOneWidget);
-      expect(find.textContaining('Red'), findsWidgets);
     });
 
     testWidgets('the app-bar badge counts what was added', (tester) async {

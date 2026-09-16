@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../cart/presentation/cart_screen.dart';
 import '../../../core/ui/action_status.dart';
 import '../../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
@@ -598,7 +597,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   void _addToCart(Product product) {
-    final inCart = CartStore.instance.add(
+    CartStore.instance.add(
       CartLine(
         productId: product.numIid,
         title: product.title,
@@ -609,14 +608,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         category: product.categoryName,
         source: '1688',
       ),
-    );
-    ActionStatus.addedToCart(
-      context,
-      title: product.title,
-      inCart: inCart,
-      onViewCart: () =>
-          Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const CartScreen())),
     );
   }
 

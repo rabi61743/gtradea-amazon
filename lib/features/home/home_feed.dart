@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../shared/widgets/page_width.dart';
 
-import '../cart/presentation/cart_screen.dart';
-import '../../../core/ui/action_status.dart';
 import '../../../shared/widgets/loadable_view.dart';
 import '../catalog/data/catalog_repository.dart';
 import '../catalog/data/catalog_store.dart';
@@ -426,7 +424,7 @@ class _HomeFeedState extends State<HomeFeed> {
   /// claims otherwise.
   void _addProduct(BuildContext context, Product product) {
     if (!product.hasPrice) return;
-    final inCart = CartStore.instance.add(
+    CartStore.instance.add(
       CartLine(
         productId: product.numIid,
         title: product.title,
@@ -440,14 +438,6 @@ class _HomeFeedState extends State<HomeFeed> {
         categoryCid: product.categoryCid,
         source: '1688',
       ),
-    );
-    ActionStatus.addedToCart(
-      context,
-      title: product.title,
-      inCart: inCart,
-      onViewCart: () =>
-          Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const CartScreen())),
     );
   }
 

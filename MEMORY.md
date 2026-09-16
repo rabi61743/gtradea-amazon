@@ -18,6 +18,58 @@ Entry format:
 
 ---
 
+## 2026-09-16 02:35 — The "Added to Cart" confirmation card removed from the app
+- **What:** `ActionStatus.addedToCart` and its private parts (`_AddedMark`, `_InCartChip`, `_ViewCartButton`) are gone, with the call removed from all seven screens that raised it: Product Detail, Home feed, New for You, Search results, Deals, Future Cart, Product History.
+  - Adds themselves are untouched: the same `CartStore.add` with the same line, quantity and rules.
+  - Counts that existed only to feed the card, and the imports that went with them, were removed too.
+- **Kept:** `ActionStatus.addedToCartLabel` and `ActionStatus.show` (the Wishlist screen's plain "Added to Cart · N in cart" line uses both), the product page's grid snack ("Added N pieces across M options"), and the animated Add to cart button, which is now the product page's own confirmation.
+- **Why:** User request, pointing at the card: remove it from the app and delete its test file, and nothing else.
+- **Affected:** `lib/core/ui/action_status.dart`, the seven screens above; deleted `test/added_to_cart_card_test.dart`; `test/cart_test.dart` lost the one expectation that the card appeared.
+- **Impact & risk:** No confirmation popup after an add anywhere. The cart badge, the cart itself and the product page's Added state still say so.
+- **Verification:** analyze clean; full suite 2382 pass with only the 3 known `brand_system_test` failures.
+- **Commit:** see git log (`refactor(ui): remove the Added to Cart confirmation card`) on main, pushed to origin
+
+## 2026-09-16 02:05 — Product Detail: animated Add to cart (shirt drop, cart spring, confirmed success)
+- **What:**
+  - New `lib/features/product/widgets/animated_add_to_cart_button.dart`, used **only** by the Product Detail bottom bar (`_BuyBar`). Every other add-to-cart in the app is unchanged.
+  - **At rest:** the same outlined pill as before (existing `add_shopping_cart` icon, existing label "Add to cart", theme style), with nothing animating.
+  - **On tap** (one 1000 ms controller, transforms and opacity only, inside a `RepaintBoundary`):
+    - 0–18%: a painted folded shirt fades in above the icon and lifts; it stretches taller and narrower; the button presses to 96%.
+    - 18–38%: ease-in drop, getting longer and narrower.
+    - 38–46%: impact flattens the shirt, then it shrinks and fades.
+    - 38–62%: a faint primary ring expands and fades.
+    - 38–100%: the cart squashes, springs past its size, then a decaying wobble settles.
+  - **Success** (360 ms): the cart and label fade out, then a ✓ with "Added to cart" scales in with `easeOutBack` over a pale `successGreen` (14%) fill with a green edge. It holds for 2.5 s, then returns to rest. No spinner.
+  - **Reduced motion** (`disableAnimations`): no shirt, ring, press or wobble; the success state appears without animation.
+- **Real cart flow:**
+  - `_addToCart` now returns `Future<bool>`. It runs the same validation and the same `CartStore.add` (single line or grid picks via the new `_putPickedInCart`; Buy Now is unchanged).
+  - It then calls `_confirmSaved`, which uses the existing store: it waits for any in-flight sync, runs `syncNow()`, and succeeds only if none of these keys are in `rejected`, the sync didn't fail as a whole, and every line has a `serverId`.
+  - A guest cart is on-device, so the add itself is the confirmation.
+  - The success button only shows on true. On false the button returns to rest and the refusal or sync error message is shown. The line stays in the cart, as the existing cart system does on a failed save, and it retries.
+  - Taps are ignored while busy or showing success (no duplicate requests). Stock, MOQ, variant and quantity rules are unchanged.
+- **Why:** User request for this exact interaction, Product Detail only, tied to the real backend add, no fake success, reduced-motion and accessibility support.
+- **Affected:**
+  - new widget file; `lib/features/product/presentation/product_detail_screen.dart` (add flow, `_confirmSaved`, buy bar button only)
+  - new `test/animated_add_to_cart_test.dart`:
+    - rest
+    - success waits for confirmation even after the drop
+    - refused → rest
+    - no duplicate taps
+    - reduced motion
+    - ≥ 44 dp target
+    - signed-in success sets `serverId`, variant and MOQ quantity
+    - failed POST never says Added
+    - guest
+- **Impact & risk:**
+  - A signed-in Add to cart now triggers an immediate sync instead of the 600 ms debounce (same reconcile).
+  - Label casing kept as the existing "Add to cart" / "Added to cart" (the spec wrote "Add to Cart").
+- **Verification:**
+  - analyze clean. New tests plus cart, MOQ, deal, detail and reorder: 105/105.
+  - On the Redmi (profile build, signed in, real backend), rapid screenshots showed the shirt above the cart right after the tap, then the pale-green "✓ Added to cart". (At the time of that run the old confirmation card still showed too; the next entry removes it.)
+  - This added 5 × "Outdoor wholesale laser 98K infrared slingshot" to the user's real cart; the user was told.
+  - Full suite: 2382 pass; only the 3 known `brand_system_test` failures (run after the confirmation card was removed).
+- **Commit:** see git log (`feat(product): animated Add to cart on Product Detail, success only after the cart confirms`) on main, pushed to origin
+
 ## 2026-09-16 01:40 — Product page scrolling: gallery no longer repaints the card or resizes during scroll
 - **Investigation:**
   - Measured with a **profile** build on the Redmi (120 Hz, 8.3 ms budget), using the existing `FrameProbe` plus temporary uncommitted logging.
