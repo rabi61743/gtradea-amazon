@@ -13,7 +13,6 @@ import '../../../shared/widgets/artwork_panel.dart';
 import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/data/product.dart';
 import '../../catalog/presentation/browse_screen.dart';
-import '../../cart/data/cart_store.dart';
 import '../../home/widgets/product_carousel.dart';
 import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../search/presentation/search_results_screen.dart';
@@ -21,6 +20,7 @@ import '../../support/data/support_attachment.dart';
 import '../../support/presentation/message_attachment.dart';
 import '../data/quote_repository.dart';
 import 'inquiry_stage.dart';
+import '../../cart/presentation/quick_add_to_cart.dart';
 
 /// One inquiry, opened from the list.
 ///
@@ -146,17 +146,10 @@ class _QuoteRequestDetailScreenState extends State<QuoteRequestDetailScreen>
         .push(MaterialPageRoute(builder: (_) => const BrowseScreen()));
   }
 
-  void _addToCart(Product product) {
-    CartStore.instance.add(
-      CartLine(
-        productId: product.numIid,
-        title: product.title,
-        unitPrice: product.displayPrice ?? 0,
-        imageUrl: product.imageUrl,
-        category: product.categoryName,
-      ),
-    );
-  }
+  /// The same add every other card makes: a product sold one way goes into the
+  /// cart, and one with options to pick asks first.
+  Future<void> _addToCart(Product product) =>
+      quickAddToCart(context, product);
 
   @override
   Widget build(BuildContext context) {

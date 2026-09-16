@@ -6,7 +6,6 @@ import '../../../core/l10n/app_strings.dart';
 import '../../../shared/widgets/loadable_view.dart' show LoadFailed;
 import '../../../shared/widgets/page_width.dart';
 import '../../auth/data/auth_store.dart';
-import '../../cart/data/cart_store.dart';
 import '../../catalog/data/product.dart';
 import '../../catalog/presentation/catalog_visuals.dart';
 import '../../home/widgets/product_carousel.dart' show toggleSavedProduct;
@@ -14,6 +13,7 @@ import '../../search/widgets/product_result_card.dart';
 import '../../wishlist/data/wishlist_store.dart';
 import '../data/for_you_feed.dart';
 import '../data/interest_profile.dart';
+import '../../cart/presentation/quick_add_to_cart.dart';
 
 /// "New for You": a feed picked from what this shopper actually does.
 ///
@@ -198,21 +198,9 @@ class _NewForYouScreenState extends State<NewForYouScreen> {
     _requestMore();
   }
 
-  void _add(Product product) {
-    if (!product.hasPrice) return;
-    CartStore.instance.add(
-      CartLine(
-        productId: product.numIid,
-        title: product.title,
-        unitPrice: product.displayPrice!,
-        imageUrl: product.imageUrl,
-        quantity: product.minOrder,
-        minOrder: product.minOrder,
-        category: product.categoryName,
-        source: '1688',
-      ),
-    );
-  }
+  /// The options sheet, which adds through the same cart once the seller's own
+  /// choices have been answered.
+  Future<void> _add(Product product) => quickAddToCart(context, product);
 
   bool _onScroll(ScrollNotification notification) {
     if (notification.metrics.axis == Axis.vertical &&
@@ -332,7 +320,7 @@ class _Grid extends StatelessWidget {
   const _Grid({required this.products, required this.onAdd});
 
   final List<Product> products;
-  final void Function(Product product) onAdd;
+  final Future<void> Function(Product product) onAdd;
 
   @override
   Widget build(BuildContext context) {

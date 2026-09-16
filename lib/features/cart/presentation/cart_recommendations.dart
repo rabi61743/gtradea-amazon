@@ -13,6 +13,7 @@ import '../../home/widgets/product_grid.dart';
 import '../../search/widgets/product_result_card.dart'
     show ResultGridSkeleton, ResultGridSpec;
 import '../data/cart_store.dart';
+import 'quick_add_to_cart.dart';
 
 /// What to look at next, under the total.
 ///
@@ -306,23 +307,12 @@ class _CartRecommendationsState extends State<CartRecommendations> {
     return out;
   }
 
-  void _addToCart(Product product) {
+  Future<void> _addToCart(Product product) async {
     if (!product.hasPrice) return;
-    CartStore.instance.add(
-      CartLine(
-        productId: product.numIid,
-        title: product.title,
-        unitPrice: product.displayPrice!,
-        imageUrl: product.imageUrl,
-        quantity: product.minOrder,
-        minOrder: product.minOrder,
-        category: product.categoryName,
-        // Carried so that adding from this shelf sharpens it rather than
-        // leaving the next pass to match the label by name.
-        categoryCid: product.categoryCid,
-        source: '1688',
-      ),
-    );
+    // A product with something to choose asks first; one sold a single way
+    // goes straight in. Either way it is the same cart.
+    final outcome = await quickAddToCart(context, product);
+    if (outcome != QuickAdd.added || !mounted) return;
     // The cart is the page this sits on, so the line appears above without
     // anything being said. The note is only for a shopper who added from the
     // bottom of a long cart and cannot see where it landed.

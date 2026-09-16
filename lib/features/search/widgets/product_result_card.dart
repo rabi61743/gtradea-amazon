@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/motion/motion_curves.dart';
 import '../../../shared/widgets/artwork_panel.dart';
+import '../../cart/presentation/cart_flight.dart';
 import '../../wishlist/presentation/wishlist_flight.dart';
 import '../../catalog/data/product.dart';
 import '../../catalog/presentation/catalog_visuals.dart';
@@ -44,7 +45,10 @@ class ProductResultCard extends StatelessWidget {
 
   final Product product;
   final VoidCallback? onTap;
-  final VoidCallback? onAddToCart;
+  /// Runs the whole add: reading the product's options, the sheet if it needs
+  /// one, the cart and the flight. Awaited, so the button can hold itself shut
+  /// until it is over.
+  final Future<void> Function()? onAddToCart;
   final VoidCallback? onToggleSaved;
   final bool saved;
 
@@ -506,7 +510,7 @@ class _PriceRow extends StatelessWidget {
   });
 
   final Product product;
-  final VoidCallback? onAddToCart;
+  final Future<void> Function()? onAddToCart;
 
   /// Puts the price in the brand's ink, as the home rails already do. On a
   /// discovery grid the price is the thing being scanned for.
@@ -547,26 +551,7 @@ class _PriceRow extends StatelessWidget {
         // offered rather than offered and failing.
         if (onAddToCart != null && priced) ...[
           const SizedBox(width: 6),
-          SizedBox(
-            width: 32,
-            height: 32,
-            child: Material(
-              color: theme.colorScheme.primary.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-                onTap: onAddToCart,
-                child: Tooltip(
-                  message: 'Add to cart',
-                  child: Icon(
-                    Icons.add_shopping_cart,
-                    size: 16,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
-            ),
-          ),
+          _AddToCartButton(onPressed: onAddToCart!),
         ],
       ],
     );
@@ -845,6 +830,98 @@ class ResultGridSkeleton extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// The cart button on a card.
+///
+/// It braces before it acts: a small dip and a pop past its own size, so the
+/// tap is answered on the card itself even when what follows is a sheet. The
+/// work behind it -- reading the product's options, adding, flying to the cart
+/// -- belongs to the handler; this only refuses a second tap while the first
+/// is still running, which is what stops a rapid hand putting the same product
+/// in twice.
+class _AddToCartButton extends StatefulWidget {
+  const _AddToCartButton({required this.onPressed});
+
+  /// Resolves when the whole add is over: the sheet closed, or the product
+  /// landed in the cart.
+  final Future<void> Function() onPressed;
+
+  @override
+  State<_AddToCartButton> createState() => _AddToCartButtonState();
+}
+
+class _AddToCartButtonState extends State<_AddToCartButton>
+    with SingleTickerProviderStateMixin {
+  static const _popDuration = Duration(milliseconds: 380);
+
+  late final AnimationController _pop = AnimationController(
+    vsync: this,
+    duration: _popDuration,
+  );
+
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _pop.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onTap() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+
+    if (!MediaQuery.of(context).disableAnimations) {
+      unawaited(_pop.forward(from: 0).orCancel.then((_) {}).catchError((_) {}));
+    }
+    try {
+      // The handler belongs to the screen and holds the page's context; the
+      // flight has to leave from this button, so it borrows ours.
+      await CartFlight.from(context, widget.onPressed);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Down to 0.85, then back over one and on to it.
+  double get _scale {
+    final t = _pop.value;
+    if (t == 0 || _pop.isCompleted) return 1;
+    if (t <= 0.3) return 1 - 0.15 * power2Out.transform(t / 0.3);
+    return 0.85 + 0.15 * backOut3.transform((t - 0.3) / 0.7);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AnimatedBuilder(
+      animation: _pop,
+      builder: (context, child) =>
+          Transform.scale(scale: _scale, child: child),
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: Material(
+          color: theme.colorScheme.primary.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+            onTap: _onTap,
+            child: Tooltip(
+              message: 'Add to cart',
+              child: Icon(
+                Icons.add_shopping_cart,
+                size: 16,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

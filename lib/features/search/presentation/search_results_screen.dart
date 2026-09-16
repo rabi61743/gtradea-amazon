@@ -7,7 +7,6 @@ import '../../../../core/network/api_error.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/loadable_view.dart';
 import '../../../shared/widgets/loading_gate.dart';
-import '../../cart/data/cart_store.dart';
 import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/data/catalog_store.dart';
 import '../../catalog/data/product.dart';
@@ -19,6 +18,7 @@ import '../widgets/product_result_card.dart';
 import '../widgets/search_field.dart';
 import '../widgets/search_filter_sheet.dart';
 import '../widgets/visual_search_sheet.dart';
+import '../../cart/presentation/quick_add_to_cart.dart';
 
 /// Results for a query, in a grid, with the controls that narrow it.
 ///
@@ -596,20 +596,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     }
   }
 
-  void _addToCart(Product product) {
-    CartStore.instance.add(
-      CartLine(
-        productId: product.numIid,
-        title: product.title,
-        unitPrice: product.displayPrice!,
-        imageUrl: product.imageUrl,
-        quantity: product.minOrder,
-        minOrder: product.minOrder,
-        category: product.categoryName,
-        source: '1688',
-      ),
-    );
-  }
+  /// Ask what is being bought before buying it.
+  ///
+  /// The cart button used to add the product outright, with no size, no colour
+  /// and no SKU on the line -- a choice the shopper then had to make again in
+  /// the cart. The sheet offers the options the seller actually published and
+  /// adds through the same cart.
+  Future<void> _addToCart(Product product) =>
+      quickAddToCart(context, product);
 
   @override
   Widget build(BuildContext context) {

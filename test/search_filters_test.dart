@@ -386,7 +386,7 @@ void main() {
               width: 190,
               child: ProductResultCard(
                 product: _product(price: null),
-                onAddToCart: () {},
+                onAddToCart: () async {},
               ),
             ),
           ),
@@ -477,7 +477,7 @@ void main() {
                         sales: 15000,
                         tradeScore: '4.9',
                       ),
-                      onAddToCart: () {},
+                      onAddToCart: () async {},
                       onToggleSaved: () {},
                     ),
                   ),

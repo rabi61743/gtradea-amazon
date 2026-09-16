@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/theme/colors.dart';
+import '../../features/cart/presentation/cart_flight.dart';
 import '../../features/wishlist/presentation/wishlist_flight.dart';
 import '../motion/motion_curves.dart';
 
@@ -80,20 +81,13 @@ class AppBottomNav extends StatelessWidget {
           label: isSignedIn ? t.account : t.signIn,
         ),
         NavigationDestination(
-          icon: Badge.count(
-            count: cartCount,
-            // Hidden at zero, like the saved badge. A badge reading 0 is a
-            // notification about nothing.
-            isLabelVisible: cartCount > 0,
-            child: const Icon(Icons.shopping_cart_outlined),
+          // The unselected one is the flight's anchor, as on the Saved tab:
+          // both variants sit at the same place and one registration is
+          // enough.
+          icon: CartFlightTarget(
+            child: _CartBadge(count: cartCount, filled: false),
           ),
-          selectedIcon: Badge.count(
-            count: cartCount,
-            // Hidden at zero, like the saved badge. A badge reading 0 is a
-            // notification about nothing.
-            isLabelVisible: cartCount > 0,
-            child: const Icon(Icons.shopping_cart),
-          ),
+          selectedIcon: _CartBadge(count: cartCount, filled: true),
           label: t.cart,
         ),
         NavigationDestination(
@@ -234,6 +228,61 @@ class _SavedTabIconState extends State<_SavedTabIcon>
           ),
         );
       },
+    );
+  }
+}
+
+/// The cart tab's icon and its count.
+///
+/// The same [Badge.count] on the same `cartCount` the bar always carried; what
+/// is new is that the number arrives with a pop when it grows, so a product
+/// landing from a card is visible at the moment it lands.
+class _CartBadge extends StatefulWidget {
+  const _CartBadge({required this.count, required this.filled});
+
+  final int count;
+  final bool filled;
+
+  @override
+  State<_CartBadge> createState() => _CartBadgeState();
+}
+
+class _CartBadgeState extends State<_CartBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pop = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+    value: 1,
+  );
+
+  @override
+  void didUpdateWidget(_CartBadge old) {
+    super.didUpdateWidget(old);
+    // The real count, from the real store: it moves only once the cart has
+    // actually taken the line.
+    if (widget.count > old.count && widget.count > 0) _pop.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _pop.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pop,
+      builder: (context, _) => Badge(
+        isLabelVisible: widget.count > 0,
+        label: Transform.scale(
+          scale: backOut3.transform(_pop.value),
+          child: Text(widget.count > 999 ? '999+' : '${widget.count}'),
+        ),
+        child: Icon(
+          widget.filled ? Icons.shopping_cart : Icons.shopping_cart_outlined,
+        ),
+      ),
     );
   }
 }

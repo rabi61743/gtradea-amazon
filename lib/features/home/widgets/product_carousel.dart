@@ -37,7 +37,7 @@ class ProductCarousel extends StatelessWidget {
   final IconData? leadingIcon;
   final List<Product> products;
   final VoidCallback? onSeeAll;
-  final void Function(Product product)? onAddToCart;
+  final Future<void> Function(Product product)? onAddToCart;
 
   /// This rail's card width. [cardWidth] everywhere unless a caller asks for a
   /// more compact rail; the picture is square and the card's height is asked

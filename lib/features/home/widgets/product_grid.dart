@@ -51,7 +51,7 @@ class ProductGrid extends StatelessWidget {
   final IconData? leadingIcon;
   final List<Product> products;
   final VoidCallback? onSeeAll;
-  final void Function(Product product)? onAddToCart;
+  final Future<void> Function(Product product)? onAddToCart;
 
   /// How the grid divides its width: columns, gaps and the padding inside
   /// each card. The standard grid unless a page asks for another -- the cart

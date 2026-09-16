@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/header_action_tile.dart';
 import '../data/cart_store.dart';
+import 'cart_flight.dart';
 import 'cart_screen.dart';
 
 /// The cart in the home header, beside orders and notifications.
@@ -37,25 +38,29 @@ class CartHeaderButton extends StatelessWidget {
       builder: (context, _) {
         final count = CartStore.instance.count;
 
-        return HeaderActionTile(
-          icon: count > 0 ? Icons.shopping_cart : Icons.shopping_cart_outlined,
-          label: label,
-          count: count,
-          tooltip: switch (count) {
-            0 => 'Your cart is empty',
-            1 => '1 item in your cart',
-            final n => '$n items in your cart',
-          },
-          color: color,
-          iconSize: size,
-          onTap: () {
-            onOpened?.call();
-            // A guest keeps a cart on the device, so this needs no sign-in
-            // gate -- unlike orders, there is something here for them either
-            // way.
-            Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const CartScreen()));
-          },
+        return CartFlightTarget(
+          child: HeaderActionTile(
+            icon: count > 0
+                ? Icons.shopping_cart
+                : Icons.shopping_cart_outlined,
+            label: label,
+            count: count,
+            tooltip: switch (count) {
+              0 => 'Your cart is empty',
+              1 => '1 item in your cart',
+              final n => '$n items in your cart',
+            },
+            color: color,
+            iconSize: size,
+            onTap: () {
+              onOpened?.call();
+              // A guest keeps a cart on the device, so this needs no sign-in
+              // gate -- unlike orders, there is something here for them either
+              // way.
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const CartScreen()));
+            },
+          ),
         );
       },
     );

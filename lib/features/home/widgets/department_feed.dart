@@ -52,7 +52,7 @@ class DepartmentFeed extends StatefulWidget {
   /// happens to them when they tap a chip.
   final void Function(Category child)? onSeeAllChild;
 
-  final void Function(Product product)? onAddToCart;
+  final Future<void> Function(Product product)? onAddToCart;
 
   @override
   State<DepartmentFeed> createState() => _DepartmentFeedState();
@@ -205,7 +205,7 @@ class _DepartmentProducts extends StatefulWidget {
   const _DepartmentProducts({required this.department, this.onAddToCart});
 
   final Category department;
-  final void Function(Product product)? onAddToCart;
+  final Future<void> Function(Product product)? onAddToCart;
 
   @override
   State<_DepartmentProducts> createState() => _DepartmentProductsState();
@@ -259,7 +259,7 @@ class _ChildProducts extends StatelessWidget {
   final List<Product> products;
   final String name;
   final VoidCallback onRetry;
-  final void Function(Product product)? onAddToCart;
+  final Future<void> Function(Product product)? onAddToCart;
 
   @override
   Widget build(BuildContext context) {
@@ -390,7 +390,7 @@ class _Grid extends StatelessWidget {
   const _Grid({required this.products, this.onAddToCart});
 
   final List<Product> products;
-  final void Function(Product product)? onAddToCart;
+  final Future<void> Function(Product product)? onAddToCart;
 
   @override
   Widget build(BuildContext context) {

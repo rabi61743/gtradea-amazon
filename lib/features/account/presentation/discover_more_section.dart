@@ -9,8 +9,8 @@ import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/data/catalog_store.dart';
 import '../../catalog/data/product.dart';
 import '../../catalog/presentation/category_screen.dart';
-import '../../cart/data/cart_store.dart';
 import '../../home/widgets/product_carousel.dart';
+import '../../cart/presentation/quick_add_to_cart.dart';
 
 /// What to look at next, under the history.
 ///
@@ -125,18 +125,10 @@ class _DiscoverMoreSectionState extends State<DiscoverMoreSection> {
     );
   }
 
-  void _addToCart(Product product) {
-    CartStore.instance.add(
-      CartLine(
-        productId: product.numIid,
-        title: product.title,
-        unitPrice: product.displayPrice ?? 0,
-        imageUrl: product.imageUrl,
-        category: product.categoryName,
-        categoryCid: product.categoryCid,
-      ),
-    );
-  }
+  /// The options sheet, which adds through the same cart once the seller's own
+  /// choices have been answered.
+  Future<void> _addToCart(Product product) =>
+      quickAddToCart(context, product);
 
   @override
   Widget build(BuildContext context) {

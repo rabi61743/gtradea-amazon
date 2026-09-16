@@ -6,7 +6,6 @@ import '../../../shared/widgets/loadable_view.dart';
 import '../catalog/data/catalog_repository.dart';
 import '../catalog/data/catalog_store.dart';
 import '../catalog/data/product.dart';
-import '../cart/data/cart_store.dart';
 import '../catalog/presentation/catalog_visuals.dart';
 import '../deals/presentation/deals_screen.dart';
 import '../flash_sale/presentation/flash_sale_card.dart';
@@ -25,6 +24,7 @@ import 'widgets/hero_banner.dart' as banner;
 import 'widgets/product_carousel.dart';
 import 'widgets/product_grid.dart';
 import 'widgets/subcategory_grid.dart';
+import '../cart/presentation/quick_add_to_cart.dart';
 
 /// The home feed, built from what the catalogue actually contains.
 ///
@@ -422,24 +422,10 @@ class _HomeFeedState extends State<HomeFeed> {
   ///
   /// No deal wrapper: this is the listed price, because nothing on these cards
   /// claims otherwise.
-  void _addProduct(BuildContext context, Product product) {
-    if (!product.hasPrice) return;
-    CartStore.instance.add(
-      CartLine(
-        productId: product.numIid,
-        title: product.title,
-        unitPrice: product.displayPrice!,
-        imageUrl: product.imageUrl,
-        quantity: product.minOrder,
-        minOrder: product.minOrder,
-        category: product.categoryName,
-        // The catalogue's own id beside the label. The cart's recommendations
-        // can query this directly; the name they can only guess at.
-        categoryCid: product.categoryCid,
-        source: '1688',
-      ),
-    );
-  }
+  /// Ask what is being bought before buying it: the options sheet, which adds
+  /// through the same cart once the seller's own choices have been answered.
+  Future<void> _addProduct(BuildContext context, Product product) =>
+      quickAddToCart(context, product);
 
   void _openSearch(
     BuildContext context, {
