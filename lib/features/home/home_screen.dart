@@ -272,39 +272,52 @@ class _HomeScreenState extends State<HomeScreen> {
     // A first run belongs to the tour: nothing else opens over it.
     if (tour.shouldStart) return;
 
-    // The coins-into-the-wallet scene, once per fresh launch, on this same
-    // gate -- so it waits for the same things the popup does and is never
-    // replayed on a resume or a navigation. It reveals the figure the header
-    // already shows, so the two can never disagree. The popup, if there is
-    // one, follows it rather than stacking on top.
+    // First the admin's popup, if there is one; then, once it is closed, the
+    // coins-into-the-wallet scene. One after the other, never stacked.
+    final followed = await _showLaunchPopup(store);
+    if (!mounted) return;
+
+    // The shopper tapped the banner and is on their way to the sale: taking
+    // them there matters more than a celebration in front of it.
+    if (followed != null) {
+      _followPopupLink(followed);
+      return;
+    }
+
+    // Once per fresh launch, on this same gate -- so it waits for the same
+    // things the popup does and is never replayed on a resume or a
+    // navigation. It reveals the figure the header already shows, so the two
+    // can never disagree.
     if (CoinsToWalletAnimation.showOnLaunch &&
         ModalRoute.of(context)?.isCurrent != false) {
       await CoinsToWalletAnimation.show(
         context,
         value: CoinBalanceStore.instance.balance.round(),
       );
-      if (!mounted) return;
     }
+  }
 
+  /// Shows the launch popup if there is one to show, and waits for it to
+  /// close. Returns the banner's link when the shopper followed it, and null
+  /// otherwise -- closed, or no popup at all.
+  Future<String?> _showLaunchPopup(PopupBannerStore store) async {
     final banner = store.banner;
-    if (banner == null || !store.shouldShow()) return;
+    if (banner == null || !store.shouldShow()) return null;
 
     // Decoded before the card opens, so it never appears as an empty box. A
     // picture that will not load means no popup at all.
     final image = StartupPopupBanner.imageFor(context, banner);
     final loaded = await StartupPopupBanner.decode(context, image);
-    if (!loaded || !mounted) return;
+    if (!loaded || !mounted) return null;
     // Not over a page the shopper has already opened.
-    if (ModalRoute.of(context)?.isCurrent == false) return;
+    if (ModalRoute.of(context)?.isCurrent == false) return null;
 
     final result = await StartupPopupBanner.show(
       context,
       banner: banner,
       image: image,
     );
-    if (result == PopupResult.followed && mounted) {
-      _followPopupLink(banner.buttonLink);
-    }
+    return result == PopupResult.followed ? banner.buttonLink : null;
   }
 
   /// The same links the hero banners follow: a search is the one web route

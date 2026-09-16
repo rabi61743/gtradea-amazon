@@ -18,6 +18,15 @@ Entry format:
 
 ---
 
+## 2026-09-16 22:45 — Launch order: popup banner first, then the coins
+- **What:** reversed the launch sequence in `HomeScreen._maybeShowPopup`. The admin popup now shows first (extracted into `_showLaunchPopup`, which waits for it to close and returns the banner link only when the shopper followed it); the coins scene plays after it closes. With no popup, the coins play straight away, as before.
+  - If the shopper **taps the banner** to follow its link, the app goes there and the coins are skipped -- a celebration in front of the page they asked for would be in the way.
+  - Same gate as before: once per fresh launch, never on resume/navigation, nothing on a tour first run.
+- **Why:** User: "whenever app [opens] then show popup banner then coin animation".
+- **Affected:** `lib/features/home/home_screen.dart`, `test/startup_popup_test.dart`.
+- **Verification:** launch group now asserts the popup is up with no coins, the coins appear only after the popup is closed and the popup does not return, and following the banner lands on `SearchResultsScreen` with no coins; startup suite 23/23; full suite 2453 pass with only the three known `brand_system_test` colour failures; analyze clean. On the Redmi a cold start still plays the coins -- **the live server has no `app_popup_banner` set**, so the popup-first half can only be seen on the device once the admin sets one; it is covered by the tests.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 22:20 — The coins scene plays on every fresh app launch
 - **What:** `HomeScreen._maybeShowPopup` now opens `CoinsToWalletAnimation.show(context, value: CoinBalanceStore.instance.balance.round())` once per fresh launch, then shows the admin popup (if any) after the scene closes.
   - It reuses the popup's launch gate: waits for the saved sign-in to restore, the cold catalogue load, the tour record and the popup setting, and `PopupBannerStore.claimLaunch()` makes it once per process -- so never on resume, navigation or a rebuilt home screen.

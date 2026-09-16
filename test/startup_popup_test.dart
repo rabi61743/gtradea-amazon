@@ -345,18 +345,35 @@ void main() {
       expect(coins, findsNothing, reason: 'and closes itself');
     });
 
-    testWidgets('the admin popup waits for it, instead of stacking', (
+    testWidgets('the popup comes first, and the coins once it is closed', (
       tester,
     ) async {
       serve(_banner());
       await launch(tester);
 
-      expect(coins, findsOneWidget);
-      expect(popup, findsNothing, reason: 'not on top of the coins');
+      expect(popup, findsOneWidget, reason: 'the admin popup first');
+      expect(coins, findsNothing, reason: 'not underneath or on top of it');
+
+      await close(tester);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(coins, findsOneWidget, reason: 'then the coins');
 
       await letCoinsFinish(tester);
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(popup, findsOneWidget, reason: 'then the popup');
+      expect(coins, findsNothing);
+      expect(popup, findsNothing, reason: 'and the popup does not come back');
+    });
+
+    testWidgets('following the banner goes to the sale, with no coins', (
+      tester,
+    ) async {
+      serve(_banner());
+      await launch(tester);
+
+      await tester.tap(find.byKey(const ValueKey('popup-artwork')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SearchResultsScreen), findsOneWidget);
+      expect(coins, findsNothing, reason: 'not in front of where they went');
     });
 
     testWidgets('not again on returning from the background', (tester) async {
