@@ -18,6 +18,20 @@ Entry format:
 
 ---
 
+## 2026-09-16 23:55 — Size Guide (button + sheet, standard chart)
+- **What:** new `lib/features/product/widgets/size_guide_sheet.dart`:
+  - `SizeGuideButton` -- pale rounded pill, ruler icon, "Size guide". Shown beside the **Size** heading in the options popup (replacing the earlier decoration-only `_SizeGuideTag` in `add_to_cart_sheet.dart`) and at the end of the "Choose Size: …" line in the Product Detail page's `VariantPicker` (only when the axis name contains "size").
+  - `SizeGuideSheet` -- modal bottom sheet at 94% height, max width 640 (phone width on tablet/desktop), back-arrow close, swipe or tap-outside to dismiss. Layout after the Temu reference: centred "Size guide" title with underline, "Switch to" IN/CM pill toggle, "Size displayed: Standard size" with XS–3XL chips, a line-art body figure (orange chest/waist/hip rings, dashed-tie height rule) and a flat long-sleeve top (shoulder, chest, sleeve, length lines) with white orange-bordered measurement pills, an info notice, then Body chart / Product chart tabs over a horizontally scrollable `DataTable` with the chosen size's row tinted.
+  - Opens on the size already chosen: `indexFor` takes the first word of a seller label ("L [50-57.5 kg]" → L, "XXXL" → 3XL), else M. Opening, browsing and closing never touch the selection.
+- **Data decision (user's choice):** the live catalogue has **no size-chart data** -- checked six clothing records: sizes are bare labels, sometimes with a kg range, no chest/length/sleeve fields (sellers put charts in product photos). The user chose a **standard chart, clearly labelled**: `kStandardSizes` is a general international regular-fit tops chart (body ranges + garment flat measurements, cm; inches = cm/2.54 to one decimal), and the sheet says "General guide. These are standard measurements, not this product's -- this seller's sizes may differ. Many sellers show their own size chart in the product photos." Not drawn: the reference's Stretch scale and "UK size" dropdown (no data for either). The "Size recommendation" tab was left out by the user's choice.
+- **Found and fixed:**
+  - the header `Stack` had no width, shrank to the title, and put the back arrow on top of the centred title (unreliable close) -- `SizedBox(width: double.infinity)`;
+  - on the Redmi the height pill ran into the sleeve pill and the length pill sat on the right edge -- garment redrawn at 78% width with hanging sleeves, length rule at 94%, height pill lowered to 80%, shoulder pill on the shoulder line;
+  - a regression test now asserts no two pills overlap and all stay inside the sheet at 360/412/800 pt widths for XS, M and 3XL.
+- **Affected:** new file + test; `add_to_cart_sheet.dart`, `variant_picker.dart`, `test/add_to_cart_sheet_test.dart` (tag test → opens-the-guide test).
+- **Verification:** 12 size guide tests (open/close, labelled as general, opens on chosen size, chips update figures, cm↔in including ranges and table headings, both charts list every size, pill overlap/containment, phone/tablet/desktop width ≤ 640 with no exceptions, button only on size axes, selection unchanged) + options popup 11; full suite 2464 pass with only the three known `brand_system_test` colour failures; analyze clean. On the Redmi the guide opened from a t-shirt's popup matching the reference (before the pill fix). The post-fix layout was not re-checked on the device: the phone was in use (landscape, a user search) and automation was stopped; covered by the overlap test.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 22:45 — Launch order: popup banner first, then the coins
 - **What:** reversed the launch sequence in `HomeScreen._maybeShowPopup`. The admin popup now shows first (extracted into `_showLaunchPopup`, which waits for it to close and returns the banner link only when the shopper followed it); the coins scene plays after it closes. With no popup, the coins play straight away, as before.
   - If the shopper **taps the banner** to follow its link, the app goes there and the coins are skipped -- a celebration in front of the page they asked for would be in the way.

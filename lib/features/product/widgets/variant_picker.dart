@@ -4,6 +4,7 @@ import '../../../core/images/app_images.dart';
 
 import '../data/product_detail_content.dart';
 import 'option_chips.dart';
+import 'size_guide_sheet.dart';
 import 'variant_tooltip.dart';
 
 /// Colourway swatches with the selected one named above them.
@@ -28,6 +29,9 @@ class VariantPicker extends StatelessWidget {
   final List<ProductVariant> variants;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+
+  /// Whether these options are sizes, by the seller's own name for them.
+  bool get _isSize => label.toLowerCase().contains('size');
 
   /// Whether to draw words rather than photographs.
   ///
@@ -89,6 +93,13 @@ class VariantPicker extends StatelessWidget {
                 ),
               ),
             ),
+            // At the end of the same line, so the row stays one line: a guide
+            // for the sizes, opened on the size already chosen. It changes
+            // nothing about the selection.
+            if (_isSize) ...[
+              const SizedBox(width: 8),
+              SizeGuideButton(initialSize: selected.label),
+            ],
           ],
         ),
         const SizedBox(height: 10),

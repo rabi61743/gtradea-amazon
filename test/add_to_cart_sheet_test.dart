@@ -5,6 +5,7 @@ import 'package:gtradea_amazon/features/cart/data/cart_store.dart';
 import 'package:gtradea_amazon/features/cart/presentation/add_to_cart_sheet.dart';
 import 'package:gtradea_amazon/features/catalog/data/product.dart';
 import 'package:gtradea_amazon/features/product/data/product_repository.dart';
+import 'package:gtradea_amazon/features/product/widgets/size_guide_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/api.dart';
@@ -242,24 +243,33 @@ void main() {
     expect(line.unitPrice, 99);
   });
 
-  testWidgets('a size heading carries the size guide mark, and nothing else', (
+  testWidgets('a size heading has a size guide button that opens the guide', (
     tester,
   ) async {
     await _open(tester);
 
-    // Beside Size, as the reference draws it.
-    expect(find.text('Size guide'), findsOneWidget);
-    final tag = tester.getRect(find.text('Size guide'));
+    // Beside Size, not beside Color.
+    final button = find.byKey(const ValueKey('size-guide-button'));
+    expect(button, findsOneWidget);
+    final at = tester.getRect(button);
     final heading = tester.getRect(find.text('Size'));
-    expect(tag.left, greaterThan(heading.right), reason: 'at the right of it');
-    expect(tag.center.dy, closeTo(heading.center.dy, 8), reason: 'level');
+    expect(at.left, greaterThan(heading.right), reason: 'at the right of it');
+    expect(at.center.dy, closeTo(heading.center.dy, 8), reason: 'level');
 
-    // A label, not a control: it is not on the colour row, and tapping it
-    // opens nothing -- nothing was asked for behind it.
-    expect(find.text('Size guide'), findsOneWidget);
-    await tester.tap(find.text('Size guide'), warnIfMissed: false);
+    // Picked first, so the guide opens on that size.
+    await tester.tap(find.text('Wine red'));
+    await tester.tap(find.text('L'));
     await tester.pumpAndSettle();
-    expect(find.byType(Dialog), findsNothing);
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.byType(SizeGuideSheet), findsOneWidget);
+
+    // Closing it leaves the choice exactly as it was.
+    await tester.tap(find.byKey(const ValueKey('size-guide-close')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SizeGuideSheet), findsNothing);
+    expect(find.text('Add to cart'), findsOneWidget, reason: 'still answered');
     expect(tester.takeException(), isNull);
   });
 

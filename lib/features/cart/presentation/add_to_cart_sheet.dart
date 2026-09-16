@@ -9,6 +9,7 @@ import '../../home/widgets/product_rail.dart' show formatRupees;
 import '../../product/data/product_detail_content.dart';
 import '../../product/data/product_repository.dart';
 import '../../product/widgets/option_chips.dart';
+import '../../product/widgets/size_guide_sheet.dart';
 import '../data/cart_store.dart';
 import '../data/cart_variant_catalogue.dart';
 
@@ -527,7 +528,9 @@ class _AxisGroup extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            if (_isSize) const _SizeGuideTag(),
+            // Opens the size guide on the size already picked, if any. It
+            // changes nothing about the choice.
+            if (_isSize) SizeGuideButton(initialSize: picked),
           ],
         ),
         const SizedBox(height: 8),
@@ -556,49 +559,6 @@ class _AxisGroup extends StatelessWidget {
             },
           ),
       ],
-    );
-  }
-}
-
-/// The "Size guide" mark beside a size heading.
-///
-/// A label, and only a label: it opens nothing and measures nothing, because
-/// nothing was asked for behind it. Drawn as the reference draws it -- a pale
-/// rounded tag at the right of the heading -- and marked as decoration so a
-/// screen reader does not announce a control that cannot be used.
-class _SizeGuideTag extends StatelessWidget {
-  const _SizeGuideTag();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return ExcludeSemantics(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.straighten,
-              size: 14,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Size guide',
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
