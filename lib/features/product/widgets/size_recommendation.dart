@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -114,6 +116,22 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
   BodyMeasurements _m = BodyMeasurements.initial;
   SizeRecommendation? _result;
   bool _loaded = false;
+
+  /// The measurements [_result] was worked out from.
+  BodyMeasurements? _submitted;
+
+  /// Shows "Saved" on the button for a moment after Submit.
+  bool _justSaved = false;
+  Timer? _savedTimer;
+
+  /// Bumped on every Submit, so the card flashes even when the size is the
+  /// same as before -- otherwise a second Submit looks like it did nothing.
+  int _flash = 0;
+
+  /// The rulers have moved since the suggestion was worked out.
+  bool get _changed =>
+      _submitted != null &&
+      (_submitted!.bust != _m.bust || _submitted!.waist != _m.waist);
   final _resultKey = GlobalKey();
 
   @override
@@ -127,15 +145,32 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
           _m = saved;
           // Measured before: the suggestion is there again on opening.
           _result = SizeRecommendation.forMeasurements(saved);
+          _submitted = saved;
         }
       });
     });
   }
 
+  @override
+  void dispose() {
+    _savedTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _submit() async {
     await BodyMeasurementsStore.instance.save(_m);
     if (!mounted) return;
-    setState(() => _result = SizeRecommendation.forMeasurements(_m));
+    final submitted = _m;
+    setState(() {
+      _result = SizeRecommendation.forMeasurements(submitted);
+      _submitted = submitted;
+      _justSaved = true;
+      _flash++;
+    });
+    _savedTimer?.cancel();
+    _savedTimer = Timer(const Duration(milliseconds: 1600), () {
+      if (mounted) setState(() => _justSaved = false);
+    });
     // On a phone the answer lands below the fold: bring it up to the shopper.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = _resultKey.currentContext;
@@ -235,6 +270,8 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
                 _Result(
                   key: _resultKey,
                   result: _result!,
+                  stale: _changed,
+                  flash: _flash,
                   range: _range,
                   onView: () => widget.onViewSize(_result!.index),
                 ),
@@ -270,11 +307,30 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
                     shape: const StadiumBorder(),
                   ),
                   onPressed: _submit,
-                  child: Text(
-                    'Submit',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                    ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: _justSaved && !_changed
+                        ? Row(
+                            key: const ValueKey('saved'),
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.check_circle, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Saved',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            'Submit',
+                            key: const ValueKey('submit'),
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: Colors.white,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -635,9 +691,17 @@ class _Result extends StatelessWidget {
     required this.result,
     required this.range,
     required this.onView,
+    this.stale = false,
+    this.flash = 0,
   });
 
   final SizeRecommendation result;
+
+  /// The rulers have moved since: the card fades and says to Submit again.
+  final bool stale;
+
+  /// Changes on every Submit, replaying the highlight.
+  final int flash;
   final String Function((double, double)) range;
   final VoidCallback onView;
 
@@ -655,16 +719,25 @@ class _Result extends StatelessWidget {
     final theme = Theme.of(context);
     final disagree = result.bust.index != result.waist.index;
 
-    return Container(
-      key: const ValueKey('size-recommendation-result'),
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: SizeGuideSheet.accent.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: SizeGuideSheet.accent.withValues(alpha: 0.35),
+    final card = TweenAnimationBuilder<double>(
+      key: ValueKey('size-recommendation-flash-$flash'),
+      // Starts bright and settles, each time Submit is tapped.
+      tween: Tween(begin: flash == 0 ? 0 : 1, end: 0),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeOut,
+      builder: (context, t, child) => Container(
+        key: const ValueKey('size-recommendation-result'),
+        margin: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: SizeGuideSheet.accent.withValues(alpha: 0.07 + 0.18 * t),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: SizeGuideSheet.accent.withValues(alpha: 0.35 + 0.65 * t),
+            width: 1 + t,
+          ),
         ),
+        child: child,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -712,6 +785,41 @@ class _Result extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (stale)
+          Padding(
+            key: const ValueKey('size-recommendation-stale'),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.refresh,
+                  size: 18,
+                  color: SizeGuideSheet.accent,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Measurements changed. Tap Submit to update your size.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: SizeGuideSheet.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        AnimatedOpacity(
+          opacity: stale ? 0.45 : 1,
+          duration: const Duration(milliseconds: 200),
+          child: card,
+        ),
+      ],
     );
   }
 }

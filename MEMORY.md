@@ -18,6 +18,19 @@ Entry format:
 
 ---
 
+## 2026-09-17 12:45 — Size recommendation: Submit gives visible feedback
+- **What:**
+  - Submit now turns into "✓ Saved" for 1.6 s, and the result card flashes orange on every Submit.
+  - Moving a ruler after a suggestion fades the card and shows "Measurements changed. Tap Submit to update your size."
+  - The "Saved" reset uses a cancellable `Timer`.
+- **Why:** the user reported "Submit not works". On the phone, Submit did save and recompute: the card went from "Bust below the smallest standard size" to "Bust fits XS", and there were no errors in logcat. The problem was that nothing showed it worked. When the size stayed the same the card barely changed, and after a ruler moved the old answer still looked current.
+- **Affected:** `size_recommendation.dart` (`_submitted`, `_changed`, `_justSaved`, `_flash`; `_Result` `stale`/`flash`), `test/size_recommendation_test.dart` (+1 test).
+- **Impact & risk:** only this tab's presentation changed. The suggestion logic and storage are the same.
+- **Verification:**
+  - 12 recommendation tests pass; analyze is clean.
+  - The APK is installed on the Redmi. I haven't tapped through the new feedback there yet, because the phone was in use (landscape home screen).
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 12:30 — Size recommendation tab
 - **What:** the size guide sheet now has two tabs in its header, "Size guide" and "Size recommendation". The new tab is in `lib/features/product/widgets/size_recommendation.dart` and follows the Temu reference:
   - "Swipe to add your body information", an orange IN/CM switch, and Bust / Waist rows. Each row has a value box and a horizontal ruler that snaps to ticks under an orange pointer (`RulerPicker`: 1 cm ticks, or ½-inch ticks in inches).

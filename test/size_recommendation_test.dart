@@ -128,6 +128,44 @@ void main() {
     expect(find.textContaining("not this product's"), findsOneWidget);
   });
 
+  testWidgets('Submit shows it worked, even when the size is the same', (
+    tester,
+  ) async {
+    await _openRecommendation(tester);
+    await _submit(tester);
+    expect(_suggested(tester), 'Your standard size: M');
+    expect(find.text('Saved'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.text('Saved'), findsNothing);
+    expect(find.text('Submit'), findsOneWidget);
+
+    // Moving a ruler: the old answer is marked out of date, not left as if
+    // it were current.
+    // Submit scrolled the answer up; bring the bust ruler back first.
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('measure-bust-value')),
+    );
+    await tester.pumpAndSettle();
+    await _swipe(tester, 'bust', 1);
+    expect(_valueBox(tester, 'bust'), '97 cm');
+    expect(
+      find.byKey(const ValueKey('size-recommendation-stale')),
+      findsOneWidget,
+    );
+
+    // The same size again (97 is still M) -- and it still says Saved.
+    await _submit(tester);
+    expect(_suggested(tester), 'Your standard size: M');
+    expect(
+      find.byKey(const ValueKey('size-recommendation-stale')),
+      findsNothing,
+    );
+    expect(find.text('Saved'), findsOneWidget);
+    expect((await BodyMeasurementsStore.instance.load())!.bust, 97);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   testWidgets('saves on the device, and shows it again next time', (
     tester,
   ) async {
