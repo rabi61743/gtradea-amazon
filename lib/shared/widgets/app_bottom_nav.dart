@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../core/l10n/app_strings.dart';
+import '../../core/theme/colors.dart';
+import '../../features/wishlist/presentation/wishlist_flight.dart';
+import '../motion/motion_curves.dart';
 
 /// Five-destination bottom bar: Home, Saved, Account, Cart, Categories.
 ///
@@ -61,16 +64,8 @@ class AppBottomNav extends StatelessWidget {
           label: t.home,
         ),
         NavigationDestination(
-          icon: Badge.count(
-            count: savedCount,
-            isLabelVisible: savedCount > 0,
-            child: const Icon(Icons.favorite_border),
-          ),
-          selectedIcon: Badge.count(
-            count: savedCount,
-            isLabelVisible: savedCount > 0,
-            child: const Icon(Icons.favorite),
-          ),
+          icon: _SavedTabIcon(count: savedCount, filled: false),
+          selectedIcon: _SavedTabIcon(count: savedCount, filled: true),
           label: t.saved,
         ),
         // "Sign in" rather than the full "Sign In / Sign Up": a five-slot bar
@@ -107,6 +102,138 @@ class AppBottomNav extends StatelessWidget {
           label: t.categories,
         ),
       ],
+    );
+  }
+}
+
+/// The Saved destination's heart, and the count that rides on it.
+///
+/// This is where hearts thrown from a product card land, so it is also what
+/// reacts to one: a squash, a pop, a fill, and a soft pink glow that fades
+/// behind it. The number itself is untouched -- it is the same
+/// [Badge.count] on the same `savedCount` as before, and the only new thing
+/// about it is that it scales in when it changes.
+class _SavedTabIcon extends StatefulWidget {
+  const _SavedTabIcon({required this.count, required this.filled});
+
+  final int count;
+
+  /// The selected variant of the destination. Only the unselected one offers
+  /// itself as the flight's destination: both are in the tree at the same
+  /// place, and one registration is enough.
+  final bool filled;
+
+  @override
+  State<_SavedTabIcon> createState() => _SavedTabIconState();
+}
+
+class _SavedTabIconState extends State<_SavedTabIcon>
+    with TickerProviderStateMixin {
+  final GlobalKey _anchor = GlobalKey();
+
+  late final AnimationController _land = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  /// The badge's own arrival, kept apart from the landing so a count that
+  /// changes for any other reason -- a sync, another screen -- still animates.
+  late final AnimationController _badge = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+    value: 1,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.filled) WishlistFlight.bindTarget(_anchor, _react);
+  }
+
+  @override
+  void didUpdateWidget(_SavedTabIcon old) {
+    super.didUpdateWidget(old);
+    // The real count, from the real store: when it grows, the badge arrives.
+    if (widget.count > old.count && widget.count > 0) {
+      _badge.forward(from: 0);
+    }
+  }
+
+  void _react() {
+    if (!mounted) return;
+    if (MediaQuery.of(context).disableAnimations) return;
+    _land.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    if (!widget.filled) WishlistFlight.unbindTarget(_anchor);
+    _land.dispose();
+    _badge.dispose();
+    super.dispose();
+  }
+
+  /// Down, past one, then settling back to it.
+  double get _scale {
+    final t = _land.value;
+    if (t == 0 || _land.isCompleted) return 1;
+    if (t <= 0.15) return 1 - 0.18 * power2Out.transform(t / 0.15);
+    if (t <= 0.45) return 0.82 + 0.36 * backOut3.transform((t - 0.15) / 0.3);
+    return 1 + 0.18 * (1 - elasticOutSoft.transform((t - 0.45) / 0.55));
+  }
+
+  /// A soft pink bloom behind the heart, brightest as it lands and gone by
+  /// the time the heart has settled.
+  double get _glow {
+    final t = _land.value;
+    if (t == 0 || _land.isCompleted) return 0;
+    if (t <= 0.15) return t / 0.15;
+    return 1 - power1Out.transform((t - 0.15) / 0.85);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_land, _badge]),
+      builder: (context, _) {
+        final reacting = _land.isAnimating;
+        final filled = widget.filled || reacting;
+
+        return Transform.scale(
+          scale: _scale,
+          child: Badge(
+            isLabelVisible: widget.count > 0,
+            // The same number the badge always carried, straight from the
+            // store's count -- it only arrives with a pop now.
+            label: Transform.scale(
+              scale: backOut3.transform(_badge.value),
+              child: Text(widget.count > 999 ? '999+' : '${widget.count}'),
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                if (_glow > 0)
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.accent.withValues(
+                        alpha: 0.28 * _glow.clamp(0.0, 1.0),
+                      ),
+                    ),
+                  ),
+                Icon(
+                  key: _anchor,
+                  filled ? Icons.favorite : Icons.favorite_border,
+                  color: reacting ? AppColors.accent : null,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

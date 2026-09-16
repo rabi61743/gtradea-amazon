@@ -18,6 +18,23 @@ Entry format:
 
 ---
 
+## 2026-09-16 13:20 — Fly-to-wishlist animation on the product cards
+- **What:** tapping the heart on a product card now dips it to 0.85, pops it past size on `back.out(3)` and fills it pink; at the peak a copy of the heart leaves the card, arcs ~70 above the higher end (`power2.out` up, `power2.in` down), rotates 20-25 degrees, shrinks to 0.35 and fades over the last 15%; the destination heart squashes, pops, fills pink behind a glow that fades on `power1.out`, and settles on `elastic.out(1, 0.55)`; the badge pops in on `back.out(3)`; the card heart returns to its outline.
+  - New `lib/shared/motion/motion_curves.dart`: `BackOutCurve(s)` and `ElasticOutCurve(amplitude, period)`, because Flutter's own `easeOutBack` (1.70158) and `elasticOut` (period 0.4) are fixed at the wrong strengths. Also names `power2Out/power2In/power1Out` so call sites read as the spec does.
+  - New `lib/features/wishlist/presentation/wishlist_flight.dart`: a destination registry (`bindTarget`/`unbindTarget`) and `launch()`, which measures both ends from the live render boxes **on every tap** and flies a heart in the root overlay, removing it on landing.
+  - `_SaveButton` in `product_result_card.dart` is now stateful: runs the pop, launches the flight at its peak, locks itself while its heart is away, and lets go when the sequence ends.
+  - `AppBottomNav`'s Saved destination is now `_SavedTabIcon`, which registers as the flight's destination and reacts to a landing.
+- **Why:** User request: a fly-to-wishlist micro-interaction on the existing product cards, spec'd in GSAP.
+  - **GSAP is a JavaScript library and cannot be used in Flutter.** Its easings were reproduced natively (table above); the timelines are normalised sub-ranges of one `AnimationController`, as `animated_add_to_cart_button.dart` already does.
+  - **There is no header wishlist icon in this app.** `search_header.dart` carries only orders, messages and notifications. The app's real wishlist icon *with a real count badge* is the Saved tab of `AppBottomNav`, fed by `WishlistStore.instance.count`, so that is the destination. No new header or wishlist button was created, as the request forbade.
+- **Affected:** `lib/features/search/widgets/product_result_card.dart` (the shared card, so home rails and grid, department feed, search results, New for You, Future Cart, Free Delivery and Corporate Gifts all get it at once), `lib/shared/widgets/app_bottom_nav.dart`, two new files above, new `test/wishlist_flight_test.dart`.
+- **Impact & risk:** No layout, spacing, type, colour, card content, header, wishlist API, wishlist page or cart change. The save is still `WishlistStore.toggle` on the tap -- the animation never performs the action, and un-saving is the plain toggle it always was. The badge is still the store's own count, not a second counter. Risks handled: overlay entries are bound to their own controller and removed on completion; a missing destination (no bottom bar on that screen) simply means no flight; the card button is locked for exactly as long as its heart is in the air, so rapid taps cannot stack flights.
+- **Verification:**
+  - New suite, 9 tests: one heart in the air and none left behind, an arc that rises above both ends and crosses the full width, rapid taps making one flight and one save, the card heart returning to outline, un-saving flying nothing, reduced motion still saving, the badge showing the real count, and the two curves behaving.
+  - Existing wishlist / sync / sound / cart-move / New for You / Future Cart suites 99/99; analyze clean.
+  - On the Redmi (profile build): mid-flight frame shows the second heart climbing away from a filled card heart with "Added to Wishlist" from the real API and the badge going 10 to 11; the landing frame shows the Saved heart filled pink inside its glow and the card heart already back to outline.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 12:35 — Product page section gaps down from 8 to 2
 - **What:** the vertical seams between the product card, the guarantees strip (7-day returns / Cash on delivery / Quality checked), Highlights, Description, Specifications and Detail images are 2 instead of 8 -- first cut to 4, the measure the recommendation cards sit at, then to 2 when the user asked for a little more.
   - Four `SizedBox(height: 8)` → 2 in `product_detail_screen.dart` (lines ~1282, ~1291, ~1312, ~1400). The `SizedBox(height: 4)` at ~1268 is inside the logistics card, after its divider, and was left alone.

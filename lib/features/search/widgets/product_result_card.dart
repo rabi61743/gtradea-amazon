@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
+import '../../../shared/motion/motion_curves.dart';
 import '../../../shared/widgets/artwork_panel.dart';
+import '../../wishlist/presentation/wishlist_flight.dart';
 import '../../catalog/data/product.dart';
 import '../../catalog/presentation/catalog_visuals.dart';
 import '../../../shared/widgets/shimmer.dart';
@@ -332,7 +334,12 @@ class _Badge extends StatelessWidget {
 }
 
 /// The heart, on a scrim so it stays visible over a pale photograph.
-class _SaveButton extends StatelessWidget {
+///
+/// Saving plays: the heart dips, pops past its own size, and fills pink; at
+/// the top of that pop a copy of it leaves for the wishlist icon. The state
+/// the card draws afterwards is still the store's -- this only animates the
+/// moment, and un-saving is the plain toggle it always was.
+class _SaveButton extends StatefulWidget {
   const _SaveButton({
     required this.saved,
     required this.title,
@@ -344,24 +351,116 @@ class _SaveButton extends StatelessWidget {
   final VoidCallback onPressed;
 
   @override
+  State<_SaveButton> createState() => _SaveButtonState();
+}
+
+class _SaveButtonState extends State<_SaveButton>
+    with SingleTickerProviderStateMixin {
+  /// The dip and the pop, in one run: 0 to 0.3 down, 0.3 to 1 back up and
+  /// over. The flight leaves at the peak.
+  static const _popDuration = Duration(milliseconds: 420);
+  static const _peak = 0.42;
+
+  late final AnimationController _pop = AnimationController(
+    vsync: this,
+    duration: _popDuration,
+  );
+
+  /// The card's heart is locked while its own heart is away, so a run of taps
+  /// cannot put several of them in the air at once. It is let go the moment
+  /// the sequence ends -- including when the save fails.
+  bool _busy = false;
+
+  /// Drawn filled for the length of the animation whatever the store says, so
+  /// the fill and the flight read as one movement. Afterwards the card goes
+  /// back to showing exactly what is saved.
+  bool _filling = false;
+
+  @override
+  void dispose() {
+    _pop.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onTap() async {
+    if (_busy) return;
+
+    // Un-saving is not a flight: nothing is going to the wishlist.
+    if (widget.saved) {
+      widget.onPressed();
+      return;
+    }
+
+    final reduced = MediaQuery.of(context).disableAnimations;
+    setState(() {
+      _busy = true;
+      _filling = true;
+    });
+
+    // The real save runs alongside the animation rather than after it: the
+    // wishlist call is the action, and this is only how it looks.
+    widget.onPressed();
+
+    final flight = _pop
+        .forward(from: 0)
+        .orCancel
+        .then((_) {})
+        .catchError((_) {});
+    // Launched at the peak of the pop, from wherever this heart is now.
+    await Future<void>.delayed(_popDuration * _peak);
+    if (!mounted) return;
+    await WishlistFlight.launch(context, reducedMotion: reduced);
+    await flight;
+
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _filling = false;
+    });
+  }
+
+  /// 1 at rest, 0.85 at the bottom of the dip, over one on the way back.
+  double get _scale {
+    final t = _pop.value;
+    if (t == 0 || _pop.isCompleted) return 1;
+    if (t <= 0.3) return 1 - 0.15 * power2Out.transform(t / 0.3);
+    return 0.85 + 0.15 * backOut3.transform((t - 0.3) / 0.7);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final saved = widget.saved;
+    final showFilled = saved || _filling;
+
     return Semantics(
       button: true,
       // Names the product, so a screen reader running down a grid of these does
       // not read out forty identical "Save" buttons.
-      label: saved ? 'Saved: $title' : 'Save $title',
+      label: saved ? 'Saved: ${widget.title}' : 'Save ${widget.title}',
       child: Material(
         color: Colors.white.withValues(alpha: 0.88),
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: onPressed,
+          onTap: _onTap,
           child: Padding(
             padding: const EdgeInsets.all(6),
-            child: Icon(
-              saved ? Icons.favorite : Icons.favorite_border,
-              size: 17,
-              color: saved ? AppColors.accent : Colors.black54,
+            child: AnimatedBuilder(
+              animation: _pop,
+              builder: (context, _) => Transform.scale(
+                scale: _scale,
+                // Outline out, fill in, rather than one icon swapping for
+                // another between frames.
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 160),
+                  child: Icon(
+                    showFilled ? Icons.favorite : Icons.favorite_border,
+                    key: ValueKey(showFilled),
+                    size: 17,
+                    color: showFilled ? AppColors.accent : Colors.black54,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
