@@ -6,6 +6,7 @@ import '../../address/data/address_store.dart';
 import '../../address/presentation/address_picker_sheet.dart';
 import '../../tour/data/tour_step.dart';
 import '../../wallet/data/coin_balance_store.dart';
+import '../../wallet/presentation/points_celebration.dart';
 import '../../wallet/presentation/wallet_screen.dart';
 import 'product_rail.dart' show formatGrouped;
 
@@ -117,9 +118,8 @@ class DeliveryPointsCard extends StatelessWidget {
   }
 
   static Future<void> _openWallet(BuildContext context) async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const WalletScreen()));
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const WalletScreen()));
     // Points can have been spent or refunded in there.
     await CoinBalanceStore.instance.load();
   }
@@ -342,6 +342,15 @@ class _PointsHalf extends StatelessWidget {
       excludeSemantics: true,
       child: InkWell(
         onTap: onTap,
+        // A way to watch the balance animation before the points API that
+        // will drive it exists. Debug and profile builds only; it rolls the
+        // figure up, labels the badge "preview", and rolls it back. Nothing
+        // is credited, stored or sent.
+        onLongPress: PointsCelebration.previewEnabled
+            ? () => PointsCelebration.preview(
+                balance: CoinBalanceStore.instance.balance.round(),
+              )
+            : null,
         borderRadius: const BorderRadius.horizontal(
           right: Radius.circular(DeliveryPointsCard.radius),
         ),
@@ -353,15 +362,19 @@ class _PointsHalf extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _PCoin(size: m.coin),
+                // The same coin and figure as before; they only move when the
+                // app opens and when the balance rises.
+                AnimatedPointsCoin(
+                  size: m.coin,
+                  child: _PCoin(size: m.coin),
+                ),
                 SizedBox(width: m.pinGap),
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      figure,
-                      maxLines: 1,
+                    AnimatedPointsFigure(
+                      balance: CoinBalanceStore.instance.balance.round(),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontSize: m.figure,
                         height: 1.1,
