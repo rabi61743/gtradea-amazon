@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../restock/presentation/restock_request_bar.dart';
+
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/ui/action_status.dart';
@@ -30,6 +31,7 @@ import '../widgets/product_type_scale.dart';
 import '../widgets/product_detail_images.dart';
 import '../widgets/product_detail_skeleton.dart';
 import '../widgets/product_summary_card.dart';
+import '../widgets/animated_add_to_cart_button.dart';
 import '../widgets/product_gallery.dart';
 import '../widgets/product_section_panel.dart';
 import '../widgets/product_quote_sheet.dart';
@@ -538,24 +540,37 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   /// Adds every square with something in it, and reports what went in.
   bool _addPickedToCart() {
+    final added = _putPickedInCart();
+    if (added == null) return false;
+    _sayPickedAdded(added);
+    return true;
+  }
+
+  /// The grid's picks into the cart, or null (having said why) when they
+  /// cannot go. Returns the lines added and the resulting count in the cart.
+  (List<CartLine>, int, int)? _putPickedInCart() {
     final blocker = _pickedBlocker;
     if (blocker != null) {
       _snack(blocker);
-      return false;
+      return null;
     }
     final lines = _pickedCartLines;
+    final pieces = _pickedPieces;
     var inCart = 0;
     for (final line in lines) {
       inCart = CartStore.instance.add(line);
     }
-    final pieces = _pickedPieces;
+    setState(_picked.clear);
+    return (lines, pieces, inCart);
+  }
+
+  void _sayPickedAdded((List<CartLine>, int, int) added) {
+    final (lines, pieces, inCart) = added;
     _snack2(
       'Added $pieces ${pieces == 1 ? 'piece' : 'pieces'} across '
       '${lines.length} ${lines.length == 1 ? 'option' : 'options'}. '
       '$inCart in cart.',
     );
-    setState(_picked.clear);
-    return true;
   }
 
   /// A snack with a way through to the cart, which the plain [_snack] has not.
@@ -723,29 +738,88 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     return null;
   }
 
-  void _addToCart() {
+  /// Adds to the cart and completes with whether it is really there.
+  ///
+  /// The same add the page always made -- the same line or grid picks, the
+  /// same sold-out and quantity rules, the one cart store -- followed by
+  /// waiting for that store to save the change to the account before calling
+  /// it done. The animated button turns to "Added" only on true, and the
+  /// "added" message is said only then too. A guest's cart lives on the
+  /// device, so for a guest the add itself is the confirmation.
+  Future<bool> _addToCart() async {
+    final List<CartLine> lines;
+    final void Function() sayAdded;
     if (_matrix != null) {
-      _addPickedToCart();
-      return;
+      final added = _putPickedInCart();
+      if (added == null) return false;
+      lines = added.$1;
+      sayAdded = () => _sayPickedAdded(added);
+    } else {
+      // Guarded here as well as in the picker. A rule that lives only in a
+      // widget is one the next entry point into this page walks straight
+      // around.
+      if (_selectionUnavailable) {
+        _snack('${_selectedVariant!.label} is sold out');
+        return false;
+      }
+      final line = _cartLine;
+      CartStore.instance.add(line);
+      lines = [line];
+      // No popup here: the button's own "Added to cart" is the confirmation.
+      sayAdded = () {};
     }
-    // Guarded here as well as in the picker. A rule that lives only in a
-    // widget is one the next entry point into this page walks straight around.
-    if (_selectionUnavailable) {
-      _snack('${_selectedVariant!.label} is sold out');
-      return;
+
+    final keys = [for (final line in lines) line.key];
+    final saved = await _confirmSaved(keys);
+    if (!mounted) return saved;
+    if (saved) {
+      sayAdded();
+    } else {
+      final store = CartStore.instance;
+      final refused = keys.map((key) => store.rejected[key]).nonNulls;
+      _snack(
+        refused.firstOrNull?.message ??
+            store.syncError?.message ??
+            'Could not add this to your cart. Please try again.',
+      );
     }
-    final inCart = CartStore.instance.add(_cartLine);
-    final variant = _selectedVariant?.label;
-    ActionStatus.addedToCart(
-      context,
-      title: _product.title,
-      // The variant matters here in a way it does not on a card: this is the
-      // page where one was chosen, and choosing the wrong one is the mistake
-      // worth catching.
-      variant: variant,
-      inCart: inCart,
-      onViewCart: _openCart,
-    );
+    return saved;
+  }
+
+  /// Waits for the cart store to save the lines with these [keys] to the
+  /// account, and says whether it did.
+  ///
+  /// Uses the store's own sync rather than a request of its own, so there is
+  /// still one cart. A sync already under way is let finish first -- it may
+  /// have started before these lines were added -- and then one more is run
+  /// that certainly includes them. Saved means the server has given each line
+  /// its own id and refused none of them.
+  Future<bool> _confirmSaved(List<String> keys) async {
+    final store = CartStore.instance;
+    if (store.isGuestCart) return true;
+    if (store.isSyncing) {
+      final idle = Completer<void>();
+      void listener() {
+        if (!store.isSyncing && !idle.isCompleted) idle.complete();
+      }
+
+      store.addListener(listener);
+      try {
+        await idle.future.timeout(const Duration(seconds: 20));
+      } on TimeoutException {
+        return false;
+      } finally {
+        store.removeListener(listener);
+      }
+    }
+    await store.syncNow();
+    // Refused lines are these lines' problem only if they are these lines; a
+    // different line already in the cart being refused says nothing about
+    // this add. A sync error with nothing refused is the whole save failing.
+    if (store.rejected.keys.any(keys.contains)) return false;
+    if (store.rejected.isEmpty && store.syncError != null) return false;
+    final held = {for (final line in store.lines) line.key: line};
+    return keys.every((key) => held[key]?.serverId != null);
   }
 
   /// Buy now is add-to-cart that keeps going, rather than a second path with
@@ -1375,34 +1449,34 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       bottomNavigationBar: _unavailableReason != null
           ? RestockRequestBar(product: _product, reason: _unavailableReason!)
           : _BuyBar(
-        // Held back while the record is in flight: the bar buys a variant
-        // and a quantity this page does not know yet, and a price that
-        // changes under a finger already on the button is worse than a
-        // button that waits a moment for its figure.
-        loading: _loadingDetail,
-        total: matrix == null ? _unitPrice * _quantity : _pickedTotal,
-        // What the bar is about to buy, when that is more than one thing. The
-        // picker path buys the one option named above it and needs no caption.
-        subtitle: matrix == null || _pickedPieces == 0
-            ? null
-            : '$_pickedPieces across ${_pickedLines.length} '
-                  '${_pickedLines.length == 1 ? 'option' : 'options'}',
-        // Nothing typed into the grid is nothing to buy, and neither is a
-        // listing whose price is not known yet. The grid states its own reason
-        // in the summary directly above, so a dead button here is not a dead
-        // end. Refusing the tap is also what stops a Rs. 0 line reaching the
-        // cart, where it would be charged as free.
-        enabled:
-            !_loadingDetail &&
-            (matrix == null || _pickedPieces > 0) &&
-            _priceKnown,
-        // Until there is a price to show, the button asks for one instead of
-        // printing Rs. 0 -- which reads as a free product rather than as a
-        // question the shopper has not answered yet.
-        selectionPrompt: _priceKnown ? null : _priceUnknownLabel,
-        onAddToCart: _addToCart,
-        onBuyNow: _buyNow,
-      ),
+              // Held back while the record is in flight: the bar buys a variant
+              // and a quantity this page does not know yet, and a price that
+              // changes under a finger already on the button is worse than a
+              // button that waits a moment for its figure.
+              loading: _loadingDetail,
+              total: matrix == null ? _unitPrice * _quantity : _pickedTotal,
+              // What the bar is about to buy, when that is more than one thing. The
+              // picker path buys the one option named above it and needs no caption.
+              subtitle: matrix == null || _pickedPieces == 0
+                  ? null
+                  : '$_pickedPieces across ${_pickedLines.length} '
+                        '${_pickedLines.length == 1 ? 'option' : 'options'}',
+              // Nothing typed into the grid is nothing to buy, and neither is a
+              // listing whose price is not known yet. The grid states its own reason
+              // in the summary directly above, so a dead button here is not a dead
+              // end. Refusing the tap is also what stops a Rs. 0 line reaching the
+              // cart, where it would be charged as free.
+              enabled:
+                  !_loadingDetail &&
+                  (matrix == null || _pickedPieces > 0) &&
+                  _priceKnown,
+              // Until there is a price to show, the button asks for one instead of
+              // printing Rs. 0 -- which reads as a free product rather than as a
+              // question the shopper has not answered yet.
+              selectionPrompt: _priceKnown ? null : _priceUnknownLabel,
+              onAddToCart: _addToCart,
+              onBuyNow: _buyNow,
+            ),
     );
   }
 
@@ -1979,7 +2053,9 @@ class _BuyBar extends StatelessWidget {
   final String? subtitle;
 
   final bool enabled;
-  final VoidCallback onAddToCart;
+
+  /// Adds to the cart; completes with whether the cart really has it.
+  final Future<bool> Function() onAddToCart;
   final VoidCallback onBuyNow;
 
   @override
@@ -2010,16 +2086,13 @@ class _BuyBar extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: enabled ? onAddToCart : null,
-                      style: OutlinedButton.styleFrom(
-                        textStyle: ProductType.cta(theme),
-                      ),
-                      icon: const Icon(Icons.add_shopping_cart, size: 18),
-                      label: const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text('Add to cart', maxLines: 1),
-                      ),
+                    // The page's own add, with the drop-into-the-cart
+                    // interaction. This page only: every other add-to-cart in
+                    // the app keeps its plain button.
+                    child: AnimatedAddToCartButton(
+                      enabled: enabled,
+                      onAdd: onAddToCart,
+                      textStyle: ProductType.cta(theme),
                     ),
                   ),
                   const SizedBox(width: 12),
