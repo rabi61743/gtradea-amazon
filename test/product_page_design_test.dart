@@ -424,4 +424,42 @@ void main() {
     // near the old sixteen-plus-fourteen would be the band this removed.
     expect(seam, lessThanOrEqualTo(26), reason: 'seam was $seam');
   });
+  testWidgets('and the sections sit straight on top of one another', (
+    tester,
+  ) async {
+    // Tighter than the recommendation cards' own four, by request: the card
+    // edges are what separate the sections, so the seam only has to keep them
+    // from touching -- not carry the band of empty page this page used to.
+    await pump(tester);
+
+    // Every section down this page is drawn at 97% of the width, so their own
+    // boxes are what the seams are between.
+    final cards =
+        tester
+            .widgetList<FractionallySizedBox>(find.byType(FractionallySizedBox))
+            .toList()
+            .asMap()
+            .entries
+            .map(
+              (e) =>
+                  tester.getRect(find.byType(FractionallySizedBox).at(e.key)),
+            )
+            .where((r) => r.width > 0 && r.height > 0)
+            .toList()
+          ..sort((a, b) => a.top.compareTo(b.top));
+
+    final trust = tester.getRect(find.byType(LogisticsTrustCard));
+    final below = cards.where((r) => r.top >= trust.bottom - 1).toList();
+    expect(below.length, greaterThanOrEqualTo(3), reason: 'the sections below');
+
+    for (var i = 1; i < below.length; i++) {
+      final gap = below[i].top - below[i - 1].bottom;
+      if (gap <= 0) continue; // nested boxes, not a seam
+      expect(gap, lessThanOrEqualTo(0.5), reason: 'seam $i was $gap');
+    }
+
+    final firstSeam = below.first.top - trust.bottom;
+    expect(firstSeam, greaterThanOrEqualTo(0), reason: 'no overlap');
+    expect(firstSeam, lessThanOrEqualTo(0.5), reason: 'was $firstSeam');
+  });
 }

@@ -18,6 +18,20 @@ Entry format:
 
 ---
 
+## 2026-09-16 12:35 — Product page section gaps down from 8 to 2
+- **What:** the vertical seams between the product card, the guarantees strip (7-day returns / Cash on delivery / Quality checked), Highlights, Description, Specifications and Detail images are 2 instead of 8 -- first cut to 4, the measure the recommendation cards sit at, then to 2 when the user asked for a little more.
+  - Four `SizedBox(height: 8)` → 2 in `product_detail_screen.dart` (lines ~1282, ~1291, ~1312, ~1400). The `SizedBox(height: 4)` at ~1268 is inside the logistics card, after its divider, and was left alone.
+  - `ProductSectionPanel`'s own `EdgeInsets.only(bottom: 8)` → 2, which is the seam between Specifications and Detail images (and under the last panel). Both that panel and `LogisticsTrustCard` are used only on this page.
+- **Why:** User request: reduce the empty space between those sections, using the recommendation cards' compact spacing as the reference only; then "reduce the gaps little more". The card borders already mark where a section ends, so the seam only has to keep two cards from touching.
+- **Affected:** `lib/features/product/presentation/product_detail_screen.dart`, `lib/features/product/widgets/product_section_panel.dart`, `test/product_page_design_test.dart` (new test).
+- **Impact & risk:** Gaps only. No section's size, padding, order, type, colour, content or behaviour changed; the outdated "eight between sections" comments were corrected.
+- **Verification:**
+  - New test measures the seams between the section boxes below the guarantees strip: each > 0 and ≤ 2.5.
+  - Product page design, detail and MOQ suites 45/45 (and 113 across the wider product set); analyze clean.
+  - On the Redmi the five sections read as one stack with even thin seams; accessibility bounds show ~13-19 device px between section boxes at dpr 3.
+  - Full suite: see commit.
+- **Commit:** see git log (`style(product): four-point seams between the product page sections`) on main, pushed to origin
+
 ## 2026-09-16 12:15 — Recommendation card picture flush to the card's edges
 - **What:**
   - `ProductResultCard.imageFlush` (default false): the picture is drawn to the card's own top, left and right edges instead of inside `padding`, taking the card's corner radius on its top two corners. The price, title and credibility line keep the same padding, now applied to them rather than to the whole card.

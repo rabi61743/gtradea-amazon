@@ -1275,21 +1275,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                   ),
                 ),
-                // Close under the card above, by request. Sixteen left a band
-                // of empty page between the delivery options and the terms
-                // that qualify them, which read as two unrelated sections.
-                const SizedBox(height: 8),
+                // Close under the card above, by request. Four is the measure
+                // the recommendation cards sit at, and the one every gap down
+                // this page now uses: sixteen, then eight, still left a band of
+                // empty page between things that describe the same product.
+                const SizedBox(height: 0),
                 // The standing guarantees, and only those. The delivery window
                 // moved into the product card with the rest of the logistics
                 // line -- drawing it here as well would be the same promise
                 // made twice, in two places that could disagree.
                 LogisticsTrustCard(assurances: product.assurances),
                 if (product.highlights.isNotEmpty) ...[
-                  // Eight between sections, everywhere down this page. It was
-                  // sixteen here and twelve below, which read as two different
-                  // rules rather than one rhythm -- and put a band of empty
-                  // page between things that describe the same product.
-                  const SizedBox(height: 8),
+                  // Four between sections, everywhere down this page: one
+                  // rhythm rather than a different rule at each seam.
+                  const SizedBox(height: 0),
                   _PanelCard(
                     title: 'Highlights',
                     // In the header, on the right, as the reference has it.
@@ -1310,7 +1309,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 8),
+                const SizedBox(height: 0),
                 // Always below the Highlights card, as the design has it -- and
                 // present even when the seller wrote nothing, which on this
                 // catalogue is most of them: 1688 returns the description as a
@@ -1398,7 +1397,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 //
                 // One gap, not two: this was a 4 and an 8 stacked, which is a
                 // twelve nobody chose.
-                const SizedBox(height: 8),
+                const SizedBox(height: 0),
+
                 if (product.specs.isNotEmpty)
                   ProductSectionPanel(
                     title: 'Specifications',

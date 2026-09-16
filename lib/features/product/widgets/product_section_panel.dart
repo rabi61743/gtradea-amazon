@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../core/theme/app_theme.dart';
 
 import 'product_type_scale.dart';
@@ -78,9 +79,11 @@ class _ProductSectionPanelState extends State<ProductSectionPanel> {
     // The same 97% the cards above it take, centred, so the stack down this
     // page is one width whatever the screen.
     return Padding(
-      // The page's own eight, so a run of panels reads as one stack rather
-      // than as separate sections with a wider gutter between them.
-      padding: const EdgeInsets.only(bottom: 8),
+      // No seam at all now, by request: the cards' own borders are what say
+      // where one section ends and the next begins, so a run of panels reads
+      // as one stack rather than as separate sections with empty page between
+      // them. Kept as an explicit zero so the measure stays in one place.
+      padding: EdgeInsets.zero,
       child: Center(
         child: FractionallySizedBox(
           widthFactor: 0.97,
