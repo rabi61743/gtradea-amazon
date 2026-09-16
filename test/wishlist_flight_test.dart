@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
+import 'package:gtradea_amazon/features/home/widgets/product_grid.dart';
 import 'package:gtradea_amazon/features/search/widgets/product_result_card.dart';
 import 'package:gtradea_amazon/features/wishlist/data/wishlist_store.dart';
 import 'package:gtradea_amazon/shared/motion/motion_curves.dart';
@@ -278,6 +279,59 @@ void main() {
       find.descendant(of: find.byType(AppBottomNav), matching: find.text('5')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('a grid card shows the save it just made, and unsaves next', (
+    tester,
+  ) async {
+    // The bug this covers: the home grid read the wishlist but never listened
+    // to it, so a card stayed `saved: false` after the store had saved it.
+    // The heart fell back to an outline once the fill was let go, and the
+    // next tap -- reading that stale false -- toggled the product back off
+    // and said "Removed from Wishlist".
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ProductGrid(title: 'More', products: [sampleProduct]),
+          ),
+          bottomNavigationBar: AppBottomNav(
+            currentIndex: 0,
+            onSelected: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(_cardHeart);
+    await tester.pump();
+    expect(WishlistStore.instance.contains(sampleProduct.numIid), isTrue);
+
+    // Well past the fill's hold: the card is filled because the store says
+    // it is saved, not because the animation left it that way.
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 8));
+    await tester.pumpAndSettle();
+    expect(_cardHeart.evaluate(), isEmpty, reason: 'still shown as saved');
+
+    // And only now does a tap take it off.
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(ProductResultCard),
+            matching: find.byIcon(Icons.favorite),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    expect(WishlistStore.instance.contains(sampleProduct.numIid), isFalse);
+    expect(_cardHeart, findsOneWidget);
   });
 
   group('the curves the interaction is drawn to', () {

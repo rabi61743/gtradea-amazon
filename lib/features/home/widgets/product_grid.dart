@@ -79,60 +79,69 @@ class ProductGrid extends StatelessWidget {
         ),
         Padding(
           padding: padding,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // Already inside the margin, so this is the space the cards
-              // divide up -- the same reading the results grid takes.
-              final available = constraints.maxWidth;
-              final grid = spec(available);
-              // A lone card on the last row is half a row of nothing beside
-              // it; where asked, the remainder is left off.
-              final count = wholeRows && products.length > grid.columns
-                  ? products.length - products.length % grid.columns
-                  : products.length;
+          // The cards read the wishlist below, so the grid has to hear it
+          // change: without this the hearts were drawn once, from whatever
+          // was saved when the page was built, and a product saved from one
+          // of these cards was never shown as saved -- which then made the
+          // next tap on it a removal. The rail, the department feed and the
+          // results page all listen; this grid was the one that did not.
+          child: ListenableBuilder(
+            listenable: WishlistStore.instance,
+            builder: (context, _) => LayoutBuilder(
+              builder: (context, constraints) {
+                // Already inside the margin, so this is the space the cards
+                // divide up -- the same reading the results grid takes.
+                final available = constraints.maxWidth;
+                final grid = spec(available);
+                // A lone card on the last row is half a row of nothing beside
+                // it; where asked, the remainder is left off.
+                final count = wholeRows && products.length > grid.columns
+                    ? products.length - products.length % grid.columns
+                    : products.length;
 
-              return GridView.builder(
-                // It lives inside the home page's own scroll view, so it must
-                // not scroll itself: two nested scrollables would fight for
-                // the drag, and the inner one would swallow it.
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.zero,
-                itemCount: count,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: grid.columns,
-                  // Down and across are separate now. They were both `gap`,
-                  // which meant the only way to close the rows up was to
-                  // narrow the columns with them.
-                  mainAxisSpacing: grid.rowGap ?? grid.gap,
-                  crossAxisSpacing: grid.gap,
-                  // The card's exact height, asked of the card. A ratio here
-                  // would be a guess that has to be re-guessed every time a row
-                  // is added to the card -- and it was 18 pixels short the
-                  // first time somebody tried.
-                  mainAxisExtent: ProductResultCard.heightFor(
-                    context,
-                    grid.cardWidth(available),
-                    padding: grid.cardPadding,
-                    imageFlush: imageFlush,
+                return GridView.builder(
+                  // It lives inside the home page's own scroll view, so it must
+                  // not scroll itself: two nested scrollables would fight for
+                  // the drag, and the inner one would swallow it.
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  itemCount: count,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: grid.columns,
+                    // Down and across are separate now. They were both `gap`,
+                    // which meant the only way to close the rows up was to
+                    // narrow the columns with them.
+                    mainAxisSpacing: grid.rowGap ?? grid.gap,
+                    crossAxisSpacing: grid.gap,
+                    // The card's exact height, asked of the card. A ratio here
+                    // would be a guess that has to be re-guessed every time a row
+                    // is added to the card -- and it was 18 pixels short the
+                    // first time somebody tried.
+                    mainAxisExtent: ProductResultCard.heightFor(
+                      context,
+                      grid.cardWidth(available),
+                      padding: grid.cardPadding,
+                      imageFlush: imageFlush,
+                    ),
                   ),
-                ),
-                itemBuilder: (context, i) {
-                  final product = products[i];
-                  return ProductResultCard(
-                    product: product,
-                    padding: grid.cardPadding,
-                    imageFlush: imageFlush,
-                    saved: WishlistStore.instance.contains(product.numIid),
-                    onTap: () => openProduct(context, product),
-                    onToggleSaved: () => toggleSavedProduct(context, product),
-                    onAddToCart: onAddToCart == null
-                        ? null
-                        : () => onAddToCart!(product),
-                  );
-                },
-              );
-            },
+                  itemBuilder: (context, i) {
+                    final product = products[i];
+                    return ProductResultCard(
+                      product: product,
+                      padding: grid.cardPadding,
+                      imageFlush: imageFlush,
+                      saved: WishlistStore.instance.contains(product.numIid),
+                      onTap: () => openProduct(context, product),
+                      onToggleSaved: () => toggleSavedProduct(context, product),
+                      onAddToCart: onAddToCart == null
+                          ? null
+                          : () => onAddToCart!(product),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ),
       ],

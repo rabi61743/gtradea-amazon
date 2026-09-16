@@ -18,6 +18,15 @@ Entry format:
 
 ---
 
+## 2026-09-16 14:45 — ProductGrid never listened to the wishlist
+- **What:** `ProductGrid` is now wrapped in a `ListenableBuilder` on `WishlistStore.instance`. It read `contains()` for each card's heart but never subscribed, so its cards kept the saved state they were first built with.
+- **Why:** Two reported faults, one cause. A card saved from this grid was still drawn `saved: false`, so (a) once the card heart's fill was let go the heart fell back to an outline on a product that *was* saved, and (b) the next tap read that stale false, took the save branch, and called `toggle()` on an already-saved product -- which removed it and correctly said "Removed from Wishlist". The animation was never at fault: it does not touch the store, the overlay heart is removed on landing, and no timer calls the wishlist.
+  - The rail (`product_carousel.dart`), `department_feed.dart`, `search_results_screen.dart`, `new_for_you_screen.dart` and `future_cart_screen.dart` all listen already; `recent_views_section.dart` calls `setState` itself. This grid was the only one that did not -- it also backs Free Delivery and Corporate Gifts.
+- **Affected:** `lib/features/home/widgets/product_grid.dart`, `test/wishlist_flight_test.dart`.
+- **Impact & risk:** the grid rebuilds when the wishlist changes, which is what every other card surface already does. No layout or card change.
+- **Verification:** new regression test saves through the real store from a grid card, waits past the fill's hold, asserts the heart is still shown saved, then asserts the *next* tap is what removes it; flight suite 11/11; full suite 2399 pass with only the three pre-existing `brand_system_test` colour failures (the theme's page colour is F3F2F2, that test still expects the old ivory F2ECE6 -- unrelated to any of this work); analyze clean. On the Redmi: tapping a saved card removes it and the heart flips to outline at once; saving again leaves it filled and labelled "Saved:" nine seconds later, with no message.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 13:55 — The card heart holds its fill until the store catches up
 - **What:** after the flight lands, the card heart stays filled until the card is told what really happened, instead of dropping straight back to what it was last told. A five-second timer lets it go if nothing ever comes, so a failed save cannot leave a heart that claims otherwise.
 - **Why:** found on the Redmi, testing the message removal: the wishlist call, its push and the rebuild that follows take about a second longer than the animation, and in that gap the heart showed an *outline* on a product that was already saved -- which read as "the save did not take". (The store was right all along: tapping again said "Removed from Wishlist" and the count went back down.)
