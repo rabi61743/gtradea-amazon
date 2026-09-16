@@ -196,6 +196,49 @@ void main() {
       await tester.pump(AnimatedAddToCartButton.holdSuccess);
     });
 
+    testWidgets('an error about another line does not block this add', (
+      tester,
+    ) async {
+      // A cart carries a line the account refuses -- a restricted category
+      // added long ago -- so the sync reports an error even though this add
+      // went through. The button used to fall back to "Add to cart" on it.
+      signInForTest();
+      ApiClient_useStub(api);
+      api.onCall(
+        'GET',
+        '/cart',
+        (_) => reply(const {'items': [], 'subtotal': 0}),
+      );
+      var post = 0;
+      api.onCall('POST', '/cart', (call) {
+        post++;
+        // The first line in the cart is refused; the one being added is not.
+        if (post == 1 && call.json['source_product_id'] == 'other') {
+          return reply(const {'message': 'category_restricted'}, status: 422);
+        }
+        return reply({...call.json, 'id': 's-$post'});
+      });
+      CartStore.instance.add(
+        const CartLine(
+          productId: 'other',
+          title: 'Restricted thing',
+          unitPrice: 100,
+          source: '1688',
+        ),
+      );
+
+      await openPage(tester);
+      await tester.tap(find.text('Add to cart'));
+      await playOut(tester);
+
+      final line = CartStore.instance.lines.firstWhere(
+        (l) => l.productId != 'other',
+      );
+      expect(line.serverId, isNotNull, reason: 'the account took this one');
+      expect(find.text('Added to cart'), findsOneWidget);
+      await tester.pump(AnimatedAddToCartButton.holdSuccess);
+    });
+
     testWidgets('signed in: a failed save never says Added', (tester) async {
       signInForTest();
       ApiClient_useStub(api);

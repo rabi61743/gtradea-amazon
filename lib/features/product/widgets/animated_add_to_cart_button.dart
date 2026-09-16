@@ -50,7 +50,11 @@ class AnimatedAddToCartButton extends StatefulWidget {
   static const successDuration = Duration(milliseconds: 360);
 
   /// How long "Added to cart" stays before the button is ready again.
-  static const holdSuccess = Duration(milliseconds: 2500);
+  ///
+  /// Four seconds rather than two and a half: long enough to be read without
+  /// looking for it, and short enough that the button is ready for the next
+  /// add without anybody waiting on it.
+  static const holdSuccess = Duration(seconds: 4);
 
   /// The success tint and its ink: the design system's success green, pale.
   static final Color successFill = AppColors.successGreen.withValues(

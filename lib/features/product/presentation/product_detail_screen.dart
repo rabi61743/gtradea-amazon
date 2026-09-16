@@ -816,8 +816,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     // Refused lines are these lines' problem only if they are these lines; a
     // different line already in the cart being refused says nothing about
     // this add. A sync error with nothing refused is the whole save failing.
+    // These lines, and nothing else in the cart. A cart of seventy lines can
+    // carry an error about one of the others -- a `category_restricted` line
+    // from a month ago -- and the whole-cart `syncError` says so. Judging this
+    // add by that error called a save that had plainly worked a failure: the
+    // account had the line, with its own id, and the button still went back to
+    // "Add to cart". A line the server did not take has no id, which is what
+    // actually answers the question asked here.
     if (store.rejected.keys.any(keys.contains)) return false;
-    if (store.rejected.isEmpty && store.syncError != null) return false;
     final held = {for (final line in store.lines) line.key: line};
     return keys.every((key) => held[key]?.serverId != null);
   }
@@ -2062,12 +2068,16 @@ class _BuyBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return SafeArea(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          border: Border(top: BorderSide(color: theme.dividerColor)),
-        ),
+    // The safe area inside the bar rather than around it: outside, the room
+    // kept for the phone's gesture bar showed the grey page under the buttons.
+    // The bar's own white now runs to the bottom edge, behind it.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(top: BorderSide(color: theme.dividerColor)),
+      ),
+      child: SafeArea(
+        top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
           child: Column(

@@ -18,6 +18,36 @@ Entry format:
 
 ---
 
+## 2026-09-16 11:30 — No grey strip under the product page's Add to cart / Buy bar
+- **What:** `_BuyBar` now puts its `SafeArea(top: false)` **inside** the white `DecoratedBox` instead of around it, so the bar's white runs to the bottom edge behind the gesture bar.
+- **Why / root cause:** measured on the Redmi from a screenshot (1220×2712): white to y≈2640, then a ~57 px band of the page grey (243,242,242) with the gesture pill, because the safe-area inset sat outside the bar's own decoration. After the change the same rows read 255,255,255 to y=2711.
+- **Affected:** `lib/features/product/presentation/product_detail_screen.dart` (`_BuyBar` build only). Padding, buttons, colours and behaviour are unchanged.
+- **Verification:** analyze clean; product page, detail, add-to-cart, MOQ, deal and cart suites 113/113; pixels checked on the device before and after.
+- **Commit:** see git log (`fix(product): run the buy bar's white to the bottom edge`) on main, pushed to origin
+
+## 2026-09-16 10:55 — Add to cart success state was hidden by an unrelated cart error
+- **Root cause, measured on the device** (temporary uncommitted `ATCPROBE` logging, profile build, real account):
+  ```
+  ATCPROBE done 422ms rejectedMine=false rejectedAll=0
+                      syncError=category_restricted
+                      serverIds=[3a4ad9e2-4bfe-…]
+  ```
+  - The add itself succeeded: the account returned a row id in 422 ms.
+  - `_confirmSaved` also failed the add when the **whole-cart** `syncError` was set with nothing in `rejected`. This shopper's 74-line cart carries an old `category_restricted` line, so that error is always set, and every add was reported as failed: the button dropped back to "Add to cart" and an error snack was shown.
+  - Not causes: the animation, its callbacks, opacity/visibility, clipping, z-order, or a rebuild resetting state. The success path was simply never reached.
+- **What:**
+  - `_confirmSaved` now judges only the keys being added: refused (`rejected`) → false; otherwise every line must carry a `serverId`. The blanket `syncError` check is gone -- a line the server did not take has no id, which answers the question by itself.
+  - `AnimatedAddToCartButton.holdSuccess` 2.5 s → 4 s, so the success state is easier to see.
+- **Why:** User reported the animation playing but "Added to Cart" never appearing.
+- **Affected:** `lib/features/product/presentation/product_detail_screen.dart` (`_confirmSaved`), `lib/features/product/widgets/animated_add_to_cart_button.dart` (hold only), `test/animated_add_to_cart_test.dart` (new test: an error about another line does not block this add).
+- **Impact & risk:** Add-to-cart success is now judged per line. A failed save still shows no success (no id) and returns to rest with the error.
+- **Verification:**
+  - analyze clean; add-to-cart, cart, detail and MOQ suites 86/86.
+  - On the Redmi (profile build, signed in, real backend): "✓ Added to cart" on the pale-green fill is clearly visible after the drop, and the cart badge rose by the minimum order (10).
+  - That check added 10 × "Manufacturer Supplies Power Cords…" to the real cart (and an earlier probe run added another 10); the user was told.
+  - Full suite: 2383 pass; only the 3 known `brand_system_test` failures.
+- **Commit:** see git log (`fix(product): confirm the added line itself, not the whole cart sync`) on main, pushed to origin
+
 ## 2026-09-16 02:35 — The "Added to Cart" confirmation card removed from the app
 - **What:** `ActionStatus.addedToCart` and its private parts (`_AddedMark`, `_InCartChip`, `_ViewCartButton`) are gone, with the call removed from all seven screens that raised it: Product Detail, Home feed, New for You, Search results, Deals, Future Cart, Product History.
   - Adds themselves are untouched: the same `CartStore.add` with the same line, quantity and rules.
