@@ -308,9 +308,14 @@ class ProductDetail {
 
   /// Struck-through "was" price.
   ///
-  /// Always null against this catalogue, and deliberately so: the server
-  /// publishes one price per product, and a crossed-out number derived from a
-  /// markup nobody publishes is an invented discount.
+  /// The price this was before, where the seller published one.
+  ///
+  /// Read from `item.original_price` and nothing else. Measured against the
+  /// live gateway in September 2026 that field is zero on every record, so in
+  /// practice this is still null everywhere and nothing is struck through --
+  /// which is the point. A crossed-out number derived from a markup nobody
+  /// publishes would be an invented discount; this one only appears if the
+  /// catalogue starts saying there is one.
   final num? listPrice;
 
   final double rating;
@@ -499,6 +504,11 @@ class ProductDetail {
       numIid: asString(item['num_iid']) ?? fallback?.numIid ?? '',
       title: asString(item['title']) ?? fallback?.title ?? '',
       price: asNum(pricing['displayPrice']) ?? fallback?.displayPrice ?? 0,
+      // The seller's own was-price, where there is one. The gateway carries
+      // the field on every record and leaves it at zero on all of them, which
+      // is why nothing has ever been struck through: this reads what is
+      // published and shows a saving only when one is. It is not derived.
+      listPrice: _listPrice(item, asNum(pricing['displayPrice'])),
       // No reviews exist for this catalogue. Showing a zero-star summary would
       // read as "rated badly" rather than "not rated yet", so the page hides
       // the whole section instead.
@@ -862,3 +872,15 @@ const storeAssurances = [
         'replaced at no cost.',
   ),
 ];
+
+/// The seller's was-price, if the record carries one worth showing.
+///
+/// Zero, missing, or anything at or below what the product actually costs is
+/// no saving at all, and a struck-through number in those cases would be a
+/// claim rather than a fact.
+num? _listPrice(Map<String, dynamic> item, num? price) {
+  final was = asNum(item['original_price']);
+  if (was == null || was <= 0) return null;
+  if (price == null || was <= price) return null;
+  return was;
+}
