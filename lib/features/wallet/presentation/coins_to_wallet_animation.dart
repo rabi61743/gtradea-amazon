@@ -48,6 +48,13 @@ class CoinsToWalletAnimation extends StatefulWidget {
   /// The whole sequence.
   static const duration = Duration(milliseconds: 1000);
 
+  /// Whether the home page plays this scene when the app is freshly opened.
+  ///
+  /// On in the app. Widget tests of the home page turn it off in
+  /// `flutter_test_config.dart`, so a dialog does not open over every one of
+  /// them; the test about the launch turns it back on.
+  static bool showOnLaunch = true;
+
   /// Whether the wallet's gentle idle shimmer runs after the sequence. It
   /// never ends, so widget tests turn it off to let a page settle.
   static bool idleShimmerEnabled = true;

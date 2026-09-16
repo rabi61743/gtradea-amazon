@@ -18,6 +18,18 @@ Entry format:
 
 ---
 
+## 2026-09-16 22:20 — The coins scene plays on every fresh app launch
+- **What:** `HomeScreen._maybeShowPopup` now opens `CoinsToWalletAnimation.show(context, value: CoinBalanceStore.instance.balance.round())` once per fresh launch, then shows the admin popup (if any) after the scene closes.
+  - It reuses the popup's launch gate: waits for the saved sign-in to restore, the cold catalogue load, the tour record and the popup setting, and `PopupBannerStore.claimLaunch()` makes it once per process -- so never on resume, navigation or a rebuilt home screen.
+  - A first run whose tour starts shows neither the coins nor the popup (the tour check moved ahead of both).
+  - Not over a page the shopper already opened (`ModalRoute.isCurrent`).
+  - **Value:** the header's own figure, so the scene and the header always agree, and no "Preview" tag. Caveat: `CoinBalanceStore.balance` falls back to `fallbackBalance` (1000) for guests and failed reads -- the scene shows that stand-in exactly as the header already does. Nothing is written or credited.
+- **Switch:** `CoinsToWalletAnimation.showOnLaunch` (true in the app), set false in `test/flutter_test_config.dart` so a dialog does not open over every home test; the launch tests turn it on.
+- **Why:** User: "whenever app [opens] then show this coins animation".
+- **Affected:** `lib/features/home/home_screen.dart`, `lib/features/wallet/presentation/coins_to_wallet_animation.dart` (`showOnLaunch`), `test/flutter_test_config.dart`, `test/startup_popup_test.dart` (new group).
+- **Verification:** 4 new tests in the launch harness -- plays on a fresh launch with the header's value and no preview, closes itself; a live admin popup waits and appears only after it; not replayed after background/resume; a tour first-run shows no coins. Startup suite 22/22; full suite 2452 pass with only the three known `brand_system_test` colour failures; analyze clean. On the Redmi, a force-stop and cold start opened the scene by itself, settled on "1,000" with no Preview tag, and a UI dump afterwards shows it closed with the home tabs back.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-16 21:50 — "Coins into your wallet" reward scene (frontend only)
 - **What:** new self-contained `CoinsToWalletAnimation` (`lib/features/wallet/presentation/coins_to_wallet_animation.dart`). Exactly 1.0 s on one `AnimationController`; everything but the number is painted by one `_ScenePainter`, so particles, trails and coins leave nothing behind.
   - **0.0 s spark:** centre coin fades in over 180 ms, spinning on its vertical axis (face width `|cos|`), embossed star, shine; radial gold glow behind, easing to an ambient 30% by 1.0 s. Navy `#0B1B3A` → charcoal `#1C1F26` background.

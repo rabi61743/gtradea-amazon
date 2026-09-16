@@ -19,6 +19,8 @@ import 'package:gtradea_amazon/features/promo/presentation/startup_popup_banner.
 import 'package:gtradea_amazon/features/search/presentation/search_results_screen.dart';
 import 'package:gtradea_amazon/features/tour/data/tour_store.dart';
 import 'package:gtradea_amazon/features/wishlist/data/wishlist_store.dart';
+import 'package:gtradea_amazon/features/wallet/data/coin_balance_store.dart';
+import 'package:gtradea_amazon/features/wallet/presentation/coins_to_wallet_animation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/api.dart';
@@ -311,6 +313,78 @@ void main() {
     serve(_banner());
     await launch(tester);
     expect(popup, findsNothing);
+  });
+
+  group('the coins scene on launch', () {
+    final coins = find.byType(CoinsToWalletAnimation);
+
+    setUp(() => CoinsToWalletAnimation.showOnLaunch = true);
+    tearDown(() => CoinsToWalletAnimation.showOnLaunch = false);
+
+    /// Past the one-second scene and its linger, until it has closed.
+    Future<void> letCoinsFinish(WidgetTester tester) async {
+      await tester.pump(CoinsToWalletAnimation.duration);
+      await tester.pump(CoinsToWalletAnimation.linger);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('plays when the app is freshly opened', (tester) async {
+      serve(null);
+      await launch(tester);
+
+      expect(coins, findsOneWidget);
+      // The figure the header shows, not a demonstration value, and no
+      // preview label on it.
+      expect(tester.widget<CoinsToWalletAnimation>(coins).preview, isFalse);
+      expect(
+        tester.widget<CoinsToWalletAnimation>(coins).value,
+        CoinBalanceStore.instance.balance.round(),
+      );
+
+      await letCoinsFinish(tester);
+      expect(coins, findsNothing, reason: 'and closes itself');
+    });
+
+    testWidgets('the admin popup waits for it, instead of stacking', (
+      tester,
+    ) async {
+      serve(_banner());
+      await launch(tester);
+
+      expect(coins, findsOneWidget);
+      expect(popup, findsNothing, reason: 'not on top of the coins');
+
+      await letCoinsFinish(tester);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(popup, findsOneWidget, reason: 'then the popup');
+    });
+
+    testWidgets('not again on returning from the background', (tester) async {
+      serve(null);
+      await launch(tester);
+      await letCoinsFinish(tester);
+
+      for (final state in const [
+        AppLifecycleState.inactive,
+        AppLifecycleState.paused,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+        await tester.pump();
+      }
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(coins, findsNothing);
+    });
+
+    testWidgets('a first run with the tour leaves the screen to the tour', (
+      tester,
+    ) async {
+      TourStore.enabled = true;
+      serve(null);
+      await launch(tester);
+      expect(coins, findsNothing);
+    });
   });
 
   testWidgets('artwork that will not load means no popup, not an empty box', (

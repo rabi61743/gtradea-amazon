@@ -12,6 +12,7 @@ import '../account/presentation/account_screen.dart';
 import '../address/data/address_store.dart';
 import '../auth/data/auth_store.dart';
 import '../wallet/data/coin_balance_store.dart';
+import '../wallet/presentation/coins_to_wallet_animation.dart';
 import '../cart/data/cart_store.dart';
 import '../cart/presentation/cart_screen.dart';
 import '../catalog/data/catalog_repository.dart' show Category;
@@ -268,8 +269,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (!store.claimLaunch()) return;
     _popupTriggers.removeListener(_schedulePopupCheck);
+    // A first run belongs to the tour: nothing else opens over it.
+    if (tour.shouldStart) return;
+
+    // The coins-into-the-wallet scene, once per fresh launch, on this same
+    // gate -- so it waits for the same things the popup does and is never
+    // replayed on a resume or a navigation. It reveals the figure the header
+    // already shows, so the two can never disagree. The popup, if there is
+    // one, follows it rather than stacking on top.
+    if (CoinsToWalletAnimation.showOnLaunch &&
+        ModalRoute.of(context)?.isCurrent != false) {
+      await CoinsToWalletAnimation.show(
+        context,
+        value: CoinBalanceStore.instance.balance.round(),
+      );
+      if (!mounted) return;
+    }
+
     final banner = store.banner;
-    if (tour.shouldStart || banner == null || !store.shouldShow()) return;
+    if (banner == null || !store.shouldShow()) return;
 
     // Decoded before the card opens, so it never appears as an empty box. A
     // picture that will not load means no popup at all.

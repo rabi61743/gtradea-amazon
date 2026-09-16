@@ -42,6 +42,10 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // The coins-into-wallet scene's idle shimmer, likewise endless.
   CoinsToWalletAnimation.idleShimmerEnabled = false;
 
+  // And it opens over the home page on a fresh launch, which would put a
+  // dialog over every home test. Off here; on in the test about the launch.
+  CoinsToWalletAnimation.showOnLaunch = false;
+
   // A Product History card waits for its picture as well as its details, and
   // an image decode begun inside the test clock never finishes -- so every
   // card would stay a skeleton. The picture is taken as loaded here; the card
