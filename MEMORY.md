@@ -18,6 +18,35 @@ Entry format:
 
 ---
 
+## 2026-09-16 12:15 — Recommendation card picture flush to the card's edges
+- **What:**
+  - `ProductResultCard.imageFlush` (default false): the picture is drawn to the card's own top, left and right edges instead of inside `padding`, taking the card's corner radius on its top two corners. The price, title and credibility line keep the same padding, now applied to them rather than to the whole card.
+  - `heightFor(..., imageFlush:)` measures the taller picture (`cardWidth`, not `cardWidth - 2*padding`) and only one padding at the foot, so the grid reserves the right extent and nothing clips.
+  - `ProductGrid.imageFlush` threads it through; only the product page's "More in …" shelf passes true.
+- **Why:** User request: remove the top, left and right padding around the picture in the product page's recommendation cards, and nothing else.
+- **Affected:** `lib/features/search/widgets/product_result_card.dart`, `lib/features/home/widgets/product_grid.dart`, `lib/features/product/presentation/product_detail_screen.dart` (one argument), `test/product_recommendation_spacing_test.dart`.
+- **Impact & risk:** The card is a shared widget -- Home, Search, Cart, Deals, Free delivery, Corporate gifts and the carousels all draw it -- so the flag is opt-in and a test pins that the default stays padded. The picture is square as before, so a flush card is about 20 dp taller.
+- **Verification:**
+  - New tests: flush left/right/top within the card's 1 pt border, square, inside the card; the default card still padded; gaps 4/4; no overflow at 390/800/1400 dp.
+  - On the Redmi: across a row of the picture the only page-coloured pixels are the outer margins and the 12 device-px (4 dp) gap between the cards.
+  - Full suite: 2387 pass; only the 3 known `brand_system_test` failures.
+- **Commit:** see git log (`style(product): draw the recommendation picture to the card edges`) on main, pushed to origin
+
+## 2026-09-16 11:45 — Product page recommendation cards sit at the Future Cart gap
+- **What:**
+  - New `ResultGridSpec.compact(available)`: the standard grid's columns and card padding, with `gap` and `rowGap` at 4 -- the measure `SuggestionCard.gridGap` uses on the Future Cart shelf.
+  - The product page's "More in …" `ProductGrid` passes `spec: ResultGridSpec.compact`. Nothing else uses it, so every other grid keeps 10 across / 6 down.
+- **Why:** User request: reduce the gaps between the recommendation cards using Future Cart's compact spacing as the reference, changing nothing else about the cards.
+- **Affected:** `lib/features/search/widgets/product_result_card.dart` (new named spec), `lib/features/product/presentation/product_detail_screen.dart` (one argument), new `test/product_recommendation_spacing_test.dart`.
+- **Impact & risk:**
+  - Same column count and same card padding, so the card design is untouched; with narrower gaps each card gains about 3 dp of width, which is where the reclaimed space goes. The user was told.
+  - Nothing else about the section, its data or the page changed.
+- **Verification:**
+  - New tests: the shelf's spec is 4/4, tighter than standard, same columns and padding; the drawn grid delegate carries 4/4 with no overflow at 390/800/1400 dp.
+  - On the Redmi the gap between the two cards measures 12 device px at dpr 3 = 4 dp, with the page margins unchanged at both edges.
+  - Full suite: 2387 pass; only the 3 known `brand_system_test` failures.
+- **Commit:** see git log (`style(product): compact gaps for the recommendation grid`) on main, pushed to origin
+
 ## 2026-09-16 11:30 — No grey strip under the product page's Add to cart / Buy bar
 - **What:** `_BuyBar` now puts its `SafeArea(top: false)` **inside** the white `DecoratedBox` instead of around it, so the bar's white runs to the bottom edge behind the gesture bar.
 - **Why / root cause:** measured on the Redmi from a screenshot (1220×2712): white to y≈2640, then a ~57 px band of the page grey (243,242,242) with the gesture pill, because the safe-area inset sat outside the bar's own decoration. After the change the same rows read 255,255,255 to y=2711.

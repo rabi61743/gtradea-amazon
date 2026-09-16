@@ -33,7 +33,13 @@ class ProductGrid extends StatelessWidget {
     // followed it.
     this.padding = const EdgeInsets.fromLTRB(_margin, 0, _margin, 0),
     this.wholeRows = false,
+    this.imageFlush = false,
   });
+
+  /// Draws each card's picture to the card's own top, left and right edges.
+  /// Off unless a page asks -- only the product page's recommendation shelf
+  /// does.
+  final bool imageFlush;
 
   /// Draw only complete rows: as many cards as fill whole rows at the column
   /// count this width gets, when there is at least one full row. Off by
@@ -108,6 +114,7 @@ class ProductGrid extends StatelessWidget {
                     context,
                     grid.cardWidth(available),
                     padding: grid.cardPadding,
+                    imageFlush: imageFlush,
                   ),
                 ),
                 itemBuilder: (context, i) {
@@ -115,6 +122,7 @@ class ProductGrid extends StatelessWidget {
                   return ProductResultCard(
                     product: product,
                     padding: grid.cardPadding,
+                    imageFlush: imageFlush,
                     saved: WishlistStore.instance.contains(product.numIid),
                     onTap: () => openProduct(context, product),
                     onToggleSaved: () => toggleSavedProduct(context, product),

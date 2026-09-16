@@ -18,6 +18,7 @@ import '../../catalog/data/catalog_repository.dart';
 import '../../flash_sale/presentation/product_deal_banner.dart';
 import '../../catalog/data/product.dart';
 import '../../home/widgets/product_grid.dart';
+import '../../search/widgets/product_result_card.dart' show ResultGridSpec;
 import '../../home/widgets/product_rail.dart';
 import '../../search/presentation/search_results_screen.dart';
 import '../../search/presentation/visual_search_screen.dart';
@@ -1434,6 +1435,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     title: 'More in ${product.category ?? 'this department'}',
                     leadingIcon: Icons.compare_arrows,
                     products: _similar,
+                    // The Future Cart shelf's compact gap, by request: the
+                    // cards themselves are unchanged, they just sit closer.
+                    spec: ResultGridSpec.compact,
+                    // And the picture to the card's edges, by request.
+                    imageFlush: true,
                     onSeeAll: product.categoryCid == null
                         ? null
                         : () => Navigator.of(context).push(

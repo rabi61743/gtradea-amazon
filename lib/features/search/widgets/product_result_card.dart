@@ -35,6 +35,7 @@ class ProductResultCard extends StatelessWidget {
     this.saved = false,
     this.padding = _pad,
     this.dense = false,
+    this.imageFlush = false,
   });
 
   final Product product;
@@ -46,6 +47,14 @@ class ProductResultCard extends StatelessWidget {
   /// Inside the border, around everything. A grid that wants bigger pictures
   /// in the same width passes less; see [ResultGridSpec].
   final double padding;
+
+  /// Draws the picture to the card's own top, left and right edges instead of
+  /// inside [padding].
+  ///
+  /// Off everywhere but the product page's recommendation shelf, which asked
+  /// for the picture to use the width it is given. The words below keep their
+  /// padding either way, so only the picture changes.
+  final bool imageFlush;
 
   /// The marketplace treatment: tighter internal gaps and the price in the
   /// brand's own ink.
@@ -114,6 +123,7 @@ class ProductResultCard extends StatelessWidget {
     double cardWidth, {
     double padding = _pad,
     bool dense = false,
+    bool imageFlush = false,
   }) {
     final theme = Theme.of(context);
     final scaler = MediaQuery.textScalerOf(context);
@@ -121,8 +131,9 @@ class ProductResultCard extends StatelessWidget {
     double lineOf(TextStyle? style, double fallback, {double lines = 1}) =>
         scaler.scale((style?.fontSize ?? fallback) * 1.35 * lines);
 
-    // The picture is square and spans the padded width.
-    final image = cardWidth - padding * 2;
+    // The picture is square and spans the padded width -- or the whole card,
+    // when it is drawn flush to the edges.
+    final image = imageFlush ? cardWidth : cardWidth - padding * 2;
     final title = lineOf(
       theme.textTheme.bodySmall,
       12,
@@ -141,14 +152,9 @@ class ProductResultCard extends StatelessWidget {
     final gap = dense ? _gapDense : _gap;
     final tight = dense ? _gapTightDense : _gapTight;
 
-    return padding * 2 +
-        image +
-        gap +
-        price +
-        tight +
-        title +
-        tight +
-        credibility;
+    // Flush: the picture pays no padding above it, so only the foot remains.
+    final insets = imageFlush ? padding : padding * 2;
+    return insets + image + gap + price + tight + title + tight + credibility;
   }
 
   @override
@@ -178,7 +184,9 @@ class ProductResultCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppTheme.radiusCard),
             border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
-          padding: EdgeInsets.all(padding),
+          // Flush draws the picture to the card's own edges, so the padding
+          // moves off the top and on to the words underneath it instead.
+          padding: imageFlush ? EdgeInsets.zero : EdgeInsets.all(padding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
@@ -186,7 +194,13 @@ class ProductResultCard extends StatelessWidget {
               Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+                    // Against the card's edges it takes the card's own corner,
+                    // top only; inside the padding it keeps its small one.
+                    borderRadius: imageFlush
+                        ? const BorderRadius.vertical(
+                            top: Radius.circular(AppTheme.radiusCard),
+                          )
+                        : BorderRadius.circular(AppTheme.radiusControl),
                     child: ArtworkPanel(
                       icon: iconForCategory(
                         product.categoryName ?? product.parentCategoryName,
@@ -213,25 +227,39 @@ class ProductResultCard extends StatelessWidget {
                 ],
               ),
               SizedBox(height: gap),
-              _PriceRow(
-                product: product,
-                onAddToCart: onAddToCart,
-                dense: dense,
-              ),
-              SizedBox(height: tight),
-              SizedBox(
-                height: titleHeight,
-                child: Text(
-                  product.title,
-                  maxLines: _titleLines,
-                  overflow: TextOverflow.ellipsis,
-                  style: titleStyle,
+              // The words keep the padding the picture gave up, so only the
+              // picture is flush and the text sits exactly where it did.
+              Padding(
+                padding: imageFlush
+                    ? EdgeInsets.fromLTRB(padding, 0, padding, padding)
+                    : EdgeInsets.zero,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _PriceRow(
+                      product: product,
+                      onAddToCart: onAddToCart,
+                      dense: dense,
+                    ),
+                    SizedBox(height: tight),
+                    SizedBox(
+                      height: titleHeight,
+                      child: Text(
+                        product.title,
+                        maxLines: _titleLines,
+                        overflow: TextOverflow.ellipsis,
+                        style: titleStyle,
+                      ),
+                    ),
+                    if (product.salesLabel != null ||
+                        product.tradeScore != null) ...[
+                      SizedBox(height: tight),
+                      _Credibility(product: product),
+                    ],
+                  ],
                 ),
               ),
-              if (product.salesLabel != null || product.tradeScore != null) ...[
-                SizedBox(height: tight),
-                _Credibility(product: product),
-              ],
             ],
           ),
         ),
@@ -536,6 +564,19 @@ class ResultGridSpec {
     columns: ProductResultCard.columnsFor(available),
     gap: ProductResultCard.gridGap,
     rowGap: ProductResultCard.rowGap,
+    cardPadding: ProductResultCard._pad,
+  );
+
+  /// The standard grid with the gaps closed up, across and down.
+  ///
+  /// Four points, which is the measure the Future Cart shelf uses between its
+  /// suggestion cards. Same columns, same padding inside each card: only the
+  /// space between them is different, so the cards themselves are untouched
+  /// and the row simply wastes less of the width on air.
+  static ResultGridSpec compact(double available) => ResultGridSpec(
+    columns: ProductResultCard.columnsFor(available),
+    gap: 4,
+    rowGap: 4,
     cardPadding: ProductResultCard._pad,
   );
 
