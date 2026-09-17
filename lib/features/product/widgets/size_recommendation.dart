@@ -128,10 +128,6 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
   /// same as before -- otherwise a second Submit looks like it did nothing.
   int _flash = 0;
 
-  /// The rulers have moved since the suggestion was worked out.
-  bool get _changed =>
-      _submitted != null &&
-      (_submitted!.bust != _m.bust || _submitted!.waist != _m.waist);
   final _resultKey = GlobalKey();
 
   @override
@@ -141,12 +137,9 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
       if (!mounted) return;
       setState(() {
         _loaded = true;
-        if (saved != null) {
-          _m = saved;
-          // Measured before: the suggestion is there again on opening.
-          _result = SizeRecommendation.forMeasurements(saved);
-          _submitted = saved;
-        }
+        // Measured before: the rulers start there. The suggestion itself
+        // only comes from Submit, for what the rulers show at that moment.
+        if (saved != null) _m = saved;
       });
     });
   }
@@ -184,6 +177,15 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
       }
     });
   }
+
+  /// A ruler moved: an answer for the old measurements would now be wrong,
+  /// so it goes until Submit is tapped again.
+  void _measured(BodyMeasurements m) => setState(() {
+    _m = m;
+    _result = null;
+    _submitted = null;
+    _justSaved = false;
+  });
 
   String _show(double cm) => _unit == _RecUnit.cm
       ? '${cm.round()} cm'
@@ -250,9 +252,8 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
                 maxCm: 150,
                 inches: _unit == _RecUnit.inches,
                 display: _show(_m.bust),
-                onChanged: (v) => setState(
-                  () => _m = BodyMeasurements(bust: v, waist: _m.waist),
-                ),
+                onChanged: (v) =>
+                    _measured(BodyMeasurements(bust: v, waist: _m.waist)),
               ),
               _Measure(
                 label: 'Waist size',
@@ -262,15 +263,16 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
                 maxCm: 140,
                 inches: _unit == _RecUnit.inches,
                 display: _show(_m.waist),
-                onChanged: (v) => setState(
-                  () => _m = BodyMeasurements(bust: _m.bust, waist: v),
-                ),
+                onChanged: (v) =>
+                    _measured(BodyMeasurements(bust: _m.bust, waist: v)),
               ),
               if (_result != null)
                 _Result(
                   key: _resultKey,
                   result: _result!,
-                  stale: _changed,
+                  basedOn:
+                      'Based on your bust ${_show(_submitted!.bust)} and '
+                      'waist ${_show(_submitted!.waist)}',
                   flash: _flash,
                   range: _range,
                   onView: () => widget.onViewSize(_result!.index),
@@ -309,7 +311,7 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
                   onPressed: _submit,
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 200),
-                    child: _justSaved && !_changed
+                    child: _justSaved
                         ? Row(
                             key: const ValueKey('saved'),
                             mainAxisSize: MainAxisSize.min,
@@ -691,14 +693,14 @@ class _Result extends StatelessWidget {
     required this.result,
     required this.range,
     required this.onView,
-    this.stale = false,
+    required this.basedOn,
     this.flash = 0,
   });
 
   final SizeRecommendation result;
 
-  /// The rulers have moved since: the card fades and says to Submit again.
-  final bool stale;
+  /// The measurements the answer was worked out from, in the unit shown.
+  final String basedOn;
 
   /// Changes on every Submit, replaying the highlight.
   final int flash;
@@ -742,6 +744,14 @@ class _Result extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            basedOn,
+            key: const ValueKey('size-recommendation-based-on'),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
           Text.rich(
             TextSpan(
               children: [
@@ -787,40 +797,7 @@ class _Result extends StatelessWidget {
       ),
     );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (stale)
-          Padding(
-            key: const ValueKey('size-recommendation-stale'),
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.refresh,
-                  size: 18,
-                  color: SizeGuideSheet.accent,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Measurements changed. Tap Submit to update your size.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: SizeGuideSheet.accent,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        AnimatedOpacity(
-          opacity: stale ? 0.45 : 1,
-          duration: const Duration(milliseconds: 200),
-          child: card,
-        ),
-      ],
-    );
+    return card;
   }
 }
 

@@ -122,6 +122,11 @@ void main() {
     await _submit(tester);
 
     expect(_suggested(tester), 'Your standard size: XL');
+    // Worked out from exactly what the rulers show.
+    expect(
+      find.text('Based on your bust 104 cm and waist 95 cm'),
+      findsOneWidget,
+    );
     expect(find.textContaining('fits L'), findsOneWidget);
     expect(find.textContaining('fits XL'), findsOneWidget);
     expect(find.textContaining('The larger is suggested'), findsOneWidget);
@@ -140,27 +145,33 @@ void main() {
     expect(find.text('Saved'), findsNothing);
     expect(find.text('Submit'), findsOneWidget);
 
-    // Moving a ruler: the old answer is marked out of date, not left as if
-    // it were current.
+    // Moving a ruler: the old answer goes, since it is for other numbers.
     // Submit scrolled the answer up; bring the bust ruler back first.
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('measure-bust-value')),
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('ruler-bust')),
+      -200,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('size-recommendation-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.drag(
+      find.byKey(const ValueKey('size-recommendation-scroll')),
+      const Offset(0, 300),
     );
     await tester.pumpAndSettle();
     await _swipe(tester, 'bust', 1);
     expect(_valueBox(tester, 'bust'), '97 cm');
     expect(
-      find.byKey(const ValueKey('size-recommendation-stale')),
-      findsOneWidget,
+      find.byKey(const ValueKey('size-recommendation-result')),
+      findsNothing,
     );
 
     // The same size again (97 is still M) -- and it still says Saved.
     await _submit(tester);
     expect(_suggested(tester), 'Your standard size: M');
-    expect(
-      find.byKey(const ValueKey('size-recommendation-stale')),
-      findsNothing,
-    );
     expect(find.text('Saved'), findsOneWidget);
     expect((await BodyMeasurementsStore.instance.load())!.bust, 97);
     await tester.pump(const Duration(seconds: 2));
@@ -185,6 +196,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_valueBox(tester, 'bust'), '104 cm');
+    // The rulers start on what was saved; the answer waits for Submit.
+    expect(
+      find.byKey(const ValueKey('size-recommendation-result')),
+      findsNothing,
+    );
+    await _submit(tester);
     expect(_suggested(tester), 'Your standard size: L');
   });
 

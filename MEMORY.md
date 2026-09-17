@@ -18,6 +18,21 @@ Entry format:
 
 ---
 
+## 2026-09-17 18:40 — Size recommendation: result only from Submit, for the selected values
+- **What:**
+  - Opening the tab no longer shows the suggestion saved earlier. The rulers start on the saved values, and the result appears only when Submit is tapped.
+  - Moving either ruler removes the result, replacing the faded "Measurements changed" card.
+  - The card now starts with "Based on your bust X cm and waist Y cm", naming exactly the values it used.
+- **Why:** the user asked that Submit give the result based on the selected bust and waist sizes. A suggestion showing before Submit, or left over from other numbers, looked unrelated to what was selected.
+- **Affected:** `size_recommendation.dart` (`_measured`, `_Result.basedOn`, stale UI removed), `test/size_recommendation_test.dart`.
+- **Verification:**
+  - 12 recommendation tests pass; analyze is clean.
+  - On the Redmi: polo → Size guide → Size recommendation opened with no result, on the saved 114 / 58 cm.
+  - Submit showed "Based on your bust 114 cm and waist 58 cm", XXL, with ✓ Saved.
+  - Moving the waist ruler to 76 removed the card.
+  - Submit again showed "Based on your bust 114 cm and waist 76 cm", XXL (waist fits S).
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 12:45 — Size recommendation: Submit gives visible feedback
 - **What:**
   - Submit now turns into "✓ Saved" for 1.6 s, and the result card flashes orange on every Submit.
