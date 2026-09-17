@@ -18,6 +18,22 @@ Entry format:
 
 ---
 
+## 2026-09-17 18:55 — Size guide & recommendation use the app's Commerce Orange, never as a fill
+- **What:**
+  - `SizeGuideSheet.accent` is now `AppColors.commerceOrange` (#E94724), replacing the reference's #FF7A00. This covers the figure lines, pills, ruler pointers, headline, result size and links.
+  - "Size guide" button: orange icon and label on the same neutral pill.
+  - No orange backgrounds:
+    - Submit is an outlined button with an orange edge and label.
+    - The recommendation IN/CM selection is an orange outline and text.
+    - The result card is on the surface colour with an orange border.
+    - The chosen row in the size table uses a neutral tint.
+- **Why:** the user asked for the app's orange on the Size guide label and throughout both sections, but not as a background.
+- **Affected:** `size_guide_sheet.dart`, `size_recommendation.dart`.
+- **Verification:**
+  - Size tests pass; analyze is clean. Only the 3 old `brand_system_test` failures remain.
+  - On the Redmi: the polo options popup shows the orange "Size guide" label. The guide figures are in brand orange. On the recommendation tab, Swipe title, CM outline, pointers, result border/XS and "See XS" link are orange, and Submit/Saved is outlined, with no orange fills.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 18:40 — Size recommendation: result only from Submit, for the selected values
 - **What:**
   - Opening the tab no longer shows the suggestion saved earlier. The rulers start on the saved values, and the result appears only when Submit is tapped.

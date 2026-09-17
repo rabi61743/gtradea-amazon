@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/colors.dart';
+
 import 'size_recommendation.dart';
 
 /// One size in the general chart: body measurements to fit, and the garment's
@@ -150,17 +152,17 @@ class SizeGuideButton extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
+                const Icon(
                   Icons.straighten,
                   size: 14,
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: SizeGuideSheet.accent,
                 ),
                 const SizedBox(width: 6),
                 Text(
                   'Size guide',
                   style: theme.textTheme.labelMedium?.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurface,
+                    color: SizeGuideSheet.accent,
                   ),
                 ),
               ],
@@ -179,8 +181,9 @@ class SizeGuideSheet extends StatefulWidget {
 
   final String? initialSize;
 
-  /// The orange the reference draws its measurement marks in.
-  static const accent = Color(0xFFFF7A00);
+  /// The app's Commerce Orange, for marks, text, lines and edges -- never
+  /// as a fill behind anything.
+  static const accent = AppColors.commerceOrange;
 
   /// Opens the guide as a tall sheet -- phone width on a tablet or desktop --
   /// that closes on the back arrow, a swipe down, or a tap outside.
@@ -848,8 +851,9 @@ class _Table extends StatelessWidget {
             for (var i = 0; i < kStandardSizes.length; i++)
               DataRow(
                 color: i == selected
+                    // A neutral tint: orange stays off backgrounds.
                     ? WidgetStatePropertyAll(
-                        SizeGuideSheet.accent.withValues(alpha: 0.08),
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                       )
                     : null,
                 cells: [

@@ -301,11 +301,12 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
               SizedBox(
                 width: double.infinity,
                 height: 50,
-                child: FilledButton(
+                // Orange edge and label on the plain ground: no orange fill.
+                child: OutlinedButton(
                   key: const ValueKey('size-recommendation-submit'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _orange,
-                    foregroundColor: Colors.white,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _orange,
+                    side: const BorderSide(color: _orange, width: 1.5),
                     shape: const StadiumBorder(),
                   ),
                   onPressed: _submit,
@@ -321,7 +322,7 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
                               Text(
                                 'Saved',
                                 style: theme.textTheme.titleMedium?.copyWith(
-                                  color: Colors.white,
+                                  color: _orange,
                                 ),
                               ),
                             ],
@@ -330,7 +331,7 @@ class _SizeRecommendationTabState extends State<SizeRecommendationTab> {
                             'Submit',
                             key: const ValueKey('submit'),
                             style: theme.textTheme.titleMedium?.copyWith(
-                              color: Colors.white,
+                              color: _orange,
                             ),
                           ),
                   ),
@@ -362,13 +363,17 @@ class _RecUnitToggle extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: on ? SizeGuideSheet.accent : Colors.transparent,
             borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: on ? SizeGuideSheet.accent : Colors.transparent,
+              width: 1.5,
+            ),
           ),
           child: Text(
             text,
             style: theme.textTheme.titleSmall?.copyWith(
-              color: on ? Colors.white : theme.colorScheme.onSurface,
+              color: on ? SizeGuideSheet.accent : theme.colorScheme.onSurface,
+              fontWeight: on ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
         ),
@@ -732,7 +737,7 @@ class _Result extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(16, 4, 16, 16),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: SizeGuideSheet.accent.withValues(alpha: 0.07 + 0.18 * t),
+          color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: SizeGuideSheet.accent.withValues(alpha: 0.35 + 0.65 * t),
