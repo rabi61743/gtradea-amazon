@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gtradea_amazon/core/audio/app_sound.dart';
+import 'package:gtradea_amazon/core/audio/app_sounds.dart';
+import 'package:gtradea_amazon/core/audio/sound_settings.dart';
 import 'package:gtradea_amazon/core/theme/app_theme.dart';
 import 'package:gtradea_amazon/features/wallet/presentation/coins_to_wallet_animation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Widget _scene({
   int value = CoinsToWalletAnimation.demoValue,
@@ -89,6 +93,43 @@ void main() {
       await tester.pumpAndSettle();
     },
   );
+
+  group('the coins sound', () {
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      SoundSettings.instance.resetForTest();
+      await AppSounds.coins.resetForTest();
+    });
+
+    tearDown(() {
+      AppSound.enabled = true;
+      SoundSettings.instance.resetForTest();
+    });
+
+    test('is its own bundled clip', () {
+      expect(AppSounds.coins.asset, 'assets/sounds/coins.wav');
+    });
+
+    testWidgets('plays once, as the animation starts', (tester) async {
+      AppSound.enabled = true;
+      await tester.pumpWidget(_scene());
+      await tester.pump();
+      expect(AppSounds.coins.plays, 1);
+
+      await tester.pump(const Duration(milliseconds: 1000));
+      expect(AppSounds.coins.plays, 1, reason: 'not again as it plays');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('stays quiet when the shopper has sound off', (tester) async {
+      AppSound.enabled = true;
+      await SoundSettings.instance.setEnabled(false);
+      await tester.pumpWidget(_scene());
+      await tester.pump(const Duration(milliseconds: 1000));
+      expect(AppSounds.coins.plays, 0);
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
 
   testWidgets('reports when the one second has played', (tester) async {
     var finished = 0;

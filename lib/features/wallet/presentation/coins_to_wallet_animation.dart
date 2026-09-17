@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../core/audio/app_sounds.dart';
 import '../../../shared/motion/motion_curves.dart';
 import '../../home/widgets/product_rail.dart' show formatGrouped;
 
@@ -165,6 +166,9 @@ class _CoinsToWalletAnimationState extends State<CoinsToWalletAnimation>
     _reduced = MediaQuery.of(context).disableAnimations;
     if (_started) return;
     _started = true;
+    // Started with the animation; the clip's clinks follow its timeline. Not
+    // awaited, and silent if the shopper has sound off.
+    unawaited(AppSounds.coins.play());
     _t.forward().whenComplete(() {
       if (!mounted) return;
       if (CoinsToWalletAnimation.idleShimmerEnabled && !_reduced) {

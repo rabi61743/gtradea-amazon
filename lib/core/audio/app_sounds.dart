@@ -46,6 +46,16 @@ abstract final class AppSounds {
     gap: const Duration(milliseconds: 600),
   );
 
+  /// Coins pouring into the wallet, timed to [CoinsToWalletAnimation]: clinks
+  /// as the coins pop in and land, and a chime as the total is revealed.
+  ///
+  /// An original clip synthesised for this app, so there is no licence behind
+  /// it to track.
+  static final coins = AppSound(
+    'assets/sounds/coins.wav',
+    gap: const Duration(seconds: 2),
+  );
+
   /// An order the server has accepted and given a number.
   static final orderConfirmed = AppSound(
     'assets/sounds/order_confirmed.wav',

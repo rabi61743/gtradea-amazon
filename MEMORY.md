@@ -18,6 +18,18 @@ Entry format:
 
 ---
 
+## 2026-09-17 23:00 — Coin sound with the coins-to-wallet animation
+- **What:**
+  - **New asset** `assets/sounds/coins.wav`: an original clip synthesised with a Node script (1.45 s, mono 48 kHz 16-bit, -3 dBFS), so no licence applies. It is timed to the animation: a clink at 0 s, pop clinks at 200/255/310/365 ms, landing clinks at 660–800 ms, and a rising chime from 820 ms.
+  - **Wiring:** added as `AppSounds.coins` (2 s gap). `CoinsToWalletAnimation` plays it (unawaited) when its timeline starts, which covers both the launch scene and the home points-card preview. It obeys the Sound setting via `AppSound`, like every other sound.
+- **Why:** the user asked for a coins sound while the animation shows.
+- **Affected:** `lib/core/audio/app_sounds.dart`, `lib/features/wallet/presentation/coins_to_wallet_animation.dart`, the new wav, and `test/coins_to_wallet_animation_test.dart` (asset path, plays once at start, silent with sound off).
+- **Verification:**
+  - Coins animation and startup popup tests: 37 pass. Analyze is clean.
+  - On the Redmi, a fresh launch showed the coins scene. During it `dumpsys audio` listed an AudioTrack in state `started` for the app's pid (28128), mono 48 kHz. That matches coins.wav; the other app sounds are stereo.
+  - Media volume is not muted. I can't hear the phone, so loudness and feel are for the user to judge.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 22:50 — Saved items: seller badge tags in Commerce Orange
 - **What:** the saved-card `_Badge` pill ("Top seller", "Trade assured", "Verified factory"…) now uses `AppColors.commerceOrange` text on a 10% orange pill, replacing primary blue.
 - **Why:** the user asked for the app's orange on these card tags.
