@@ -18,6 +18,20 @@ Entry format:
 
 ---
 
+## 2026-09-17 22:45 — Saved items: card disappears after "Added to Cart"
+- **What:**
+  - After a single add lands and "✓ Added to Cart" shows, the saved card waits 700 ms. It then fades, shrinks to 92% and collapses its height over 350 ms (easeInCubic), so the next card slides up. It is removed from `WishlistStore` (silently) only when that animation completes.
+  - The hold and exit are one controller in the new `_LeavingCard` (`wishlist_screen.dart`), with no timers.
+  - Undo in the snackbar removes the line from the cart. A card still leaving just stays; a card already gone is restored at its old index.
+  - The button animation, cart add, failure path and "Move all" are unchanged.
+- **Why:** the user asked for the card to animate away and leave the list after "Added to Cart", changing nothing else.
+- **Affected:** `wishlist_screen.dart` (`_leaving` set, `_gone`, `_LeavingCard`, cards keyed `saved-card-<id>`), `test/wishlist_test.dart` (the card is still present while "Added to Cart" shows and then gone, undo after it leaves restores it, undo while leaving keeps it, the priced-from-catalogue item leaves the list).
+- **Verification:**
+  - Wishlist tests: 26 pass; analyze is clean.
+  - On the Redmi: tapped Add to cart on "Asphalt 10#30…" (min 25). At ~1 s the card read "Added to Cart" with the snackbar and badge 49. At ~3 s the card was gone and the Mal Mini Cylinder card had moved up.
+  - A real tap on Undo put the badge back to 24 and brought the Asphalt card back reading "Add to cart".
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 22:25 — Saved items: Add to Cart animation, and red heart on the summary card
 - **What:**
   - **Animated button.** New `lib/features/wishlist/presentation/saved_add_to_cart_button.dart` (`SavedAddToCartButton`), used only on the Saved items card.

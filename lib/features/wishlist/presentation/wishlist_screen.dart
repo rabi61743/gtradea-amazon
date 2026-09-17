@@ -119,18 +119,42 @@ class _WishlistScreenState extends State<WishlistScreen> {
   ///
   /// The saved card stays: on this page adding is not unsaving.
   bool _addToCart(SavedProduct product, num price) {
+    final index = WishlistStore.instance.items.indexOf(product);
     final line = _lineFor(product, price);
     final inCart = CartStore.instance.add(line);
     if (!CartStore.instance.contains(product.id)) return false;
+
+    // "Added to Cart" shows first; the card then animates away and only
+    // leaves the list once that has finished (see [_LeavingCard]).
+    setState(() => _leaving.add(product.id));
 
     _say(
       '${ActionStatus.addedToCartLabel} · $inCart in cart',
       action: SnackBarAction(
         label: 'Undo',
-        onPressed: () => CartStore.instance.remove(line.key, announce: false),
+        onPressed: () {
+          CartStore.instance.remove(line.key, announce: false);
+          if (!mounted) return;
+          if (_leaving.remove(product.id)) {
+            // Still on its way out: it simply stays.
+            setState(() {});
+          } else if (!WishlistStore.instance.contains(product.id)) {
+            WishlistStore.instance.restore(product, index);
+          }
+        },
       ),
     );
     return true;
+  }
+
+  /// Cards animating away after being added to the cart.
+  final _leaving = <String>{};
+
+  /// The card's leaving animation has finished: now it comes off the list.
+  void _gone(SavedProduct product) {
+    if (!_leaving.remove(product.id)) return;
+    // Silent: the add already sounded, and this is not a delete.
+    WishlistStore.instance.remove(product.id, announce: false);
   }
 
   /// Moves every saved product into the cart at once.
@@ -285,18 +309,24 @@ class _WishlistScreenState extends State<WishlistScreen> {
                       onMoveAll: _moveAll,
                     ),
                     const SizedBox(height: 12),
-                    for (final product in items) ...[
-                      _SavedCard(
-                        product: product,
-                        busy: _movingAll,
-                        onOpen: () => _open(product),
-                        onRemove: () => _remove(product),
-                        prepareAdd: () => _priceForCart(product),
-                        commitAdd: (price) => _addToCart(product, price),
-                        onOpenCart: _openCart,
+                    for (final product in items)
+                      _LeavingCard(
+                        key: ValueKey('saved-card-${product.id}'),
+                        leaving: _leaving.contains(product.id),
+                        onGone: () => _gone(product),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _SavedCard(
+                            product: product,
+                            busy: _movingAll,
+                            onOpen: () => _open(product),
+                            onRemove: () => _remove(product),
+                            prepareAdd: () => _priceForCart(product),
+                            commitAdd: (price) => _addToCart(product, price),
+                            onOpenCart: _openCart,
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 12),
-                    ],
                     _KeepShoppingCard(
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const BrowseScreen()),
@@ -377,6 +407,101 @@ class _SummaryCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A saved card that, once [leaving], lets "Added to Cart" be seen, then fades,
+/// shrinks and closes its gap, and calls [onGone] when it has.
+///
+/// The hold and the exit are one controller, so nothing waits on a timer and
+/// the card cannot be removed before the "Added" state has had its moment.
+class _LeavingCard extends StatefulWidget {
+  const _LeavingCard({
+    super.key,
+    required this.leaving,
+    required this.onGone,
+    required this.child,
+  });
+
+  final bool leaving;
+  final VoidCallback onGone;
+  final Widget child;
+
+  /// How long "Added to Cart" stays before the card starts to go.
+  static const hold = Duration(milliseconds: 700);
+
+  /// How long the card takes to go.
+  static const exit = Duration(milliseconds: 350);
+
+  @override
+  State<_LeavingCard> createState() => _LeavingCardState();
+}
+
+class _LeavingCardState extends State<_LeavingCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _out = AnimationController(
+    vsync: this,
+    duration: _LeavingCard.hold + _LeavingCard.exit,
+  )..addStatusListener(_status);
+
+  late final Animation<double> _t = CurvedAnimation(
+    parent: _out,
+    curve: Interval(
+      _LeavingCard.hold.inMilliseconds /
+          (_LeavingCard.hold + _LeavingCard.exit).inMilliseconds,
+      1,
+      curve: Curves.easeInCubic,
+    ),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.leaving) _out.forward();
+  }
+
+  @override
+  void didUpdateWidget(_LeavingCard old) {
+    super.didUpdateWidget(old);
+    if (widget.leaving && !old.leaving) {
+      _out.forward(from: 0);
+    } else if (!widget.leaving && old.leaving) {
+      // Undone while still leaving: back as it was.
+      _out.value = 0;
+    }
+  }
+
+  void _status(AnimationStatus status) {
+    if (status == AnimationStatus.completed && widget.leaving) widget.onGone();
+  }
+
+  @override
+  void dispose() {
+    _out.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _t,
+      child: widget.child,
+      builder: (context, child) {
+        final t = _t.value;
+        if (t == 0) return child!;
+        return ClipRect(
+          child: Align(
+            alignment: Alignment.topCenter,
+            // The gap closes behind the card, so the list slides up to meet it.
+            heightFactor: 1 - Curves.easeInOut.transform(t),
+            child: Opacity(
+              opacity: (1 - t * 1.4).clamp(0.0, 1.0),
+              child: Transform.scale(scale: 1 - 0.08 * t, child: child),
+            ),
+          ),
+        );
+      },
     );
   }
 }
