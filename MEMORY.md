@@ -18,6 +18,16 @@ Entry format:
 
 ---
 
+## 2026-09-18 01:18 — Shoe size guide: Nepal size
+- **What:**
+  - `ShoeSize.nepal` returns the UK size, because shoe shops in Nepal (Bata, Goldstar, Red Chief) quote UK/India numbering.
+  - The shoe guide shows **Nepal** in the summary card (after foot length, key `shoe-guide-nepal`) and as a bold column right after EU in the table.
+  - The notice now says Nepal sizes follow the UK/India numbering Nepali shops use, and that they are a standard conversion.
+- **Why:** the user asked to add Nepali people's foot size. There is no published Nepal-specific chart and no backend data, so it is the local shop numbering, labelled.
+- **Affected:** `shoe_size_guide_sheet.dart`, `test/shoe_size_guide_test.dart` (Nepal value for EU 40 = 6.5).
+- **Verification:** shoe tests: 11 pass, including 360 dp no-overflow. Analyze is clean. On the Redmi, the B25 shoe popup → 40 → Size guide showed 25 cm / Nepal 6.5 / UK 6.5 / US Men 7.5 / US Women 9, with the Nepal column in the table. Closed without adding.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-18 01:11 — Shoe size guide
 - **What:** the new `lib/features/product/widgets/shoe_size_guide_sheet.dart`.
   - **`ShoeSizing`:**

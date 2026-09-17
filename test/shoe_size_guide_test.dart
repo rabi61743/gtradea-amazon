@@ -111,6 +111,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('shoe-size-40')));
     await tester.pumpAndSettle();
     expect(_text(tester, const ValueKey('shoe-guide-foot')), '25 cm');
+    // The size a shop in Nepal quotes: UK/India numbering.
+    expect(_text(tester, const ValueKey('shoe-guide-nepal')), '6.5');
+    expect(find.text('Nepal'), findsWidgets);
 
     await tester.tap(find.byKey(const ValueKey('shoe-unit-in')));
     await tester.pumpAndSettle();

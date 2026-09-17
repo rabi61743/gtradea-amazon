@@ -21,6 +21,11 @@ class ShoeSize {
   /// Foot length for this size, in centimetres, by the Chinese sizing rule
   /// sellers here size to: size = foot length (cm) x 2 - 10.
   double get footCm => (eu + 10) / 2;
+
+  /// The size a shop in Nepal would quote. Nepali shoe shops (Bata, Goldstar,
+  /// Red Chief and the like) size in the UK/India numbering, so it is the UK
+  /// size -- labelled on the sheet as exactly that.
+  double get nepal => uk;
 }
 
 /// The standard EU-to-UK/US chart. Approximate by nature: brands differ by
@@ -273,8 +278,10 @@ class _ShoeSizeGuideSheetState extends State<ShoeSizeGuideSheet> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              "The sizes are this product's. UK, US and foot "
-                              'lengths are a standard conversion, not the '
+                              "The sizes are this product's. Nepal sizes follow the "
+                              'UK/India numbering Nepali shops use. Nepal, UK, '
+                              'US and foot lengths are a standard conversion, '
+                              'not the '
                               "seller's own measurements -- brands can differ "
                               'by half a size. Check the size chart in the '
                               'product photos too.',
@@ -307,6 +314,7 @@ class _ShoeSizeGuideSheetState extends State<ShoeSizeGuideSheet> {
                             columns: [
                               for (final h in [
                                 'EU',
+                                'Nepal',
                                 'UK',
                                 'US Men',
                                 'US Women',
@@ -335,6 +343,14 @@ class _ShoeSizeGuideSheetState extends State<ShoeSizeGuideSheet> {
                                       setState(() => _selected = i),
                                   cells: [
                                     DataCell(Text(_num(_rows[i].row.eu))),
+                                    DataCell(
+                                      Text(
+                                        _num(_rows[i].row.nepal),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
                                     DataCell(Text(_num(_rows[i].row.uk))),
                                     DataCell(Text(_num(_rows[i].row.usMen))),
                                     DataCell(Text(_num(_rows[i].row.usWomen))),
@@ -449,6 +465,11 @@ class _Summary extends StatelessWidget {
       child: Row(
         children: [
           cell('Foot length', foot, key: const ValueKey('shoe-guide-foot')),
+          cell(
+            'Nepal',
+            num(row.nepal),
+            key: const ValueKey('shoe-guide-nepal'),
+          ),
           cell('UK', num(row.uk)),
           cell('US Men', num(row.usMen)),
           cell('US Women', num(row.usWomen)),
