@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/ui/action_status.dart';
@@ -150,8 +152,22 @@ class _WishlistScreenState extends State<WishlistScreen> {
   /// Cards animating away after being added to the cart.
   final _leaving = <String>{};
 
+  /// Cards animating away after their delete button was pressed.
+  final _removing = <String>{};
+
+  /// The delete button's press has played: now the card animates away.
+  void _startRemove(SavedProduct product) {
+    if (_removing.contains(product.id) || _leaving.contains(product.id)) return;
+    setState(() => _removing.add(product.id));
+  }
+
   /// The card's leaving animation has finished: now it comes off the list.
   void _gone(SavedProduct product) {
+    if (_removing.remove(product.id)) {
+      // The existing removal, unchanged: off the list, its sound, and Undo.
+      _remove(product);
+      return;
+    }
     if (!_leaving.remove(product.id)) return;
     // Silent: the add already sounded, and this is not a delete.
     WishlistStore.instance.remove(product.id, announce: false);
@@ -312,7 +328,14 @@ class _WishlistScreenState extends State<WishlistScreen> {
                     for (final product in items)
                       _LeavingCard(
                         key: ValueKey('saved-card-${product.id}'),
-                        leaving: _leaving.contains(product.id),
+                        leaving:
+                            _leaving.contains(product.id) ||
+                            _removing.contains(product.id),
+                        // A deleted card goes at once; an added one lets
+                        // "Added to Cart" be seen first.
+                        hold: _removing.contains(product.id)
+                            ? Duration.zero
+                            : _LeavingCard.addedHold,
                         onGone: () => _gone(product),
                         child: Padding(
                           padding: const EdgeInsets.only(bottom: 12),
@@ -321,6 +344,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
                             busy: _movingAll,
                             onOpen: () => _open(product),
                             onRemove: () => _remove(product),
+                            onDelete: () => _startRemove(product),
                             prepareAdd: () => _priceForCart(product),
                             commitAdd: (price) => _addToCart(product, price),
                             onOpenCart: _openCart,
@@ -422,14 +446,18 @@ class _LeavingCard extends StatefulWidget {
     required this.leaving,
     required this.onGone,
     required this.child,
+    this.hold = addedHold,
   });
 
   final bool leaving;
   final VoidCallback onGone;
   final Widget child;
 
+  /// How long the card waits before it starts to go.
+  final Duration hold;
+
   /// How long "Added to Cart" stays before the card starts to go.
-  static const hold = Duration(milliseconds: 700);
+  static const addedHold = Duration(milliseconds: 700);
 
   /// How long the card takes to go.
   static const exit = Duration(milliseconds: 350);
@@ -440,30 +468,39 @@ class _LeavingCard extends StatefulWidget {
 
 class _LeavingCardState extends State<_LeavingCard>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _out = AnimationController(
-    vsync: this,
-    duration: _LeavingCard.hold + _LeavingCard.exit,
-  )..addStatusListener(_status);
+  late final AnimationController _out = AnimationController(vsync: this)
+    ..addStatusListener(_status);
 
-  late final Animation<double> _t = CurvedAnimation(
-    parent: _out,
-    curve: Interval(
-      _LeavingCard.hold.inMilliseconds /
-          (_LeavingCard.hold + _LeavingCard.exit).inMilliseconds,
-      1,
-      curve: Curves.easeInCubic,
-    ),
-  );
+  late CurvedAnimation _t;
+
+  /// Sets the controller and curve for the current [_LeavingCard.hold].
+  void _timeline() {
+    final total = widget.hold + _LeavingCard.exit;
+    _out.duration = total;
+    _t = CurvedAnimation(
+      parent: _out,
+      curve: Interval(
+        widget.hold.inMilliseconds / total.inMilliseconds,
+        1,
+        curve: Curves.easeInCubic,
+      ),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
+    _timeline();
     if (widget.leaving) _out.forward();
   }
 
   @override
   void didUpdateWidget(_LeavingCard old) {
     super.didUpdateWidget(old);
+    if (widget.hold != old.hold) {
+      _t.dispose();
+      _timeline();
+    }
     if (widget.leaving && !old.leaving) {
       _out.forward(from: 0);
     } else if (!widget.leaving && old.leaving) {
@@ -478,6 +515,7 @@ class _LeavingCardState extends State<_LeavingCard>
 
   @override
   void dispose() {
+    _t.dispose();
     _out.dispose();
     super.dispose();
   }
@@ -506,6 +544,90 @@ class _LeavingCardState extends State<_LeavingCard>
   }
 }
 
+/// The saved card's delete button, as it was, with a press animation: the
+/// button dips, the bin tips and turns red, and then [onDeleted] is called.
+class _DeleteButton extends StatefulWidget {
+  const _DeleteButton({
+    super.key,
+    required this.enabled,
+    required this.onDeleted,
+  });
+
+  final bool enabled;
+  final VoidCallback onDeleted;
+
+  static const press = Duration(milliseconds: 260);
+
+  @override
+  State<_DeleteButton> createState() => _DeleteButtonState();
+}
+
+class _DeleteButtonState extends State<_DeleteButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press = AnimationController(
+    vsync: this,
+    duration: _DeleteButton.press,
+  );
+
+  bool _pressed = false;
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  Future<void> _tap() async {
+    if (_pressed) return;
+    _pressed = true;
+    await _press.forward().orCancel.catchError((_) {});
+    if (mounted) widget.onDeleted();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final rest = theme.colorScheme.onSurfaceVariant;
+    final danger = theme.colorScheme.error;
+
+    return AnimatedBuilder(
+      animation: _press,
+      builder: (context, _) {
+        final t = _press.value;
+        // Down to 88% and back; the bin tips one way, then the other.
+        final dip = 1 - 0.12 * math.sin(math.pi * t);
+        final tilt = 0.28 * math.sin(2 * math.pi * t) * (1 - t * 0.5);
+        final ink = Color.lerp(rest, danger, Curves.easeOut.transform(t))!;
+
+        return Transform.scale(
+          scale: dip,
+          child: OutlinedButton(
+            onPressed: widget.enabled ? _tap : null,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(44, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              foregroundColor: ink,
+              side: t == 0
+                  ? null
+                  : BorderSide(
+                      color: Color.lerp(
+                        theme.colorScheme.outlineVariant,
+                        danger,
+                        t,
+                      )!,
+                    ),
+            ),
+            child: Transform.rotate(
+              angle: tilt,
+              child: const Icon(Icons.delete_outline, size: 19),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// One saved product: what it is, what it costs, and the two things that can
 /// be done with it.
 class _SavedCard extends StatelessWidget {
@@ -514,6 +636,7 @@ class _SavedCard extends StatelessWidget {
     required this.busy,
     required this.onOpen,
     required this.onRemove,
+    required this.onDelete,
     required this.prepareAdd,
     required this.commitAdd,
     required this.onOpenCart,
@@ -526,6 +649,9 @@ class _SavedCard extends StatelessWidget {
 
   final VoidCallback onOpen;
   final VoidCallback onRemove;
+
+  /// The delete button: animates, then removes.
+  final VoidCallback onDelete;
   final Future<num?> Function() prepareAdd;
   final bool Function(num price) commitAdd;
   final VoidCallback onOpenCart;
@@ -668,14 +794,10 @@ class _SavedCard extends StatelessWidget {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        OutlinedButton(
-                          onPressed: busy ? null : onRemove,
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(44, 40),
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            foregroundColor: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          child: const Icon(Icons.delete_outline, size: 19),
+                        _DeleteButton(
+                          key: ValueKey('saved-delete-${product.id}'),
+                          enabled: !busy,
+                          onDeleted: onDelete,
                         ),
                         const SizedBox(width: 8),
                         Expanded(

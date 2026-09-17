@@ -410,6 +410,39 @@ void main() {
       expect(WishlistStore.instance.contains('polo'), isFalse);
     });
 
+    testWidgets('the delete button animates, then the card leaves', (
+      tester,
+    ) async {
+      WishlistStore.instance
+        ..toggle(wholesale)
+        ..toggle(_dress);
+      await pump(tester);
+
+      await tester.tap(find.byKey(const ValueKey('saved-delete-dress')));
+      await tester.pump();
+
+      // The press is playing: still saved, still on screen.
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(WishlistStore.instance.contains(_dress.id), isTrue);
+      expect(find.byKey(const ValueKey('saved-card-dress')), findsOneWidget);
+
+      // The press is done and the card is on its way out: still listed.
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(WishlistStore.instance.contains(_dress.id), isTrue);
+
+      await tester.pumpAndSettle();
+      expect(WishlistStore.instance.contains(_dress.id), isFalse);
+      expect(find.byKey(const ValueKey('saved-card-dress')), findsNothing);
+      expect(WishlistStore.instance.contains('polo'), isTrue);
+      expect(find.text('1 item saved'), findsOneWidget);
+
+      // The existing Undo, unchanged.
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(WishlistStore.instance.contains(_dress.id), isTrue);
+      expect(find.byKey(const ValueKey('saved-card-dress')), findsOneWidget);
+    });
+
     testWidgets('the cart badge counts what was just added', (tester) async {
       WishlistStore.instance.toggle(wholesale);
       await pump(tester);

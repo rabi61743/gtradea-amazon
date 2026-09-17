@@ -18,6 +18,20 @@ Entry format:
 
 ---
 
+## 2026-09-17 23:50 — Saved items: delete button press + card-disappear animation
+- **What:**
+  - **Delete button.** The saved card's bin button is now `_DeleteButton`: the same `OutlinedButton` look with a 260 ms press animation (dips to 88% and back, bin tips left/right, icon and border tint to the theme error red).
+  - **Card exit.** After the press the card runs `_LeavingCard` with no hold (fade, shrink, height collapse over 350 ms).
+  - **Removal.** Only then is the existing `_remove` called: `WishlistStore.remove` with its sound, the "Removed from Wishlist" snackbar and Undo, all unchanged.
+  - `_LeavingCard.hold` is now a parameter (`addedHold` 700 ms stays for Added to Cart). A `_removing` set sits beside `_leaving`, and `_gone` finishes either kind.
+  - The heart icon's instant unsave is untouched.
+- **Why:** the user asked for a delete animation on Saved items only, with no functional or UI changes.
+- **Affected:** `lib/features/wishlist/presentation/wishlist_screen.dart`, and `test/wishlist_test.dart` (+1: still saved during the press and while leaving, then removed, and Undo restores it).
+- **Verification:**
+  - Wishlist and wishlist-sound tests: 38 pass. Analyze is clean.
+  - The APK is installed on the Redmi, but I haven't tapped through it there yet, because the user was using another app on the phone.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 23:33 — Android app name "GtradeA" → "Gtradea.com"
 - **What:** `android:label` in `android/app/src/main/AndroidManifest.xml` changed from "GtradeA" to "Gtradea.com". Package id, icon and in-app text are unchanged.
 - **Why:** the user asked to rename only the app name. iOS `CFBundleDisplayName` is "Gtradea Amazon", not "GtradeA", so it was left as is.
