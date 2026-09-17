@@ -18,6 +18,13 @@ Entry format:
 
 ---
 
+## 2026-09-17 19:22 — Qty box in the options popup gets a solid background
+- **What:** the options popup's quantity stepper (`_QuantityRow` in `add_to_cart_sheet.dart`) sits on the card surface (white) with the same border. It is now a shaped `Material` instead of a bordered `Container`, so the −/+ ripple still draws above the fill.
+- **Why:** the user asked for the Qty background to match the size boxes, which were just made solid.
+- **Affected:** `lib/features/cart/presentation/add_to_cart_sheet.dart`.
+- **Verification:** 21 popup tests pass; analyze is clean. On the Redmi, polo options popup → picked L → tapped + → the Qty box is white and reads 2.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 19:15 — Size option boxes get a solid background
 - **What:** `OptionChips` (the text size boxes: S, M, L, XL…) now fill with the card surface (white). A selected box fills with a faint primary tint over white. Before, unselected boxes were transparent.
 - **Why:** the user reported the size boxes' background wasn't visible. On the grey options sheet a transparent box with a thin border read as bare letters.

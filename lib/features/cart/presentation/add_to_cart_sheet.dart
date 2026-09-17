@@ -682,11 +682,16 @@ class _QuantityRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Container(
-          decoration: BoxDecoration(
+        // A white box like the size boxes, so it doesn't melt into the grey
+        // sheet. Material, not a coloured Container, keeps the +/- ripple
+        // visible on top of the fill.
+        Material(
+          color: theme.colorScheme.surface,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
+            side: BorderSide(color: theme.colorScheme.outlineVariant),
           ),
+          clipBehavior: Clip.antiAlias,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
