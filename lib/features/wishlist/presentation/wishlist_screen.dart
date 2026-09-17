@@ -14,6 +14,7 @@ import '../../product/data/product_detail_content.dart';
 import '../../product/data/product_repository.dart';
 import '../../product/presentation/product_detail_screen.dart';
 import '../data/wishlist_store.dart';
+import 'saved_add_to_cart_button.dart';
 
 /// Everything the shopper kept for later.
 ///
@@ -36,10 +37,6 @@ class _WishlistScreenState extends State<WishlistScreen> {
     WishlistStore.instance.load();
     CartStore.instance.load();
   }
-
-  /// Ids currently being moved, so their buttons can show it and a double tap
-  /// cannot add the same thing twice.
-  final _moving = <String>{};
 
   bool _movingAll = false;
 
@@ -103,42 +100,37 @@ class _WishlistScreenState extends State<WishlistScreen> {
     }
   }
 
-  /// Moves one product into the cart and takes it off this list.
-  Future<void> _moveToCart(SavedProduct product) async {
-    if (_moving.contains(product.id)) return;
-    setState(() => _moving.add(product.id));
-
+  /// The price one product would go into the cart at, or null -- with the
+  /// shopper told why -- when there is none. The card's button animates while
+  /// this runs, and puts itself back if it comes back null.
+  Future<num?> _priceForCart(SavedProduct product) async {
     final price = await _resolvePrice(product);
-    if (!mounted) return;
-    setState(() => _moving.remove(product.id));
-
+    if (!mounted) return null;
     if (price == null) {
-      // Left where it is rather than added at nothing. The row stays saved so
-      // it can be tried again once the seller has priced it.
+      // Left as it was rather than added at nothing, so it can be tried again
+      // once the seller has priced it.
       _say('${product.title} has no price yet, so it stays saved.');
-      return;
     }
+    return price;
+  }
 
-    final index = WishlistStore.instance.items.indexOf(product);
+  /// Adds one product to the cart. Called when the button's animation lands,
+  /// so "Added to Cart" never shows ahead of the add itself.
+  ///
+  /// The saved card stays: on this page adding is not unsaving.
+  bool _addToCart(SavedProduct product, num price) {
     final line = _lineFor(product, price);
     final inCart = CartStore.instance.add(line);
-    // Silent: the add already sounded, and moving is not deleting.
-    WishlistStore.instance.remove(product.id, announce: false);
+    if (!CartStore.instance.contains(product.id)) return false;
 
-    // The move keeps its own status: it carries an Undo that puts the product
-    // back on both sides, which the card has no room for.
     _say(
       '${ActionStatus.addedToCartLabel} · $inCart in cart',
       action: SnackBarAction(
         label: 'Undo',
-        // Undo puts it back on both sides. Moving is destructive to a
-        // shortlist someone built, and a one-tap way back costs nothing.
-        onPressed: () {
-          CartStore.instance.remove(line.key, announce: false);
-          WishlistStore.instance.restore(product, index);
-        },
+        onPressed: () => CartStore.instance.remove(line.key, announce: false),
       ),
     );
+    return true;
   }
 
   /// Moves every saved product into the cart at once.
@@ -296,10 +288,12 @@ class _WishlistScreenState extends State<WishlistScreen> {
                     for (final product in items) ...[
                       _SavedCard(
                         product: product,
-                        busy: _moving.contains(product.id) || _movingAll,
+                        busy: _movingAll,
                         onOpen: () => _open(product),
                         onRemove: () => _remove(product),
-                        onMoveToCart: () => _moveToCart(product),
+                        prepareAdd: () => _priceForCart(product),
+                        commitAdd: (price) => _addToCart(product, price),
+                        onOpenCart: _openCart,
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -341,7 +335,12 @@ class _SummaryCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _RoundIcon(icon: Icons.favorite_border),
+          // The same red as the hearts on the saved items below.
+          const _RoundIcon(
+            key: ValueKey('wishlist-summary-heart'),
+            icon: Icons.favorite,
+            color: AppColors.wishlist,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -390,17 +389,21 @@ class _SavedCard extends StatelessWidget {
     required this.busy,
     required this.onOpen,
     required this.onRemove,
-    required this.onMoveToCart,
+    required this.prepareAdd,
+    required this.commitAdd,
+    required this.onOpenCart,
   });
 
   final SavedProduct product;
 
-  /// True while this row is being moved, or while everything is.
+  /// True while everything is being moved.
   final bool busy;
 
   final VoidCallback onOpen;
   final VoidCallback onRemove;
-  final VoidCallback onMoveToCart;
+  final Future<num?> Function() prepareAdd;
+  final bool Function(num price) commitAdd;
+  final VoidCallback onOpenCart;
 
   @override
   Widget build(BuildContext context) {
@@ -551,21 +554,12 @@ class _SavedCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: FilledButton.icon(
-                            onPressed: busy ? null : onMoveToCart,
-                            icon: busy
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.add_shopping_cart, size: 18),
-                            label: const Text('Add to cart'),
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size.fromHeight(40),
-                            ),
+                          child: SavedAddToCartButton(
+                            productId: product.id,
+                            enabled: !busy,
+                            prepare: prepareAdd,
+                            commit: commitAdd,
+                            onOpenCart: onOpenCart,
                           ),
                         ),
                       ],
@@ -609,22 +603,25 @@ class _Badge extends StatelessWidget {
 }
 
 class _RoundIcon extends StatelessWidget {
-  const _RoundIcon({required this.icon});
+  const _RoundIcon({super.key, required this.icon, this.color});
 
   final IconData icon;
 
+  /// The icon and its tinted circle. Defaults to the theme primary.
+  final Color? color;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final ink = color ?? Theme.of(context).colorScheme.primary;
     return Container(
       width: 40,
       height: 40,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+        color: ink.withValues(alpha: 0.12),
       ),
-      child: Icon(icon, size: 20, color: theme.colorScheme.primary),
+      child: Icon(icon, size: 20, color: ink),
     );
   }
 }

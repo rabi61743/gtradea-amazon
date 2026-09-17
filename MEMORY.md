@@ -18,6 +18,24 @@ Entry format:
 
 ---
 
+## 2026-09-17 22:25 — Saved items: Add to Cart animation, and red heart on the summary card
+- **What:**
+  - **Animated button.** New `lib/features/wishlist/presentation/saved_add_to_cart_button.dart` (`SavedAddToCartButton`), used only on the Saved items card.
+    - On tap, the "Add to cart" label fades and slides right while the cart icon travels left→right across the button (650 ms, easeInOutCubic, slight mid-flight scale, fades at the end).
+    - The price lookup runs alongside. When both finish the real `CartStore.add` is made, and only if the line is then in the cart does the button read "✓ Added to Cart".
+    - No price means the add doesn't happen. The icon runs back (280 ms), the button reads "Add to cart" again, and the existing "no price yet" message shows.
+    - "Added" is read from `CartStore.contains`, so Undo or removal elsewhere resets the button. Tapping "Added to Cart" opens the cart.
+  - **Single add no longer removes the card.** It used to move the item (add + unsave). The spec says the saved card must stay, so single add is now add-only, with Undo removing from the cart only. "Move all" is unchanged and still moves everything.
+  - **Summary card heart.** The heart circle on the "N items saved / Move all" card is now `AppColors.wishlist` red (filled heart, 12% red circle) instead of trust blue (`_RoundIcon` takes an optional colour). The "Looking for more?" icon stays blue.
+- **Why:** the user specified the Saved-items-only Add to Cart animation, and asked for red on the summary heart and its background.
+- **Affected:** `wishlist_screen.dart`, the new `saved_add_to_cart_button.dart`, and `test/wishlist_test.dart` (move tests became "keeps its card and reads Added to Cart" with a mid-flight check, undo resets the button, the failed add resets the button, the badge counts after landing). Cart store, other pages' buttons and the cart flight are untouched.
+- **Verification:**
+  - Wishlist tests: 25 pass; analyze is clean.
+  - On the Redmi: the summary heart is red. An item already in the cart reads "Added to Cart".
+  - Tapped Hair Dryer: the mid-flight frame shows no label, the icon halfway across and the badge still 17. After landing the badge is 18, the button reads "Added to Cart" and the card stays.
+  - Undo sets the badge back to 17 and the button back to "Add to cart".
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 22:05 — Saved items: "Looking for more?" card and Browse button made visible
 - **What:** in `wishlist_screen.dart`:
   - `_KeepShoppingCard` is now a white card with the standard border, matching the saved-item cards. It was a 50% grey wash.

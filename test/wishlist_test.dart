@@ -230,26 +230,34 @@ void main() {
       expect(line.category, 'Men', reason: 'so a category coupon still knows');
     });
 
-    testWidgets('a moved product leaves the saved list', (tester) async {
+    testWidgets('adding one keeps its card and then reads Added to Cart', (
+      tester,
+    ) async {
       WishlistStore.instance
         ..toggle(wholesale)
         ..toggle(_dress);
       await pump(tester);
 
-      await tester.tap(find.text('Add to cart').first);
-      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('saved-add-dress')));
+      await tester.pump();
 
-      expect(WishlistStore.instance.contains(_dress.id), isFalse);
-      expect(
-        WishlistStore.instance.contains('polo'),
-        isTrue,
-        reason: 'the other one is untouched',
-      );
-      expect(find.text('1 item saved'), findsOneWidget);
+      // Mid-flight: nothing is claimed yet, and nothing is in the cart.
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Added to Cart'), findsNothing);
+      expect(CartStore.instance.isEmpty, isTrue);
+
+      await tester.pumpAndSettle();
+      expect(CartStore.instance.contains(_dress.id), isTrue);
+      expect(find.text('Added to Cart'), findsOneWidget);
+      // Both cards are still saved.
+      expect(WishlistStore.instance.contains(_dress.id), isTrue);
+      expect(WishlistStore.instance.contains('polo'), isTrue);
+      expect(find.text('2 items saved'), findsOneWidget);
     });
 
-    testWidgets('undo puts it back on both sides', (tester) async {
-      // Moving empties a shortlist someone built, so there is a way back.
+    testWidgets('undo takes it out of the cart and resets the button', (
+      tester,
+    ) async {
       WishlistStore.instance.toggle(wholesale);
       await pump(tester);
 
@@ -262,6 +270,8 @@ void main() {
 
       expect(CartStore.instance.isEmpty, isTrue);
       expect(WishlistStore.instance.contains('polo'), isTrue);
+      expect(find.text('Add to cart'), findsOneWidget);
+      expect(find.text('Added to Cart'), findsNothing);
     });
 
     testWidgets('a saved row with no price gets one from the catalogue', (
@@ -284,7 +294,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(CartStore.instance.lines.single.unitPrice, 4200);
-      expect(WishlistStore.instance.contains('mystery'), isFalse);
+      expect(WishlistStore.instance.contains('mystery'), isTrue);
     });
 
     testWidgets('a product the catalogue cannot price stays saved', (
@@ -306,6 +316,9 @@ void main() {
       expect(CartStore.instance.isEmpty, isTrue);
       expect(WishlistStore.instance.contains('mystery'), isTrue);
       expect(find.textContaining('no price yet'), findsOneWidget);
+      // The add failed, so the button is back as it was.
+      expect(find.text('Add to cart'), findsOneWidget);
+      expect(find.text('Added to Cart'), findsNothing);
     });
 
     testWidgets('Move all empties the list into the cart', (tester) async {
@@ -374,7 +387,8 @@ void main() {
       );
 
       await tester.tap(find.text('Add to cart'));
-      await tester.pump();
+      // Counted when the animation lands, which is when the add is made.
+      await tester.pumpAndSettle();
 
       expect(
         find.descendant(of: find.byType(Badge), matching: find.text('10')),
