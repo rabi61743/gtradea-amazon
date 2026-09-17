@@ -18,6 +18,12 @@ Entry format:
 
 ---
 
+## 2026-09-17 23:33 — Android app name "GtradeA" → "Gtradea.com"
+- **What:** `android:label` in `android/app/src/main/AndroidManifest.xml` changed from "GtradeA" to "Gtradea.com". Package id, icon and in-app text are unchanged.
+- **Why:** the user asked to rename only the app name. iOS `CFBundleDisplayName` is "Gtradea Amazon", not "GtradeA", so it was left as is.
+- **Verification:** installed on the Redmi; the launcher icon label reads "Gtradea.com". The separate "gtradea.com" icon on that screen is another app or shortcut, not this package.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 23:00 — Coin sound with the coins-to-wallet animation
 - **What:**
   - **New asset** `assets/sounds/coins.wav`: an original clip synthesised with a Node script (1.45 s, mono 48 kHz 16-bit, -3 dBFS), so no licence applies. It is timed to the animation: a clink at 0 s, pop clinks at 200/255/310/365 ms, landing clinks at 660–800 ms, and a rising chime from 820 ms.

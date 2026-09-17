@@ -32,7 +32,7 @@
          launcher and the Settings list. The name used here is the one
          BrandWordmark.name already carries. -->
     <application
-        android:label="GtradeA"
+        android:label="Gtradea.com"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
