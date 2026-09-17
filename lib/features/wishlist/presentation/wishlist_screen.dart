@@ -222,7 +222,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
     // has not gone once the on-screen cards have is removed directly.
     _batchFallback?.cancel();
     _batchFallback = Timer(
-      _LeavingCard.exit + const Duration(milliseconds: 250),
+      _LeavingCard.removeExit + const Duration(milliseconds: 250),
       () {
         if (!mounted) return;
         final store = WishlistStore.instance;
@@ -647,8 +647,15 @@ class _LeavingCard extends StatefulWidget {
   /// How long "Added to Cart" stays before the card starts to go.
   static const addedHold = Duration(milliseconds: 700);
 
-  /// How long the card takes to go.
+  /// How long the card takes to go after being added to the cart.
   static const exit = Duration(milliseconds: 350);
+
+  /// How long a removed card takes to slide away and close its gap.
+  static const removeExit = Duration(milliseconds: 520);
+
+  /// A removal (no hold) slides the card out sideways; an add-to-cart exit
+  /// keeps its fade and shrink.
+  bool get slides => hold == Duration.zero;
 
   @override
   State<_LeavingCard> createState() => _LeavingCardState();
@@ -663,6 +670,12 @@ class _LeavingCardState extends State<_LeavingCard>
 
   /// Sets the controller and curve for the current [_LeavingCard.hold].
   void _timeline() {
+    if (widget.slides) {
+      // Linear here; the slide and the collapse each shape their own part.
+      _out.duration = _LeavingCard.removeExit;
+      _t = CurvedAnimation(parent: _out, curve: Curves.linear);
+      return;
+    }
     final total = widget.hold + _LeavingCard.exit;
     _out.duration = total;
     _t = CurvedAnimation(
@@ -716,6 +729,27 @@ class _LeavingCardState extends State<_LeavingCard>
       builder: (context, child) {
         final t = _t.value;
         if (t == 0) return child!;
+        if (widget.slides) {
+          // First the card slides off to the right -- a small pull back, then
+          // away, fading as it goes -- and, as it clears, the gap closes.
+          final slide = Curves.easeInBack.transform((t / 0.55).clamp(0.0, 1.0));
+          final collapse = Curves.easeInOutCubic.transform(
+            ((t - 0.45) / 0.55).clamp(0.0, 1.0),
+          );
+          return ClipRect(
+            child: Align(
+              alignment: Alignment.topCenter,
+              heightFactor: 1 - collapse,
+              child: FractionalTranslation(
+                translation: Offset(1.05 * slide, 0),
+                child: Opacity(
+                  opacity: (1 - slide * 1.1).clamp(0.0, 1.0),
+                  child: child,
+                ),
+              ),
+            ),
+          );
+        }
         return ClipRect(
           child: Align(
             alignment: Alignment.topCenter,

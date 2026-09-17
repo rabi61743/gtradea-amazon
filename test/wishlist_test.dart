@@ -119,7 +119,7 @@ void main() {
     // The heart and card animate first, then the item is removed.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300)); // heart
-    await tester.pump(const Duration(milliseconds: 400)); // card
+    await tester.pump(const Duration(milliseconds: 600)); // card
     expect(WishlistStore.instance.count, 0);
 
     // Let the snack bar finish animating in; tapping mid-slide misses it.
@@ -414,6 +414,17 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       expect(WishlistStore.instance.contains('polo'), isTrue);
       expect(find.byKey(const ValueKey('saved-card-polo')), findsOneWidget);
+
+      // Part-way through, the card is sliding out to the right.
+      await tester.pump(const Duration(milliseconds: 100)); // heart done
+      await tester.pump(const Duration(milliseconds: 250));
+      final slide = tester.widget<FractionalTranslation>(
+        find.descendant(
+          of: find.byKey(const ValueKey('saved-card-polo')),
+          matching: find.byType(FractionalTranslation),
+        ),
+      );
+      expect(slide.translation.dx, greaterThan(0.2));
 
       await tester.pumpAndSettle();
       expect(WishlistStore.instance.contains('polo'), isFalse);

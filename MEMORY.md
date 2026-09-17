@@ -18,6 +18,22 @@ Entry format:
 
 ---
 
+## 2026-09-18 00:58 — Saved items: removals slide out sideways
+- **What:**
+  - `_LeavingCard` with no hold (heart unsave, bin delete, multi-delete) now slides away: 520 ms, linear controller.
+    - **Slide:** `FractionalTranslation` x 0 → 1.05 over the first 55%, `easeInBack` so there is a small pull back first, fading as it goes.
+    - **Collapse:** the height closes over the last 55% (`easeInOutCubic`), overlapping the slide, so the cards below glide up.
+  - The Added-to-Cart exit keeps its hold plus fade/shrink.
+  - The batch fallback timer uses the new `removeExit`.
+- **Why:** the user found the previous fade/shrink "too plain" and picked "Slide out sideways" from the options offered.
+- **Affected:** `lib/features/wishlist/presentation/wishlist_screen.dart`, `test/wishlist_test.dart` (the heart test asserts the card is translated right mid-exit; the undo test waits for the longer exit).
+- **Verification:**
+  - Wishlist tests pass; WishlistScreen + sounds: 49 pass. Analyze is clean.
+  - On the Redmi: tapped the heart on "Cross-Border Fully Automatic Hair Clipper". Frame 1 showed the heart mid-pulse (enlarged). The next frame showed the card gone (7 → 6) with the list closed up and "Removed from Wishlist".
+  - Undo in the same adb command restored it (7).
+  - On-device screencap (~0.5 s each) can't catch the 0.5 s slide itself; the widget test covers the mid-slide translation.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-18 00:37 — Saved items: heart-removal and deselect animations
 - **What:**
   - **Heart.** The card's filled heart is now `_UnsaveHeart`. A tap plays a 280 ms animation: the heart pulses up to 125% and settles, and the filled red heart crossfades to a grey outline. The card then leaves exactly like the bin delete (`_startRemove` → `_LeavingCard` exit → the existing `_remove` with its sound, "Removed from Wishlist" and Undo). Before this, the heart removed the item instantly.
