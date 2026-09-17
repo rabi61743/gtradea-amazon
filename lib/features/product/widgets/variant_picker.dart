@@ -20,6 +20,7 @@ class VariantPicker extends StatelessWidget {
     required this.variants,
     required this.selectedIndex,
     required this.onSelected,
+    this.category,
   });
 
   /// What these options are called: Colour, Size, or several axes at once.
@@ -29,6 +30,9 @@ class VariantPicker extends StatelessWidget {
   final List<ProductVariant> variants;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+
+  /// The product's category name, so a shoe gets the shoe size guide.
+  final String? category;
 
   /// Whether these options are sizes, by the seller's own name for them.
   bool get _isSize => label.toLowerCase().contains('size');
@@ -98,7 +102,11 @@ class VariantPicker extends StatelessWidget {
             // nothing about the selection.
             if (_isSize) ...[
               const SizedBox(width: 8),
-              SizeGuideButton(initialSize: selected.label),
+              SizeGuideButton(
+                initialSize: selected.label,
+                category: category,
+                sizes: [for (final v in variants) v.label],
+              ),
             ],
           ],
         ),

@@ -1208,6 +1208,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                     selectedIndex: _variant,
                                     onSelected: (i) =>
                                         setState(() => _variant = i),
+                                    category: product.category,
                                   ),
                                   const SizedBox(height: 12),
                                   _QuantityRow(

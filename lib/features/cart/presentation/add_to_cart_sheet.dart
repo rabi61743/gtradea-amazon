@@ -310,6 +310,7 @@ class _AddToCartSheetState extends State<AddToCartSheet> {
             imageFor: (value) => _imageFor(axis, value),
             reachable: (value) => _reachable(axis, value),
             onPicked: (value) => setState(() => _picked[axis.index] = value),
+            category: _detail?.category,
           ),
           const SizedBox(height: 12),
         ],
@@ -482,9 +483,13 @@ class _AxisGroup extends StatelessWidget {
     required this.imageFor,
     required this.reachable,
     required this.onPicked,
+    this.category,
   });
 
   final VariantAxis axis;
+
+  /// The product's category name, so a shoe gets the shoe size guide.
+  final String? category;
   final String? picked;
   final String? Function(String value) imageFor;
   final bool Function(String value) reachable;
@@ -530,7 +535,12 @@ class _AxisGroup extends StatelessWidget {
             const Spacer(),
             // Opens the size guide on the size already picked, if any. It
             // changes nothing about the choice.
-            if (_isSize) SizeGuideButton(initialSize: picked),
+            if (_isSize)
+              SizeGuideButton(
+                initialSize: picked,
+                category: category,
+                sizes: axis.values,
+              ),
           ],
         ),
         const SizedBox(height: 8),

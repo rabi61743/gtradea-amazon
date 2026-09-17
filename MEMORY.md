@@ -18,6 +18,31 @@ Entry format:
 
 ---
 
+## 2026-09-18 01:11 — Shoe size guide
+- **What:** the new `lib/features/product/widgets/shoe_size_guide_sheet.dart`.
+  - **`ShoeSizing`:**
+    - `isFootwear(category)` matches shoe/sneaker/boot/sandal/slipper/loafer/… (and 鞋/靴) in the category name.
+    - `euOf(label)` reads "36", "37.5", "36 (sneaker size)" in the 35–48 range.
+    - `rowFor(eu)` uses the standard `kShoeChart` EU→UK/US Men/US Women; half sizes are interpolated.
+    - `footCm` = (EU + 10) / 2, the Chinese rule 1688 sellers size to.
+  - **`ShoeSizeGuideSheet`,** in the same sheet style as the clothing guide:
+    - "Size guide" header and IN/CM switch.
+    - "Sizes of this product (EU)" chips: the product's own sizes, deduped and sorted.
+    - A summary card (foot length, UK, US Men, US Women) for the chosen size.
+    - A notice that the conversions are standard, not the seller's measurements.
+    - A table of this product's sizes with the chosen row tinted, and "How to measure your foot" steps.
+    - When the sizes aren't shoe numbers, it explains instead of showing a table.
+  - **`SizeGuideButton`** takes optional `category` and `sizes`: footwear opens the shoe sheet on the picked size, anything else opens the clothing `SizeGuideSheet` as before. The options popup's `_AxisGroup` passes `_detail?.category` and `axis.values`; `VariantPicker` takes `category` and the product page passes `product.category`. Size selection is unchanged.
+- **Why:** the user asked for a Size Guide for shoe products using real product data. No reference image was attached.
+- **Real data checked:** `/api/1688/product` for shoes gives `category_name` "Men's sports shoes" and Size SKU values "36"…"47", including "37.5" and "36 (sneaker size)". There are no per-product measurements, so conversions are a labelled standard chart.
+- **Affected:** the new sheet, `size_guide_sheet.dart` (button routing), `variant_picker.dart`, `product_detail_screen.dart` (one arg), `add_to_cart_sheet.dart` (category passed to the guide), and the new `test/shoe_size_guide_test.dart` (11 tests).
+- **Verification:**
+  - Shoe, size guide and recommendation tests: 34 pass. AddToCartSheet/VariantPicker/ProductDetail suites: 521 pass. Analyze is clean.
+  - On the Redmi: searched "sports shoes" → B25 Low-Top Men's Sports Shoes popup → picked 40 → Size guide.
+  - The shoe guide showed chips 36–47 with 40 selected, summary 25 cm / UK 6.5 / US Men 7.5 / US Women 9, the notice and the table.
+  - Closed it: 40 still selected in the popup. Popup closed; nothing added.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-18 00:58 — Saved items: removals slide out sideways
 - **What:**
   - `_LeavingCard` with no hold (heart unsave, bin delete, multi-delete) now slides away: 520 ms, linear controller.

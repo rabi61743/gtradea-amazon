@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/colors.dart';
 
+import 'shoe_size_guide_sheet.dart';
 import 'size_recommendation.dart';
 
 /// One size in the general chart: body measurements to fit, and the garment's
@@ -124,13 +125,33 @@ const List<StandardSize> kStandardSizes = [
 
 /// The "Size guide" control shown beside a product's sizes.
 ///
-/// Opens [SizeGuideSheet]. It reads nothing about the product and changes
-/// nothing: the size the shopper has picked stays picked.
+/// Opens the size guide. For footwear, by the product's category, that is
+/// [ShoeSizeGuideSheet] on the product's own sizes; otherwise
+/// [SizeGuideSheet]. It changes nothing: the size picked stays picked.
 class SizeGuideButton extends StatelessWidget {
-  const SizeGuideButton({super.key, this.initialSize});
+  const SizeGuideButton({
+    super.key,
+    this.initialSize,
+    this.category,
+    this.sizes = const [],
+  });
 
   /// A size label to open the guide on, when the shopper has one chosen.
   final String? initialSize;
+
+  /// The product's category name, which decides whether this is a shoe.
+  final String? category;
+
+  /// The product's own size labels.
+  final List<String> sizes;
+
+  void _open(BuildContext context) {
+    if (ShoeSizing.isFootwear(category)) {
+      ShoeSizeGuideSheet.show(context, sizes: sizes, initialSize: initialSize);
+    } else {
+      SizeGuideSheet.show(context, initialSize: initialSize);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -146,7 +167,7 @@ class SizeGuideButton extends StatelessWidget {
         child: InkWell(
           key: const ValueKey('size-guide-button'),
           borderRadius: BorderRadius.circular(20),
-          onTap: () => SizeGuideSheet.show(context, initialSize: initialSize),
+          onTap: () => _open(context),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             child: Row(
