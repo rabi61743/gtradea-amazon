@@ -18,6 +18,16 @@ Entry format:
 
 ---
 
+## 2026-09-17 19:15 — Size option boxes get a solid background
+- **What:** `OptionChips` (the text size boxes: S, M, L, XL…) now fill with the card surface (white). A selected box fills with a faint primary tint over white. Before, unselected boxes were transparent.
+- **Why:** the user reported the size boxes' background wasn't visible. On the grey options sheet a transparent box with a thin border read as bare letters.
+- **Affected:** `lib/features/product/widgets/option_chips.dart`, used by the options popup (`add_to_cart_sheet.dart`) and the product page `VariantPicker`.
+- **Impact & risk:** fill only. Borders, sizes, disabled strike-through and the selected outline are unchanged.
+- **Verification:**
+  - 116 related tests pass; analyze is clean.
+  - On the Redmi, the polo options popup showed M, L, XL, 2XL and 3XL as white boxes. Tapping L gave a blue outline and a tinted box.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 18:55 — Size guide & recommendation use the app's Commerce Orange, never as a fill
 - **What:**
   - `SizeGuideSheet.accent` is now `AppColors.commerceOrange` (#E94724), replacing the reference's #FF7A00. This covers the figure lines, pills, ruler pointers, headline, result size and links.

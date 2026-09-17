@@ -149,9 +149,16 @@ class _OptionChipsState extends State<OptionChips> {
                         // The same border and radius the swatches carry, so the
                         // two forms of this control read as one thing.
                         borderRadius: BorderRadius.circular(10),
+                        // A box of its own: without a fill the chip melted
+                        // into the grey sheet and read as bare letters.
                         color: isSelected
-                            ? theme.colorScheme.primary.withValues(alpha: 0.06)
-                            : null,
+                            ? Color.alphaBlend(
+                                theme.colorScheme.primary.withValues(
+                                  alpha: 0.06,
+                                ),
+                                theme.colorScheme.surface,
+                              )
+                            : theme.colorScheme.surface,
                         border: Border.all(
                           color: isSelected
                               ? theme.colorScheme.primary
