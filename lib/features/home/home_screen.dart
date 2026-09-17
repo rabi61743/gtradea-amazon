@@ -658,7 +658,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   maxHeight: _artHeight,
                   child: DecoratedBox(
                     decoration: const BoxDecoration(
-                      gradient: AppColors.brandBand,
+                      gradient: AppColors.homeHeaderBand,
                       image: DecorationImage(
                         image: AssetImage(
                           'assets/images/header_background.jpg',

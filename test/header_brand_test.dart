@@ -204,11 +204,12 @@ void main() {
           .widgetList<DecoratedBox>(find.byType(DecoratedBox))
           .map((box) => box.decoration)
           .whereType<BoxDecoration>()
-          .firstWhere((d) => d.gradient == AppColors.brandBand);
-      expect((band.gradient! as LinearGradient).colors, [
-        AppColors.brandBandHead,
-        AppColors.brandBandDeep,
-      ]);
+          .firstWhere((d) => d.gradient == AppColors.homeHeaderBand);
+      // linear-gradient(135deg, #267488 0%, #1B5A69 100%), by specification.
+      final ramp = band.gradient! as LinearGradient;
+      expect(ramp.colors, const [Color(0xFF267488), Color(0xFF1B5A69)]);
+      expect(ramp.begin, Alignment.topLeft);
+      expect(ramp.end, Alignment.bottomRight);
 
       // And the Himalayan artwork is drawn at the strength the design asks
       // for -- 45-60% -- in the band's own blues rather than in grey.

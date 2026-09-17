@@ -102,7 +102,7 @@ void main() {
           .widgetList<DecoratedBox>(find.byType(DecoratedBox))
           .map((d) => d.decoration)
           .whereType<BoxDecoration>()
-          .where((d) => d.gradient == AppColors.brandBand);
+          .where((d) => d.gradient == AppColors.homeHeaderBand);
 
       expect(bands, hasLength(1));
     });
@@ -146,7 +146,7 @@ void main() {
             (w) =>
                 w is DecoratedBox &&
                 w.decoration is BoxDecoration &&
-                (w.decoration as BoxDecoration).gradient == AppColors.brandBand,
+                (w.decoration as BoxDecoration).gradient == AppColors.homeHeaderBand,
           )
           .first;
 

@@ -390,6 +390,6 @@ void main() {
     // a picture nearly three times as wide as the band is tall.
     expect(art.alignment, const Alignment(0.3, 0.55));
     // The ramp underneath it is untouched.
-    expect(band.gradient, AppColors.brandBand);
+    expect(band.gradient, AppColors.homeHeaderBand);
   });
 }

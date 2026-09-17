@@ -18,6 +18,19 @@ Entry format:
 
 ---
 
+## 2026-09-18 01:44 — Home header gradient: 135deg #267488 → #1B5A69
+- **What:**
+  - New `AppColors.homeHeaderBand` = `LinearGradient(topLeft → bottomRight, [#267488, #1B5A69])`, the Flutter form of `linear-gradient(135deg, #267488 0%, #1B5A69 100%)`.
+  - Used only for the home header band in `home_screen.dart`; it replaces `brandBand` (#1A4A5E → #0D2B3E, top-to-bottom).
+  - The mountain artwork (60% duotone), the foot scrim and everything else in the header are unchanged.
+  - `brandBand` is kept for the sign-in and forgot-password screens, which also used it.
+- **Why:** the user asked for this gradient in the header section and nowhere else.
+- **Affected:** `lib/core/theme/colors.dart` (+constant), `lib/features/home/home_screen.dart` (one line), and header tests that pinned the old gradient: `header_additions_test`, `header_brand_test` (now asserts the exact colours and 135° direction), `header_collapse_test`, `home_category_strip_test`.
+- **Verification:**
+  - The header tests pass (78 with brand). Only the 3 old `brand_system_test` colour failures remain. Analyze is clean.
+  - On the Redmi, a fresh launch shows the home header in the lighter #267488 → #1B5A69 teal under the artwork, where it was dark navy before.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-18 01:18 — Shoe size guide: Nepal size
 - **What:**
   - `ShoeSize.nepal` returns the UK size, because shoe shops in Nepal (Bata, Goldstar, Red Chief) quote UK/India numbering.

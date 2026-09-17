@@ -16,7 +16,7 @@ Finder get _band => find.byWidgetPredicate(
   (w) =>
       w is DecoratedBox &&
       w.decoration is BoxDecoration &&
-      (w.decoration as BoxDecoration).gradient == AppColors.brandBand,
+      (w.decoration as BoxDecoration).gradient == AppColors.homeHeaderBand,
 );
 
 void main() {

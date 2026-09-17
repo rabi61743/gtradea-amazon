@@ -168,6 +168,16 @@ class AppColors {
     colors: [brandBandHead, brandBandDeep],
   );
 
+  /// The home header's band, by specification:
+  /// `linear-gradient(135deg, #267488 0%, #1B5A69 100%)` -- Trust Blue at the
+  /// top left into a deeper teal at the bottom right. For the home header
+  /// only; the sign-in screens keep [brandBand].
+  static const LinearGradient homeHeaderBand = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF267488), Color(0xFF1B5A69)],
+  );
+
   /// Trust Blue lifted for a dark surface. The brand names one blue; this is
   /// that blue at a lightness that survives being drawn on near-black, and it
   /// is used only in the dark theme, which the app does not currently ship.
