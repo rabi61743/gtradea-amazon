@@ -18,6 +18,24 @@ Entry format:
 
 ---
 
+## 2026-09-18 00:22 — Saved items: select several and delete
+- **What:** multi-select delete on the Saved items page only (`wishlist_screen.dart`).
+  - **Entering:** a new **Select** (checklist) icon in the app bar, or long-press a card.
+  - **Selection mode:** the app bar becomes ✕ / "N selected" / Select all ↔ Deselect all / a red Delete icon (disabled when nothing is picked).
+  - **Cards:** each shows a round checkbox on its image. Selected cards get a red border and faint red tint, and a tap toggles rather than opening the product. Card buttons, the heart and Move all are disabled, and system Back leaves selection mode (`PopScope`).
+  - **Delete:** the selected cards use the existing `_LeavingCard` exit with no hold, together. Each is removed from `WishlistStore` as its animation ends, with one removal sound for the batch.
+  - **Undo:** one snackbar, "N items removed from Wishlist" (or "Removed from Wishlist" for one), whose Undo restores all of them in reverse, back in their original order.
+  - **Off-screen cards:** these never build, so never animate. A fallback timer (exit + 250 ms) removes any not yet gone.
+  - The selection is pruned if items leave elsewhere.
+- **Why:** the user asked for multiple select and a delete option on Saved items.
+- **Affected:** `wishlist_screen.dart` (selection state, `_deleteSelected`/`_batchGone`/`_finishBatch`, app bar, `_SavedCard` `selecting`/`selected`/`onLongPress`, `_SummaryCard.enabled`), `test/wishlist_test.dart` (+5: select/toggle/cancel, long-press, delete only selected and Undo order, select all empties, Back exits the mode).
+- **Verification:**
+  - Wishlist and wishlist-sound tests: 43 pass. Analyze is clean.
+  - On the Redmi: the Select icon shows. Picking 2 cards showed "2 selected" with red outlines and checks, and disabled buttons. Delete removed both (6 → 4) with "2 items removed from Wishlist".
+  - My Undo tap came after the snackbar had closed (screenshot round trips are slower than its ~4 s). So on the device, "Xinliang Black Whole Wheat Flour" and "Sack Woven Bag Wholesale…" were really removed from the user's Saved items and were not restored. The user was told.
+  - Undo itself is covered by the widget test.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 23:50 — Saved items: delete button press + card-disappear animation
 - **What:**
   - **Delete button.** The saved card's bin button is now `_DeleteButton`: the same `OutlinedButton` look with a 260 ms press animation (dips to 88% and back, bin tips left/right, icon and border tint to the theme error red).

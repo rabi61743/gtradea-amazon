@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -161,8 +162,132 @@ class _WishlistScreenState extends State<WishlistScreen> {
     setState(() => _removing.add(product.id));
   }
 
+  /// True while cards are being picked for deleting several at once.
+  bool _selecting = false;
+
+  /// The ids picked, in selection mode.
+  final _selected = <String>{};
+
+  /// A multi-delete in progress: what was removed and where it sat, so one
+  /// Undo can put all of it back.
+  final _batch = <String>{};
+  final _batchRemoved = <({SavedProduct product, int index})>[];
+  Timer? _batchFallback;
+
+  void _startSelecting([SavedProduct? first]) {
+    if (_movingAll || _batch.isNotEmpty) return;
+    setState(() {
+      _selecting = true;
+      if (first != null) _selected.add(first.id);
+    });
+  }
+
+  void _stopSelecting() {
+    setState(() {
+      _selecting = false;
+      _selected.clear();
+    });
+  }
+
+  void _toggleSelected(SavedProduct product) {
+    setState(() {
+      if (!_selected.remove(product.id)) _selected.add(product.id);
+    });
+  }
+
+  void _toggleSelectAll(List<SavedProduct> items) {
+    setState(() {
+      if (_selected.length == items.length) {
+        _selected.clear();
+      } else {
+        _selected
+          ..clear()
+          ..addAll(items.map((e) => e.id));
+      }
+    });
+  }
+
+  /// Deletes every selected card: they animate away together, come off the
+  /// list as each finishes, and one message with one Undo covers them all.
+  void _deleteSelected() {
+    if (_selected.isEmpty || _batch.isNotEmpty) return;
+    final ids = Set<String>.of(_selected);
+    setState(() {
+      _batch.addAll(ids);
+      _batchRemoved.clear();
+      _selecting = false;
+      _selected.clear();
+    });
+    // Cards scrolled out of view are never built, so never animate. Whatever
+    // has not gone once the on-screen cards have is removed directly.
+    _batchFallback?.cancel();
+    _batchFallback = Timer(
+      _LeavingCard.exit + const Duration(milliseconds: 250),
+      () {
+        if (!mounted) return;
+        final store = WishlistStore.instance;
+        for (final id in List<String>.of(_batch)) {
+          final matches = store.items.where((e) => e.id == id);
+          if (matches.isEmpty) {
+            _batch.remove(id);
+            continue;
+          }
+          _batchGone(matches.first);
+        }
+      },
+    );
+  }
+
+  /// One card of a multi-delete has finished leaving.
+  void _batchGone(SavedProduct product) {
+    if (!_batch.remove(product.id)) return;
+    final store = WishlistStore.instance;
+    final index = store.items.indexOf(product);
+    if (index >= 0) {
+      // One removal sound for the whole delete, not one per card.
+      store.remove(product.id, announce: _batchRemoved.isEmpty);
+      _batchRemoved.add((product: product, index: index));
+    }
+    if (_batch.isEmpty) _finishBatch();
+  }
+
+  void _finishBatch() {
+    _batchFallback?.cancel();
+    final removed = List.of(_batchRemoved);
+    _batchRemoved.clear();
+    if (!mounted) return;
+    setState(() {});
+    if (removed.isEmpty) return;
+    final n = removed.length;
+    _say(
+      n == 1
+          ? ActionStatus.removedFromWishlist
+          : '$n items removed from Wishlist',
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () {
+          // Each index was taken as that card left, after the ones before it
+          // had gone, so putting them back in reverse restores the order.
+          for (final entry in removed.reversed) {
+            WishlistStore.instance.restore(entry.product, entry.index);
+          }
+        },
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _batchFallback?.cancel();
+    super.dispose();
+  }
+
   /// The card's leaving animation has finished: now it comes off the list.
   void _gone(SavedProduct product) {
+    if (_batch.contains(product.id)) {
+      _batchGone(product);
+      return;
+    }
     if (_removing.remove(product.id)) {
       // The existing removal, unchanged: off the list, its sound, and Undo.
       _remove(product);
@@ -277,87 +402,147 @@ class _WishlistScreenState extends State<WishlistScreen> {
         final store = WishlistStore.instance;
         final items = store.items;
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Saved items'),
-            actions: [
-              if (items.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.delete_sweep_outlined),
-                  tooltip: 'Clear all',
-                  onPressed: () => _confirmClear(store),
-                ),
-              IconButton(
-                icon: Badge.count(
-                  count: CartStore.instance.count,
-                  isLabelVisible: CartStore.instance.count > 0,
-                  child: const Icon(Icons.shopping_cart_outlined),
-                ),
-                tooltip: 'Cart',
-                onPressed: _openCart,
-              ),
-              const SizedBox(width: 4),
-            ],
-          ),
-          body: items.isEmpty
-              ? const _EmptyWishlist()
-              : ListView(
-                  // Clear of the system gesture bar, which sat on the last card.
-                  padding: EdgeInsets.fromLTRB(
-                    12,
-                    4,
-                    12,
-                    24 + MediaQuery.paddingOf(context).bottom,
-                  ),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
-                      child: Text(
-                        'Your favourite items, saved for later',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+        // A selection can outlive the items in it: they may be moved or
+        // removed elsewhere while it is open.
+        _selected.removeWhere((id) => !store.contains(id));
+        if (_selecting && items.isEmpty) _selecting = false;
+
+        return PopScope(
+          canPop: !_selecting,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && _selecting) _stopSelecting();
+          },
+          child: Scaffold(
+            appBar: _selecting
+                ? AppBar(
+                    key: const ValueKey('saved-select-bar'),
+                    leading: IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Cancel selection',
+                      onPressed: _stopSelecting,
+                    ),
+                    title: Text('${_selected.length} selected'),
+                    actions: [
+                      TextButton(
+                        key: const ValueKey('saved-select-all'),
+                        onPressed: () => _toggleSelectAll(items),
+                        child: Text(
+                          _selected.length == items.length
+                              ? 'Deselect all'
+                              : 'Select all',
                         ),
                       ),
+                      IconButton(
+                        key: const ValueKey('saved-delete-selected'),
+                        icon: const Icon(Icons.delete_outline),
+                        tooltip: 'Delete selected',
+                        color: AppColors.wishlist,
+                        onPressed: _selected.isEmpty ? null : _deleteSelected,
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                  )
+                : AppBar(
+                    title: const Text('Saved items'),
+                    actions: [
+                      if (items.isNotEmpty)
+                        IconButton(
+                          key: const ValueKey('saved-select'),
+                          icon: const Icon(Icons.checklist),
+                          tooltip: 'Select',
+                          onPressed: _startSelecting,
+                        ),
+                      if (items.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.delete_sweep_outlined),
+                          tooltip: 'Clear all',
+                          onPressed: () => _confirmClear(store),
+                        ),
+                      IconButton(
+                        icon: Badge.count(
+                          count: CartStore.instance.count,
+                          isLabelVisible: CartStore.instance.count > 0,
+                          child: const Icon(Icons.shopping_cart_outlined),
+                        ),
+                        tooltip: 'Cart',
+                        onPressed: _openCart,
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                  ),
+            body: items.isEmpty
+                ? const _EmptyWishlist()
+                : ListView(
+                    // Clear of the system gesture bar, which sat on the last card.
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      4,
+                      12,
+                      24 + MediaQuery.paddingOf(context).bottom,
                     ),
-                    _SummaryCard(
-                      count: items.length,
-                      busy: _movingAll,
-                      onMoveAll: _moveAll,
-                    ),
-                    const SizedBox(height: 12),
-                    for (final product in items)
-                      _LeavingCard(
-                        key: ValueKey('saved-card-${product.id}'),
-                        leaving:
-                            _leaving.contains(product.id) ||
-                            _removing.contains(product.id),
-                        // A deleted card goes at once; an added one lets
-                        // "Added to Cart" be seen first.
-                        hold: _removing.contains(product.id)
-                            ? Duration.zero
-                            : _LeavingCard.addedHold,
-                        onGone: () => _gone(product),
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _SavedCard(
-                            product: product,
-                            busy: _movingAll,
-                            onOpen: () => _open(product),
-                            onRemove: () => _remove(product),
-                            onDelete: () => _startRemove(product),
-                            prepareAdd: () => _priceForCart(product),
-                            commitAdd: (price) => _addToCart(product, price),
-                            onOpenCart: _openCart,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                        child: Text(
+                          'Your favourite items, saved for later',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
-                    _KeepShoppingCard(
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const BrowseScreen()),
+                      _SummaryCard(
+                        count: items.length,
+                        busy: _movingAll,
+                        enabled: !_selecting,
+                        onMoveAll: _moveAll,
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(height: 12),
+                      for (final product in items)
+                        _LeavingCard(
+                          key: ValueKey('saved-card-${product.id}'),
+                          leaving:
+                              _leaving.contains(product.id) ||
+                              _removing.contains(product.id) ||
+                              _batch.contains(product.id),
+                          // A deleted card goes at once; an added one lets
+                          // "Added to Cart" be seen first.
+                          hold:
+                              _removing.contains(product.id) ||
+                                  _batch.contains(product.id)
+                              ? Duration.zero
+                              : _LeavingCard.addedHold,
+                          onGone: () => _gone(product),
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _SavedCard(
+                              product: product,
+                              busy: _movingAll || _selecting,
+                              selecting: _selecting,
+                              selected: _selected.contains(product.id),
+                              onLongPress: _selecting
+                                  ? null
+                                  : () => _startSelecting(product),
+                              onOpen: _selecting
+                                  ? () => _toggleSelected(product)
+                                  : () => _open(product),
+                              onRemove: () => _remove(product),
+                              onDelete: () => _startRemove(product),
+                              prepareAdd: () => _priceForCart(product),
+                              commitAdd: (price) => _addToCart(product, price),
+                              onOpenCart: _openCart,
+                            ),
+                          ),
+                        ),
+                      _KeepShoppingCard(
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const BrowseScreen(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         );
       },
     );
@@ -370,10 +555,14 @@ class _SummaryCard extends StatelessWidget {
     required this.count,
     required this.busy,
     required this.onMoveAll,
+    this.enabled = true,
   });
 
   final int count;
   final bool busy;
+
+  /// False while cards are being selected.
+  final bool enabled;
   final VoidCallback onMoveAll;
 
   @override
@@ -419,7 +608,7 @@ class _SummaryCard extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           OutlinedButton.icon(
-            onPressed: busy ? null : onMoveAll,
+            onPressed: busy || !enabled ? null : onMoveAll,
             icon: busy
                 ? const SizedBox(
                     width: 15,
@@ -640,12 +829,22 @@ class _SavedCard extends StatelessWidget {
     required this.prepareAdd,
     required this.commitAdd,
     required this.onOpenCart,
+    this.selecting = false,
+    this.selected = false,
+    this.onLongPress,
   });
 
   final SavedProduct product;
 
-  /// True while everything is being moved.
+  /// True while everything is being moved, or cards are being selected.
   final bool busy;
+
+  /// In selection mode: a checkbox shows, and a tap toggles it.
+  final bool selecting;
+  final bool selected;
+
+  /// Starts selection mode with this card picked.
+  final VoidCallback? onLongPress;
 
   final VoidCallback onOpen;
   final VoidCallback onRemove;
@@ -662,15 +861,26 @@ class _SavedCard extends StatelessWidget {
     final list = product.listPrice;
     final struck = (list != null && list > product.price) ? list : null;
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        border: Border.all(color: theme.dividerColor),
-        color: theme.colorScheme.surface,
+        border: Border.all(
+          color: selected ? AppColors.wishlist : theme.dividerColor,
+          width: selected ? 2 : 1,
+        ),
+        color: selected
+            ? Color.alphaBlend(
+                AppColors.wishlist.withValues(alpha: 0.05),
+                theme.colorScheme.surface,
+              )
+            : theme.colorScheme.surface,
       ),
       child: InkWell(
+        key: ValueKey('saved-card-tap-${product.id}'),
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
         onTap: onOpen,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -683,11 +893,46 @@ class _SavedCard extends StatelessWidget {
               SizedBox(
                 width: 84,
                 height: 84,
-                child: ArtworkPanel(
-                  icon: Icons.checkroom,
-                  tint: theme.colorScheme.primary,
-                  imageUrl: product.imageUrl,
-                  iconScale: 0.42,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: ArtworkPanel(
+                        icon: Icons.checkroom,
+                        tint: theme.colorScheme.primary,
+                        imageUrl: product.imageUrl,
+                        iconScale: 0.42,
+                      ),
+                    ),
+                    if (selecting)
+                      Positioned(
+                        top: 4,
+                        left: 4,
+                        child: Container(
+                          key: ValueKey('saved-check-${product.id}'),
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: selected
+                                ? AppColors.wishlist
+                                : Colors.white.withValues(alpha: 0.9),
+                            border: Border.all(
+                              color: selected
+                                  ? AppColors.wishlist
+                                  : theme.colorScheme.outline,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: selected
+                              ? const Icon(
+                                  Icons.check,
+                                  size: 16,
+                                  color: Colors.white,
+                                )
+                              : null,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(width: 12),
@@ -720,7 +965,7 @@ class _SavedCard extends StatelessWidget {
                             size: 22,
                           ),
                           tooltip: 'Remove from saved',
-                          onPressed: onRemove,
+                          onPressed: selecting ? null : onRemove,
                         ),
                       ],
                     ),

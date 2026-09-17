@@ -443,6 +443,123 @@ void main() {
       expect(find.byKey(const ValueKey('saved-card-dress')), findsOneWidget);
     });
 
+    group('selecting several to delete', () {
+      const sock = SavedProduct(id: 'sock', title: 'Wool socks', price: 120);
+
+      Future<void> threeSaved(WidgetTester tester) async {
+        // Saved oldest first; the list shows newest first: sock, dress, polo.
+        WishlistStore.instance
+          ..toggle(wholesale)
+          ..toggle(_dress)
+          ..toggle(sock);
+        await pump(tester);
+      }
+
+      testWidgets('Select shows checkboxes, and taps toggle them', (
+        tester,
+      ) async {
+        await threeSaved(tester);
+        expect(find.byKey(const ValueKey('saved-check-sock')), findsNothing);
+
+        await tester.tap(find.byKey(const ValueKey('saved-select')));
+        await tester.pumpAndSettle();
+        expect(find.text('0 selected'), findsOneWidget);
+        expect(find.byKey(const ValueKey('saved-check-sock')), findsOneWidget);
+
+        // A tap selects rather than opening the product.
+        await tester.tap(find.byKey(const ValueKey('saved-card-tap-sock')));
+        await tester.pumpAndSettle();
+        expect(find.byType(ProductDetailScreen), findsNothing);
+        expect(find.text('1 selected'), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('saved-card-tap-sock')));
+        await tester.pumpAndSettle();
+        expect(find.text('0 selected'), findsOneWidget);
+
+        // Nothing selected: nothing to delete.
+        final delete = tester.widget<IconButton>(
+          find.byKey(const ValueKey('saved-delete-selected')),
+        );
+        expect(delete.onPressed, isNull);
+
+        // Cancel leaves selection mode with everything still saved.
+        await tester.tap(find.byTooltip('Cancel selection'));
+        await tester.pumpAndSettle();
+        expect(find.text('Saved items'), findsOneWidget);
+        expect(WishlistStore.instance.count, 3);
+      });
+
+      testWidgets('long-press starts selection with that card picked', (
+        tester,
+      ) async {
+        await threeSaved(tester);
+        await tester.longPress(
+          find.byKey(const ValueKey('saved-card-tap-dress')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+      });
+
+      testWidgets('deletes only the selected, and Undo puts them back', (
+        tester,
+      ) async {
+        await threeSaved(tester);
+        await tester.tap(find.byKey(const ValueKey('saved-select')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('saved-card-tap-sock')));
+        await tester.tap(find.byKey(const ValueKey('saved-card-tap-polo')));
+        await tester.pumpAndSettle();
+        expect(find.text('2 selected'), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('saved-delete-selected')));
+        await tester.pump();
+        // Animating away: still saved for now.
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(WishlistStore.instance.contains('sock'), isTrue);
+
+        await tester.pumpAndSettle();
+        expect(WishlistStore.instance.items.map((e) => e.id), ['dress']);
+        expect(find.text('2 items removed from Wishlist'), findsOneWidget);
+        expect(find.text('Saved items'), findsOneWidget, reason: 'mode ends');
+
+        await tester.tap(find.text('Undo'));
+        await tester.pumpAndSettle();
+        expect(WishlistStore.instance.items.map((e) => e.id), [
+          'sock',
+          'dress',
+          'polo',
+        ]);
+      });
+
+      testWidgets('Select all, then delete, empties the list', (tester) async {
+        await threeSaved(tester);
+        await tester.tap(find.byKey(const ValueKey('saved-select')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('saved-select-all')));
+        await tester.pumpAndSettle();
+        expect(find.text('3 selected'), findsOneWidget);
+        expect(find.text('Deselect all'), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('saved-delete-selected')));
+        await tester.pumpAndSettle();
+        expect(WishlistStore.instance.count, 0);
+        expect(find.text('Nothing saved yet'), findsOneWidget);
+      });
+
+      testWidgets('back leaves selection mode instead of the page', (
+        tester,
+      ) async {
+        await threeSaved(tester);
+        await tester.tap(find.byKey(const ValueKey('saved-select')));
+        await tester.pumpAndSettle();
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('Saved items'), findsOneWidget);
+        expect(find.byType(WishlistScreen), findsOneWidget);
+      });
+    });
+
     testWidgets('the cart badge counts what was just added', (tester) async {
       WishlistStore.instance.toggle(wholesale);
       await pump(tester);
