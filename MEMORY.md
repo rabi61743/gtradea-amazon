@@ -18,6 +18,13 @@ Entry format:
 
 ---
 
+## 2026-09-17 22:50 — Saved items: seller badge tags in Commerce Orange
+- **What:** the saved-card `_Badge` pill ("Top seller", "Trade assured", "Verified factory"…) now uses `AppColors.commerceOrange` text on a 10% orange pill, replacing primary blue.
+- **Why:** the user asked for the app's orange on these card tags.
+- **Affected:** `_Badge` in `lib/features/wishlist/presentation/wishlist_screen.dart` only. Badges elsewhere in the app are unchanged.
+- **Verification:** 26 wishlist tests pass; analyze is clean. On the Redmi, Saved items showed the "Top seller" tag on the Sunshade net card in orange on a pale orange pill.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 22:45 — Saved items: card disappears after "Added to Cart"
 - **What:**
   - After a single add lands and "✓ Added to Cart" shows, the saved card waits 700 ms. It then fades, shrinks to 92% and collapses its height over 350 ms (easeInCubic), so the next card slides up. It is removed from `WishlistStore` (silently) only when that animation completes.

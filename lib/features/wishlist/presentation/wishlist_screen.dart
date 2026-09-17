@@ -708,18 +708,20 @@ class _Badge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Commerce Orange, the app's promotional-badge colour: orange text on a
+    // pale orange pill.
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        color: theme.colorScheme.primary.withValues(alpha: 0.09),
+        color: AppColors.commerceOrange.withValues(alpha: 0.1),
       ),
       child: Text(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.primary,
+          color: AppColors.commerceOrange,
           fontWeight: FontWeight.w700,
         ),
       ),
