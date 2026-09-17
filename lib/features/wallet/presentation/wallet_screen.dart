@@ -101,7 +101,7 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Coins')),
+      appBar: AppBar(title: const Text('My Coins')),
       body: AuthStore.instance.isSignedIn ? _signedIn() : _guest(),
     );
   }
@@ -152,14 +152,14 @@ class _WalletScreenState extends State<WalletScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _balanceCard(),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 14),
+                    _infoCard(),
+                    const SizedBox(height: 24),
+                    ..._redeem(),
+                    const SizedBox(height: 16),
+                    _bottomBanner(),
+                    const SizedBox(height: 24),
                     ..._activity(),
-                    const SizedBox(height: 24),
-                    ..._earn(),
-                    const SizedBox(height: 24),
-                    ..._rewards(),
-                    const SizedBox(height: 24),
-                    ..._howItWorks(),
                   ],
                 ),
               ),
@@ -182,156 +182,257 @@ class _WalletScreenState extends State<WalletScreen> {
   // balance, because a fake redemption is the piece that would mislead somebody
   // being shown this page.
   //
-  // When the endpoints exist, these three lists and their two builders are what
-  // gets deleted -- the balance and the activity above are already real.
+  // The two banner pictures are stand-ins too, until the real artwork is
+  // supplied: each is one path below.
   // ---------------------------------------------------------------------------
 
-  /// Ways to earn, as the design shows them. Illustrative.
-  static const _earnRules = <({IconData icon, String title, String detail})>[
-    (
-      icon: Icons.shopping_bag_outlined,
-      title: 'Place an order',
-      detail: 'Earn coins on every delivered order',
-    ),
-    (
-      icon: Icons.rate_review_outlined,
-      title: 'Review a product',
-      detail: 'Write a review once your order arrives',
-    ),
-    (
-      icon: Icons.group_add_outlined,
-      title: 'Invite a friend',
-      detail: 'They shop, you both collect',
-    ),
-  ];
+  /// Stand-in picture on the right of the balance card.
+  static const heroBannerAsset = 'assets/images/gift_banner.jpg';
+
+  /// Stand-in banner under the rewards.
+  static const bottomBannerAsset = 'assets/images/promo_banner.jpg';
+
+  /// Rupees per coin, for the "≈ NPR" chip. Placeholder: the rate the design
+  /// shows (1,000 coins ≈ NPR 100), not one the server has published.
+  static const _nprPerCoin = 0.1;
 
   /// Rewards, as the design shows them. Illustrative.
-  static const _rewardList = <({String name, String detail, int cost})>[
-    (name: 'Rs. 100 off', detail: 'On orders over Rs. 1,500', cost: 500),
-    (name: 'Free delivery', detail: 'On your next order', cost: 750),
-    (name: 'Rs. 250 off', detail: 'On orders over Rs. 3,000', cost: 1200),
+  static const _rewardList =
+      <({String name, String detail, int cost, IconData icon, Color color})>[
+        (
+          name: 'Rs. 100 Off',
+          detail: 'On orders over Rs. 1,500',
+          cost: 500,
+          icon: Icons.shopping_bag_outlined,
+          color: Color(0xFFF26A3D),
+        ),
+        (
+          name: 'Free Delivery',
+          detail: 'On your next order',
+          cost: 750,
+          icon: Icons.local_shipping_outlined,
+          color: Color(0xFF22A45D),
+        ),
+        (
+          name: 'Rs. 250 Off',
+          detail: 'On orders over Rs. 3,000',
+          cost: 1200,
+          icon: Icons.sell_outlined,
+          color: Color(0xFF1E88E5),
+        ),
+        (
+          name: 'Product Voucher',
+          detail: 'For selected products',
+          cost: 1500,
+          icon: Icons.card_giftcard,
+          color: Color(0xFF9B45D9),
+        ),
+        (
+          name: 'Exclusive Brand Deals',
+          detail: 'Special offers from top brands',
+          cost: 2000,
+          icon: Icons.workspace_premium_outlined,
+          color: Color(0xFFE9A21B),
+        ),
+        (
+          name: 'Partner Store Voucher',
+          detail: 'At official brand stores',
+          cost: 2500,
+          icon: Icons.storefront_outlined,
+          color: Color(0xFF1E9AA8),
+        ),
+        (
+          name: 'Cashback',
+          detail: 'Direct wallet credit',
+          cost: 3000,
+          icon: Icons.account_balance_wallet_outlined,
+          color: Color(0xFFE83A5F),
+        ),
+        (
+          name: 'Premium Gift',
+          detail: 'Curated gifts & accessories',
+          cost: 5000,
+          icon: Icons.redeem,
+          color: Color(0xFF6E4BD8),
+        ),
+      ];
+
+  static const _howItWorksLines = [
+    'Coins are added once an order is delivered.',
+    'Spend them against an order at checkout.',
+    'Coins do not expire while your account is active.',
   ];
 
-  List<Widget> _earn() => [
-    _sectionTitle('Earn coins'),
-    const SizedBox(height: 8),
-    for (final rule in _earnRules)
-      ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: Icon(rule.icon, color: Theme.of(context).colorScheme.primary),
-        title: Text(rule.title),
-        subtitle: Text(rule.detail),
-      ),
-  ];
-
-  List<Widget> _rewards() {
+  List<Widget> _redeem() {
     final theme = Theme.of(context);
 
     return [
-      _sectionTitle('Rewards'),
-      const SizedBox(height: 8),
-      for (final reward in _rewardList)
-        Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            // A border rather than a shadow, like the rest of this app.
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
-          // Stacked, rather than the text beside the button.
-          //
-          // Side by side, the button took its full natural width first and left
-          // the text column 115 points on a 320pt phone -- which the cost row
-          // then overflowed by forty. An Expanded bounds its child, but a
-          // mainAxisSize.min Row *inside* it overruns that bound rather than
-          // shrinking to it, so the cap never reached the thing that needed it.
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      Text(
+        'Redeem Your Coins',
+        style: theme.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          color: AppColors.himalayanSlate,
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        'Choose from a range of rewards and make the most of your coins.',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      const SizedBox(height: 14),
+      LayoutBuilder(
+        builder: (context, constraints) {
+          // Two across as the design has it; one across on a phone too narrow
+          // for two cards to hold their title and cost.
+          final perRow = constraints.maxWidth < 330 ? 1 : 2;
+          return Column(
             children: [
-              Text(
-                reward.name,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                reward.detail,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Icon(Icons.monetization_on, size: 16, color: _coinInk),
-                  const SizedBox(width: 4),
-                  // The glyph beside it already says what it counts, so the
-                  // word comes off -- the same reasoning that drops "Rs." from
-                  // the header chip. The room it frees is what lets the cost
-                  // and the button share a line on a small phone.
-                  Text(
-                    formatGrouped(reward.cost),
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
+              for (var i = 0; i < _rewardList.length; i += perRow)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (var j = i; j < i + perRow; j++) ...[
+                          if (j > i) const SizedBox(width: 10),
+                          Expanded(
+                            child: j < _rewardList.length
+                                ? _RewardCard(
+                                    reward: _rewardList[j],
+                                    onTap: _redeemNotYet,
+                                  )
+                                : const SizedBox(),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  const Spacer(),
-                  OutlinedButton(
-                    onPressed: _redeemNotYet,
-                    child: const Text('Redeem'),
-                  ),
-                ],
-              ),
+                ),
             ],
-          ),
-        ),
+          );
+        },
+      ),
     ];
   }
 
-  List<Widget> _howItWorks() {
+  Widget _infoCard() {
     final theme = Theme.of(context);
-    const lines = [
-      'Coins are added once an order is delivered.',
-      'Spend them against an order at checkout.',
-      'Coins do not expire while your account is active.',
-    ];
 
-    return [
-      _sectionTitle('How coins work'),
-      const SizedBox(height: 8),
-      for (final line in lines)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 6, right: 8),
-                child: Icon(
-                  Icons.circle,
-                  size: 5,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  line,
-                  style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
-                ),
-              ),
-            ],
+    return Container(
+      key: const ValueKey('coins-info-card'),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE6F3F7),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.shopping_bag_outlined,
+            size: 40,
+            color: AppColors.himalayanSlate,
           ),
-        ),
-    ];
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Coins are added once an order is delivered, spend them '
+                  'against an order at checkout.',
+                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+                ),
+                const SizedBox(height: 6),
+                InkWell(
+                  key: const ValueKey('coins-learn-more'),
+                  onTap: _showHowItWorks,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      'Learn more ›',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.trustBlue,
+                        decoration: TextDecoration.underline,
+                        decorationColor: AppColors.trustBlue,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  Widget _sectionTitle(String text) => Text(
-    text,
-    style: Theme.of(context).textTheme.titleSmall
-        ?.copyWith(fontWeight: FontWeight.w700),
-  );
+  void _showHowItWorks() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final theme = Theme.of(context);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'How coins work',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                for (final line in _howItWorksLines)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 7, right: 10),
+                          child: Icon(
+                            Icons.circle,
+                            size: 6,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            line,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _bottomBanner() {
+    return ClipRRect(
+      key: const ValueKey('coins-bottom-banner'),
+      borderRadius: BorderRadius.circular(16),
+      child: AspectRatio(
+        aspectRatio: 1409 / 340,
+        child: Image.asset(bottomBannerAsset, fit: BoxFit.cover),
+      ),
+    );
+  }
 
   /// Deliberately not a redemption.
   ///
@@ -346,55 +447,169 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _balanceCard() {
     final theme = Theme.of(context);
+    final npr = (_coins.balance * _nprPerCoin).round();
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF8EC),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.monetization_on, size: 40, color: _coinInk),
-          const SizedBox(height: 10),
-          Text(
-            // Counted, not priced. See the class doc.
-            formatGrouped(_coins.balance),
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+    return ClipRRect(
+      key: const ValueKey('coins-balance-card'),
+      borderRadius: BorderRadius.circular(18),
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [Color(0xFFFDE7D2), Color(0xFFF6EFE6), Color(0xFFE3EEF3)],
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Coins',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          // Said plainly when the figure above is the stand-in rather than this
-          // account's own. The number stays on screen either way -- blanking it
-          // was tried and it took the balance off the one device it had to be
-          // visible on -- but a page about the balance has room to say which
-          // one a shopper is looking at.
-          if (_coins.readFailed) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Your balance could not be read just now, so this is the '
-              'standard starting figure.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.35,
+        ),
+        child: Stack(
+          children: [
+            // Stand-in artwork on the right, fading into the card so the
+            // balance never sits on top of a busy picture.
+            // Filled on every side so the share below has a width to be a
+            // share of; left open, the picture was laid out unbounded.
+            Positioned.fill(
+              child: FractionallySizedBox(
+                widthFactor: 0.4,
+                heightFactor: 1,
+                alignment: Alignment.centerRight,
+                child: ShaderMask(
+                  // A long, soft fade, so the picture starts where the
+                  // balance ends rather than cutting in beside it.
+                  shaderCallback: (rect) => const LinearGradient(
+                    colors: [Colors.transparent, Colors.black],
+                    stops: [0, 0.6],
+                  ).createShader(rect),
+                  blendMode: BlendMode.dstIn,
+                  child: ClipRect(
+                    // Scaled up a little so the stand-in's own rounded, dark
+                    // corners fall outside the card.
+                    child: Transform.scale(
+                      scale: 1.15,
+                      alignment: Alignment.centerRight,
+                      child: Image.asset(
+                        heroBannerAsset,
+                        fit: BoxFit.cover,
+                        alignment: const Alignment(0.7, 0),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            TextButton.icon(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Try again'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+              child: FractionallySizedBox(
+                widthFactor: 0.6,
+                alignment: Alignment.centerLeft,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const _CoinG(size: 64),
+                        const SizedBox(width: 12),
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Your Coins',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppColors.himalayanSlate,
+                                ),
+                              ),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  // Counted, not priced. See the class doc.
+                                  formatGrouped(_coins.balance),
+                                  style: theme.textTheme.displaySmall?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    color: const Color(0xFF14233C),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Container(
+                                key: const ValueKey('coins-npr-chip'),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFCDE7F2),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  '≈ NPR ${formatGrouped(npr)}',
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.trustBlue,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Said plainly when the figure above is the stand-in
+                    // rather than this account's own.
+                    if (_coins.readFailed) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Your balance could not be read just now, so this is '
+                        'the standard starting figure.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppColors.himalayanSlate,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    Material(
+                      color: Colors.white,
+                      shape: const StadiumBorder(),
+                      child: InkWell(
+                        key: const ValueKey('coins-refresh'),
+                        customBorder: const StadiumBorder(),
+                        onTap: _load,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 9,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.refresh,
+                                size: 18,
+                                color: Color(0xFF14233C),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  'Refresh',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF14233C),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -467,8 +682,6 @@ class _WalletScreenState extends State<WalletScreen> {
         ),
     ];
   }
-
-  static const _coinInk = Color(0xFFD98A1E);
 }
 
 /// One movement, with whatever the server said about it and nothing more.
@@ -505,6 +718,129 @@ class _EntryRow extends StatelessWidget {
         style: theme.textTheme.bodyMedium?.copyWith(
           fontWeight: FontWeight.w700,
           color: entry.isCredit ? AppColors.successInk : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// One reward in the Redeem grid: a coloured badge, what it is, and its cost.
+class _RewardCard extends StatelessWidget {
+  const _RewardCard({required this.reward, required this.onTap});
+
+  final ({String name, String detail, int cost, IconData icon, Color color})
+  reward;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tint = reward.color;
+
+    return Material(
+      color: Color.alphaBlend(tint.withValues(alpha: 0.07), Colors.white),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: tint.withValues(alpha: 0.22)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        key: ValueKey('reward-${reward.name}'),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+                child: Icon(reward.icon, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      reward.name,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF14233C),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      reward.detail,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const Spacer(),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const _CoinG(size: 20),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            formatGrouped(reward.cost),
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF14233C),
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right,
+                          size: 22,
+                          color: Color(0xFF14233C),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A gold "G" coin, drawn rather than an image so it is sharp at any size.
+class _CoinG extends StatelessWidget {
+  const _CoinG({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const RadialGradient(
+          center: Alignment(-0.3, -0.4),
+          colors: [Color(0xFFFFE07A), Color(0xFFF5B316), Color(0xFFD98A0E)],
+          stops: [0, 0.6, 1],
+        ),
+        border: Border.all(color: const Color(0xFFE39B12), width: size * 0.06),
+      ),
+      child: Text(
+        'G',
+        style: TextStyle(
+          fontSize: size * 0.55,
+          height: 1,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+          shadows: const [
+            Shadow(color: Color(0x66A0600A), offset: Offset(0, 1)),
+          ],
         ),
       ),
     );

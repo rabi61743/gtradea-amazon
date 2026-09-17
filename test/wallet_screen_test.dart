@@ -58,7 +58,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('2,450'), findsOneWidget);
-      expect(find.text('Coins'), findsWidgets);
+      expect(find.text('My Coins'), findsOneWidget);
       // The balance itself, named exactly. This was once a blanket "no 'Rs.'
       // anywhere on the page", which was the right rule aimed at the wrong
       // scope: the placeholder rewards below quote real discounts in rupees,
@@ -180,6 +180,51 @@ void main() {
         isEmpty,
         reason: 'a guest has no wallet to ask about',
       );
+    });
+
+    testWidgets('the redesigned page: rewards, learn more, banner', (
+      tester,
+    ) async {
+      signInForTest();
+      api.on('GET', '/wallet', body: const {'balance': 1000});
+      api.on('GET', '/wallet/transactions', body: const {'transactions': []});
+      tester.view.physicalSize = const Size(412 * 2, 2400 * 2);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('coins-balance-card')), findsOneWidget);
+      expect(find.text('Your Coins'), findsOneWidget);
+      expect(find.text('≈ NPR 100'), findsOneWidget);
+      expect(find.text('Redeem Your Coins'), findsOneWidget);
+      for (final name in [
+        'Rs. 100 Off',
+        'Free Delivery',
+        'Rs. 250 Off',
+        'Product Voucher',
+        'Exclusive Brand Deals',
+        'Partner Store Voucher',
+        'Cashback',
+        'Premium Gift',
+      ]) {
+        expect(find.text(name), findsOneWidget, reason: name);
+      }
+      expect(find.byKey(const ValueKey('coins-bottom-banner')), findsOneWidget);
+
+      // A reward never pretends to redeem.
+      await tester.tap(find.byKey(const ValueKey('reward-Cashback')));
+      await tester.pump();
+      expect(
+        find.text('Redeeming coins is not available yet.'),
+        findsOneWidget,
+      );
+      expect(find.text('1,000'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('coins-learn-more')));
+      await tester.pumpAndSettle();
+      expect(find.text('How coins work'), findsOneWidget);
     });
 
     testWidgets('lays out on a phone, a tablet and a desktop window', (

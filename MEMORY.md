@@ -18,6 +18,31 @@ Entry format:
 
 ---
 
+## 2026-09-17 19:50 — Coins page redesigned from the "My Coins" mock-up
+- **What:** `WalletScreen` body rebuilt to the user's design. The AppBar title is "My Coins"; bottom nav, header chip and data code are untouched.
+  - **Balance card:** peach→blue gradient with a drawn gold "G" coin, "Your Coins", the real balance, a "≈ NPR" chip and a white Refresh pill. The stand-in picture on the right fades in softly.
+  - **Info card:** "Coins are added once an order is delivered…", with "Learn more ›" opening a "How coins work" sheet.
+  - **"Redeem Your Coins":** a 2-column grid (1 column under 330 dp) of 8 tinted reward cards. Each has a coloured icon badge, name, detail, coin cost and chevron.
+  - **Bottom banner:** a stand-in image.
+  - **Activity:** the real history list stays below.
+- **Placeholders (stated plainly):**
+  - Hero picture `gift_banner.jpg` and bottom banner `promo_banner.jpg` are stand-ins until the user supplies artwork (`WalletScreen.heroBannerAsset` / `bottomBannerAsset`).
+  - The 8 rewards and their costs are illustrative. No endpoint exists for them (`/rewards` etc. are 404).
+  - The NPR rate is `_nprPerCoin = 0.1`, from the design, not a published rate.
+  - Tapping a reward still shows "Redeeming coins is not available yet." and never fakes a redemption.
+- **Removed:** the old "Earn coins" list, the old 3-reward list and the "How coins work" section. That text moved into the Learn more sheet.
+- **Why:** the user supplied the layout and asked for it on the Coins page, with random banners for now.
+- **Affected:** `lib/features/wallet/presentation/wallet_screen.dart`, `test/wallet_screen_test.dart` (title expectation, plus a new test for rewards, learn more and banner).
+- **Fixes found on the way:**
+  - The hero image was laid out unbounded (`Positioned.fill(left: null)`).
+  - Refresh overflowed by 0.46 px at 320 dp.
+  - The hero picture first cut in hard beside "1,000" with dark corners. Now it is narrower, with a longer fade and a 1.15× crop.
+- **Verification:**
+  - Wallet and header tests: 21 pass. Analyze is clean.
+  - On the Redmi, Points chip → My Coins: balance card, info card and 8 reward cards show, then the banner and the activity state.
+  - Learn more opens the sheet; tapping a reward shows the not-available snackbar.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 19:22 — Qty box in the options popup gets a solid background
 - **What:** the options popup's quantity stepper (`_QuantityRow` in `add_to_cart_sheet.dart`) sits on the card surface (white) with the same border. It is now a shaped `Material` instead of a bordered `Container`, so the −/+ ripple still draws above the fill.
 - **Why:** the user asked for the Qty background to match the size boxes, which were just made solid.
