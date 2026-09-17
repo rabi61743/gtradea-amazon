@@ -116,7 +116,10 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Remove from saved'));
+    // The heart and card animate first, then the item is removed.
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300)); // heart
+    await tester.pump(const Duration(milliseconds: 400)); // card
     expect(WishlistStore.instance.count, 0);
 
     // Let the snack bar finish animating in; tapping mid-slide misses it.
@@ -407,7 +410,19 @@ void main() {
       await tester.tap(find.byTooltip('Remove from saved'));
       await tester.pump();
 
+      // The heart empties and the card leaves before the item is unsaved.
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(WishlistStore.instance.contains('polo'), isTrue);
+      expect(find.byKey(const ValueKey('saved-card-polo')), findsOneWidget);
+
+      await tester.pumpAndSettle();
       expect(WishlistStore.instance.contains('polo'), isFalse);
+      expect(find.byKey(const ValueKey('saved-card-polo')), findsNothing);
+      // The existing Removed-from-Wishlist message, with its Undo.
+      expect(find.text('Removed from Wishlist'), findsOneWidget);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(WishlistStore.instance.contains('polo'), isTrue);
     });
 
     testWidgets('the delete button animates, then the card leaves', (

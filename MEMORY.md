@@ -18,6 +18,20 @@ Entry format:
 
 ---
 
+## 2026-09-18 00:37 — Saved items: heart-removal and deselect animations
+- **What:**
+  - **Heart.** The card's filled heart is now `_UnsaveHeart`. A tap plays a 280 ms animation: the heart pulses up to 125% and settles, and the filled red heart crossfades to a grey outline. The card then leaves exactly like the bin delete (`_startRemove` → `_LeavingCard` exit → the existing `_remove` with its sound, "Removed from Wishlist" and Undo). Before this, the heart removed the item instantly.
+  - **Checkbox.** In selection mode the check circle is an `AnimatedContainer` (180 ms colour/border fade). The tick grows in with `easeOutBack` when picked and shrinks out when deselected.
+  - The now-unused `_SavedCard.onRemove` was dropped. Nothing else changed.
+- **Why:** the user asked for a smooth animation when removing or deselecting an item on Saved items, with the style left to me and nothing else changed.
+- **Affected:** `lib/features/wishlist/presentation/wishlist_screen.dart`, `test/wishlist_test.dart` (the two heart tests now wait for the animation; one also checks Undo).
+- **Verification:**
+  - WishlistScreen-related tests plus action sounds: 49 pass. Analyze is clean.
+  - On the Redmi: tapped the heart on "Upf50+ Sun Protection Clothing". 1.3 s later the card was gone (3 → 2) with "Removed from Wishlist". Undo was tapped 1.2 s later, inside the same adb command, and brought it back (3).
+  - Selection: tapping a card showed "1 selected" with the red tick. Tapping again gave "0 selected" with an empty circle. Exited the mode.
+  - No user data lost this time.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-18 00:22 — Saved items: select several and delete
 - **What:** multi-select delete on the Saved items page only (`wishlist_screen.dart`).
   - **Entering:** a new **Select** (checklist) icon in the app bar, or long-press a card.

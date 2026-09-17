@@ -525,7 +525,6 @@ class _WishlistScreenState extends State<WishlistScreen> {
                               onOpen: _selecting
                                   ? () => _toggleSelected(product)
                                   : () => _open(product),
-                              onRemove: () => _remove(product),
                               onDelete: () => _startRemove(product),
                               prepareAdd: () => _priceForCart(product),
                               commitAdd: (price) => _addToCart(product, price),
@@ -733,6 +732,100 @@ class _LeavingCardState extends State<_LeavingCard>
   }
 }
 
+/// The saved card's filled heart. A tap pulses it, empties it to an outline,
+/// and then calls [onUnsaved] -- which lets the card leave the way a delete
+/// does, before the existing removal and its Undo run.
+class _UnsaveHeart extends StatefulWidget {
+  const _UnsaveHeart({
+    super.key,
+    required this.enabled,
+    required this.onUnsaved,
+  });
+
+  final bool enabled;
+  final VoidCallback onUnsaved;
+
+  static const duration = Duration(milliseconds: 280);
+
+  @override
+  State<_UnsaveHeart> createState() => _UnsaveHeartState();
+}
+
+class _UnsaveHeartState extends State<_UnsaveHeart>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _t = AnimationController(
+    vsync: this,
+    duration: _UnsaveHeart.duration,
+  );
+
+  bool _pressed = false;
+
+  @override
+  void dispose() {
+    _t.dispose();
+    super.dispose();
+  }
+
+  Future<void> _tap() async {
+    if (_pressed) return;
+    _pressed = true;
+    await _t.forward().orCancel.catchError((_) {});
+    if (mounted) widget.onUnsaved();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final outline = Theme.of(context).colorScheme.onSurfaceVariant;
+    return IconButton(
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(),
+      padding: EdgeInsets.zero,
+      tooltip: 'Remove from saved',
+      onPressed: widget.enabled ? _tap : null,
+      icon: AnimatedBuilder(
+        animation: _t,
+        builder: (context, _) {
+          final t = _t.value;
+          // Up to 125% then down past rest, the way a released press settles.
+          final scale = t < 0.4
+              ? 1 + 0.25 * Curves.easeOut.transform(t / 0.4)
+              : 1.25 - 0.35 * Curves.easeIn.transform((t - 0.4) / 0.6);
+          final empty = Curves.easeIn.transform(((t - 0.3) / 0.7).clamp(0, 1));
+          return Transform.scale(
+            scale: scale,
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Opacity(
+                    opacity: 1 - empty,
+                    child: const Icon(
+                      Icons.favorite,
+                      color: AppColors.wishlist,
+                      size: 22,
+                    ),
+                  ),
+                  if (empty > 0)
+                    Opacity(
+                      opacity: empty,
+                      child: Icon(
+                        Icons.favorite_border,
+                        color: Color.lerp(AppColors.wishlist, outline, empty),
+                        size: 22,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 /// The saved card's delete button, as it was, with a press animation: the
 /// button dips, the bin tips and turns red, and then [onDeleted] is called.
 class _DeleteButton extends StatefulWidget {
@@ -824,7 +917,6 @@ class _SavedCard extends StatelessWidget {
     required this.product,
     required this.busy,
     required this.onOpen,
-    required this.onRemove,
     required this.onDelete,
     required this.prepareAdd,
     required this.commitAdd,
@@ -847,9 +939,9 @@ class _SavedCard extends StatelessWidget {
   final VoidCallback? onLongPress;
 
   final VoidCallback onOpen;
-  final VoidCallback onRemove;
 
-  /// The delete button: animates, then removes.
+  /// The delete button and the heart: each animates, then the card leaves and
+  /// is removed.
   final VoidCallback onDelete;
   final Future<num?> Function() prepareAdd;
   final bool Function(num price) commitAdd;
@@ -907,8 +999,10 @@ class _SavedCard extends StatelessWidget {
                       Positioned(
                         top: 4,
                         left: 4,
-                        child: Container(
+                        child: AnimatedContainer(
                           key: ValueKey('saved-check-${product.id}'),
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
                           width: 24,
                           height: 24,
                           decoration: BoxDecoration(
@@ -923,13 +1017,20 @@ class _SavedCard extends StatelessWidget {
                               width: 1.5,
                             ),
                           ),
-                          child: selected
-                              ? const Icon(
-                                  Icons.check,
-                                  size: 16,
-                                  color: Colors.white,
-                                )
-                              : null,
+                          // The tick grows in when picked and shrinks away when
+                          // deselected.
+                          child: AnimatedScale(
+                            scale: selected ? 1 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            curve: selected
+                                ? Curves.easeOutBack
+                                : Curves.easeIn,
+                            child: const Icon(
+                              Icons.check,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
                       ),
                   ],
@@ -955,17 +1056,10 @@ class _SavedCard extends StatelessWidget {
                           const Spacer(),
                         // Filled, because everything on this screen is saved.
                         // Tapping it is how one gets unsaved.
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          constraints: const BoxConstraints(),
-                          padding: EdgeInsets.zero,
-                          icon: const Icon(
-                            Icons.favorite,
-                            color: AppColors.wishlist,
-                            size: 22,
-                          ),
-                          tooltip: 'Remove from saved',
-                          onPressed: selecting ? null : onRemove,
+                        _UnsaveHeart(
+                          key: ValueKey('saved-heart-${product.id}'),
+                          enabled: !selecting,
+                          onUnsaved: onDelete,
                         ),
                       ],
                     ),
