@@ -18,6 +18,16 @@ Entry format:
 
 ---
 
+## 2026-09-17 22:05 — Saved items: "Looking for more?" card and Browse button made visible
+- **What:** in `wishlist_screen.dart`:
+  - `_KeepShoppingCard` is now a white card with the standard border, matching the saved-item cards. It was a 50% grey wash.
+  - Browse is a `FilledButton` (app blue) instead of `OutlinedButton`.
+  - The list's bottom padding adds the system inset, so the last card clears the gesture bar.
+- **Why:** the user reported the card and its Browse button were not visible. On the Redmi the card was grey-on-grey, and the outlined button's border was the same grey as the card, so Browse read as loose text. The card also sat on the gesture bar.
+- **Affected:** `lib/features/wishlist/presentation/wishlist_screen.dart` (Saved items page only).
+- **Verification:** 25 wishlist tests pass; analyze is clean. On the Redmi: Saved → scrolled to the end → white card with a solid blue Browse button above the gesture bar → Browse opened Categories.
+- **Commit:** see git log on main, pushed to origin
+
 ## 2026-09-17 19:50 — Coins page redesigned from the "My Coins" mock-up
 - **What:** `WalletScreen` body rebuilt to the user's design. The AppBar title is "My Coins"; bottom nav, header chip and data code are untouched.
   - **Balance card:** peach→blue gradient with a drawn gold "G" coin, "Your Coins", the real balance, a "≈ NPR" chip and a white Refresh pill. The stand-in picture on the right fades in softly.

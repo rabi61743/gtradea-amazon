@@ -270,7 +270,13 @@ class _WishlistScreenState extends State<WishlistScreen> {
           body: items.isEmpty
               ? const _EmptyWishlist()
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+                  // Clear of the system gesture bar, which sat on the last card.
+                  padding: EdgeInsets.fromLTRB(
+                    12,
+                    4,
+                    12,
+                    24 + MediaQuery.paddingOf(context).bottom,
+                  ),
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
@@ -634,10 +640,14 @@ class _KeepShoppingCard extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Container(
+      key: const ValueKey('wishlist-keep-shopping'),
       padding: const EdgeInsets.all(14),
+      // A card like the saved items above it. It was a half-strength grey wash
+      // on the grey page, and all but vanished.
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: theme.colorScheme.surface,
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Row(
         children: [
@@ -664,7 +674,10 @@ class _KeepShoppingCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          OutlinedButton.icon(
+          // Filled, like "Add to cart": the outlined button's edge was the same
+          // grey as the card behind it, so it read as loose text.
+          FilledButton.icon(
+            key: const ValueKey('wishlist-browse'),
             onPressed: onTap,
             iconAlignment: IconAlignment.end,
             icon: const Icon(Icons.arrow_forward, size: 17),
